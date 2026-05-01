@@ -1,7 +1,7 @@
 # Logger — Project Plan
 
 > Status: **Planning phase**. Nothing implemented yet.
-> Last updated: 2026-04-29
+> Last updated: 2026-05-01
 
 This document captures all decisions and open items from the planning sessions.
 Read top-to-bottom on first visit; later use it as a reference.
@@ -62,8 +62,10 @@ filter, dashboard, and get alerts on those events.
 
 ## 3. Resolved Questions
 
-All planning-phase questions resolved on 2026-04-29. No open blockers for
-implementation.
+Global questions resolved on 2026-04-29. Feature-level questions resolved as
+features are detailed.
+
+### Global
 
 | # | Question | Resolution |
 |---|---|---|
@@ -72,6 +74,143 @@ implementation.
 | Q3 | Backup strategy | `pg_dump -Fc` nightly + offsite via rclone. Retention 7d + 4w. pgBackRest only if DB > 50 GB. See §15.2 |
 | Q4 | Reverse proxy / TLS | Caddy in compose. Auto Let's Encrypt. See §15.1 |
 | Q5 | Telemetry / health | `/api/health` + `/api/health/ready` + pino logs to stdout. Prometheus deferred. See §15.3 |
+
+### Cross-cutting (resolved 2026-04-30)
+
+These affect multiple features. Closed up-front to avoid rework.
+
+| # | Question | Resolution |
+|---|---|---|
+| CC1 | Theme switching | Three options in UserMenu: **dark / light / system**. Default `dark`. Persisted in `users.preferences` jsonb. Anonymous users use system preference. CSS via `[data-theme]` attribute on `<html>`. No-flash inline script in `app/layout.tsx`. |
+| CC2 | i18n | English only in MVP. ALL UI strings live in `core/i18n/dictionary.ts` from day one (typed, nested, accessed via `t('key')`). Multi-lang switch later = mechanical: import alternative dictionaries, add lang switcher. |
+| CC3 | Time zones | DB stores `timestamptz` (UTC). UI formats with `Intl.DateTimeFormat` in browser's local TZ. UTC value shown in tooltip for shareability. |
+| CC4 | Audit log | None in MVP. pino structured logs to stdout cover action traceability for internal use (e.g. `logger.info({ actor, action, target }, 'role.deleted')`). |
+| CC5 | Rate limiting | better-auth handles login/register. Custom middleware on `/api/ingest` (detail in feature 03). No rate limit on internal server actions. |
+| CC6 | CORS on `/api/ingest` | Allow-all (`Access-Control-Allow-Origin: *`). API key is the auth boundary. |
+| —   | Onboarding tour | Not in MVP. Empty states + CTAs are sufficient; docs come later. |
+
+### Feature 01 — Auth + Organizations + Roles (resolved 2026-04-30)
+
+| # | Question | Resolution |
+|---|---|---|
+| Q-A1 | Email verification on registration? | No in MVP. Invite acts as verification. |
+| Q-A2 | 2FA / TOTP? | No in MVP. |
+| Q-A3 | Session length? | 30 days, rolling expiration. |
+| Q-A4 | "Remember me" toggle? | No. Single rolling-30d session model. |
+| Q-A5 | Bootstrap of first owner? | Setup wizard at `/setup`, active only when `users` is empty. |
+| Q-A6 | Invitation delivery? | Copy-link from UI in MVP. Webhook hookup later. |
+
+Full feature 01 plan: [docs/features/01-auth-organizations-roles.md](features/01-auth-organizations-roles.md).
+
+### Feature 02 — Projects + API keys (resolved 2026-04-30)
+
+| # | Question | Resolution |
+|---|---|---|
+| Q-B1 | API key format | `lgr_<base64url(32 bytes)>` |
+| Q-B2 | Storage | SHA-256 hex hash + `key_prefix` for UI |
+| Q-B3 | Reveal | Show once, no re-reveal |
+| Q-B4 | Per-project member overrides | Removed from MVP; schema stub kept |
+| Q-B5 | Slug uniqueness | Per-org |
+| Q-B6 | Project deletion | Soft delete, no auto-purge |
+| Q-B7 | Per-project retention | Column exists, not editable in MVP |
+| Q-B8 | Create permission | `projects.create` (existing) |
+| Q-B9 | Slug input | Auto from name, editable |
+| Q-B10 | Hard limits | None in MVP |
+
+Full feature 02 plan: [docs/features/02-projects-api-keys.md](features/02-projects-api-keys.md).
+
+### Feature 03 — Ingest (resolved 2026-04-30)
+
+| # | Question | Resolution |
+|---|---|---|
+| Q-C1 | Event schema | Hybrid: fixed common fields + flat `attributes` map + free `context` JSON |
+| Q-C2 | Required fields | Only `level` + `message`. Server enriches the rest. |
+| Q-C3 | pg_partman | Daily partitions, 30d retention, premake 7, hourly maintenance via pg-boss. Custom Postgres image with partman extension. |
+| Q-C4 | Batch size | 500 events / 5 MB body |
+| Q-C5 | Rate limit | In-memory rolling window 1000/60s per API key |
+| Q-C6 | Response codes | 202 single, 202/207/400 batch, 401/413/429 errors |
+| Q-C7 | Timestamp | Client-provided + sanity guards (±5min future, -30d past) |
+| Q-C8 | Abuse | 64KB single, 5MB batch, 32KB stack trace |
+| Q-C9 | Sync vs queued | Sync insert; in-memory buffer is soft evolution |
+
+Full feature 03 plan: [docs/features/03-ingest.md](features/03-ingest.md).
+
+### Feature 04 — Events list + filters + detail (resolved 2026-05-01)
+
+| # | Question | Resolution |
+|---|---|---|
+| Q-D1 | Filter UI placement | Top toolbar, chip-based |
+| Q-D2 | Filter persistence | URL query params only |
+| Q-D3 | Pagination | Keyset cursor (Newer/Older buttons) |
+| Q-D4 | Detail view | Right drawer 520px, URL `?event=<id>` |
+| Q-D5 | Stack trace | Collapsed by default, frame-level toggle |
+| Q-D6 | Attributes / context | KeyValue list + JSON tree |
+| Q-D7 | Saved views | Not in MVP |
+| Q-D8 | Event export | Not in MVP |
+| Q-D9 | Timestamp display | Local TZ in table, full+UTC in drawer, hover-relative |
+| Q-D10 | Message search | Postgres tsvector full-text |
+| Q-D11 | Auto-refresh state | `users.preferences.autoRefresh` (Redux + DB) |
+
+Full feature 04 plan: [docs/features/04-events-list-filters.md](features/04-events-list-filters.md).
+
+### Feature 05 — Dashboard (resolved 2026-05-01)
+
+| # | Question | Resolution |
+|---|---|---|
+| Q-E1 | Aggregation strategy | Live `GROUP BY` queries; optimize per-widget if needed |
+| Q-E2 | Cache | None in MVP |
+| Q-E3 | Time range sync with events | Independent state per page; future cross-page passing via query params |
+| Q-E4 | Widget config | Hardcoded 5 widgets |
+| Q-E5 | Auto-refresh cadence | Shares `users.preferences.autoRefresh` with events page |
+| Q-E6 | Empty state | Reuses feature 02 onboarding CTA |
+| Q-E7 | Click-through | Yes — widgets link to events with pre-applied filters |
+| Q-E8 | Time range presets | 15m / 1h / 6h / 24h / 7d / 30d / custom |
+
+Full feature 05 plan: [docs/features/05-dashboard.md](features/05-dashboard.md).
+
+### Feature 06 — Alerts (resolved 2026-05-01)
+
+| # | Question | Resolution |
+|---|---|---|
+| Q-F1 | Evaluation pattern | Global tick worker, every minute via pg-boss |
+| Q-F2 | Cooldown | State machine `ok ↔ firing`, notify on transition; `notify_on_resolve` toggle |
+| Q-F3 | Webhook channel UI | URL + headers; no payload templating |
+| Q-F4 | Test fire | Yes; sends with `test:true`, no history row |
+| Q-F5 | History UI | Tab on rule page (Configuration / History) |
+| Q-F6 | Disabled state | Hidden by default in list; toggle on rule page |
+| Q-F7 | Retry policy | 3 attempts on 5xx/timeout, backoff 30s/2m/5m; 4xx fails fast |
+| Q-F8 | Sample events in payload | 3 latest matches (no stack trace) + events_url |
+| Q-F9 | Permissions | `alerts.manage` (existing) |
+
+Full feature 06 plan: [docs/features/06-alerts.md](features/06-alerts.md).
+
+### Feature 07 — Polish (resolved 2026-05-01)
+
+| # | Question | Resolution |
+|---|---|---|
+| Q-G1 | Polish scope | 8 must-have areas; saved views, export, shortcuts, bulk, audit-UI, project-transfer deferred |
+| Q-G2 | Global error boundary | Plain page with retry + home; no user-side error reporting |
+| Q-G3 | 404 page | Custom but simple |
+| Q-G4 | Permission denied | Explicit 403 page (not masked as 404) |
+| Q-G5 | Slow query detection | pino WARN on queries > 500ms via Drizzle middleware |
+| Q-G6 | Form pattern consistency | Sweep features 01–06 for unified submit/loading/toast patterns |
+| Q-G7 | Telemetry | `/api/version` + extended `/api/health/ready` (DB, pg-boss, last ingest, migrations) |
+
+Full feature 07 plan: [docs/features/07-polish.md](features/07-polish.md).
+
+### Feature 08 — Docker packaging (resolved 2026-05-01)
+
+| # | Question | Resolution |
+|---|---|---|
+| Q-H1 | App multi-stage | 3 stages (deps/builder/runner), `output: 'standalone'` |
+| Q-H2 | Worker container | Same image, different entrypoint |
+| Q-H3 | Postgres image | Reuses custom image from feature 03 |
+| Q-H4 | Secrets | `.env` file on host, mode 600, mounted via `env_file:` |
+| Q-H5 | Migrations | One-shot init container, `service_completed_successfully` gate |
+| Q-H6 | Backup scheduling | Dev: none. Prod: `while sleep` loop, 3 local files max, env-configurable. Offsite via rclone with bucket-managed retention. |
+| Q-H7 | Health probes | HTTP for app/postgres/proxy, file-mtime for worker |
+
+Full feature 08 plan: [docs/features/08-docker-packaging.md](features/08-docker-packaging.md).
 
 ---
 
@@ -457,16 +596,22 @@ routing, or multiple subdomains.
 
 ### 15.2 Backups
 
-**MVP strategy**: `pg_dump -Fc` nightly via a dedicated `backup` container.
+**MVP strategy**: `pg_dump -Fc` via a dedicated `backup` container, only in
+production compose. Dev compose has no backup service — keeps dev machines clean.
 
-- **Retention**: 7 daily + 4 weekly = 11 files (~55 GB max with current size estimates).
-- **Local**: write to a `backups` volume.
-- **Offsite**: `rclone copy` to S3-compatible bucket (Backblaze B2 / Cloudflare R2 / MinIO).
-- **Restore**: documented `pg_restore` procedure (defer doc to `docs/OPERATIONS.md`
-  when implementation starts).
+- **Local retention**: max **3 files** (env-configurable: `BACKUP_RETENTION_COUNT`,
+  default `3`).
+- **Frequency**: env-configurable via `BACKUP_INTERVAL_HOURS` (default `24`).
+- **Mechanism**: `while sleep` loop inside the container — runs immediately on
+  startup, then every interval.
+- **Offsite**: `rclone copy` to S3-compatible bucket (Backblaze B2 / Cloudflare
+  R2 / MinIO). Retention in the bucket is managed by lifecycle rules there —
+  out of scope of our backup script.
+- **Restore**: `scripts/restore.sh <dumpfile>` documented in
+  `docs/OPERATIONS.md`.
 
 DB size projection: ~22 GB raw → ~5 GB compressed dump. Single dump completes
-in minutes.
+in minutes. 3 local files = ~15 GB max.
 
 Switch to **pgBackRest** only when:
 - DB > 50 GB, or
@@ -577,21 +722,29 @@ volumes:
 
 ## 16. Roadmap (Implementation Order)
 
-When implementation starts, build in this order. Each step is independently
-testable.
+Each feature has its own doc in `docs/features/`. Live status is tracked in
+`docs/PROGRESS.md`.
 
-1. **Foundation** — Next.js scaffold, Drizzle setup, base SCSS, Redux store skeleton.
-2. **Auth + Organizations** — better-auth, sign-in, create org on first login,
-   invite flow, system roles seeded.
-3. **Roles management UI** — `/[org]/settings/roles`, custom role CRUD.
-4. **Projects + API keys** — CRUD, per-project member overrides.
-5. **Ingest endpoints** — single + batch, api-key auth, validation, write.
-6. **Events list + filters + detail** — the core read flow.
-7. **Dashboard** — widgets on top of events.
-8. **Alerts** — rules CRUD, evaluation worker, notifications abstraction.
-9. **Polish** — auto-refresh control, retention via pg_partman, error pages,
-   account/sessions screens.
-10. **Docker packaging** — compose, prod build, worker container.
+| # | Feature | Doc | Status |
+|---|---|---|---|
+| 00 | Foundation | [features/00-foundation.md](features/00-foundation.md) | 🟦 Planned |
+| 01 | Auth + Organizations + Roles | [features/01-auth-organizations-roles.md](features/01-auth-organizations-roles.md) | 🟦 Planned |
+| 02 | Projects + API keys | [features/02-projects-api-keys.md](features/02-projects-api-keys.md) | ⬜ Stub |
+| 03 | Ingest | [features/03-ingest.md](features/03-ingest.md) | ⬜ Stub |
+| 04 | Events list + filters + detail | [features/04-events-list-filters.md](features/04-events-list-filters.md) | ⬜ Stub |
+| 05 | Dashboard | [features/05-dashboard.md](features/05-dashboard.md) | ⬜ Stub |
+| 06 | Alerts | [features/06-alerts.md](features/06-alerts.md) | ⬜ Stub |
+| 07 | Polish | [features/07-polish.md](features/07-polish.md) | ⬜ Stub |
+| 08 | Docker packaging | [features/08-docker-packaging.md](features/08-docker-packaging.md) | ⬜ Stub |
+
+Status legend:
+- ⬜ Stub — feature doc exists, contents pending detailed planning
+- 🟦 Planned — feature doc fully detailed with checklist, ready to implement
+- 🟨 In progress — implementation underway
+- ✅ Done
+
+Planning happens just-in-time: we detail the next feature when we're about
+to start it, not all at once.
 
 ---
 
@@ -614,13 +767,38 @@ testable.
 | 2026-04-29 | Caddy over Nginx | Single domain, auto Let's Encrypt, minimal config |
 | 2026-04-29 | No Prometheus in MVP | App is itself an observability tool; pino stdout logs sufficient until scale demands metrics |
 | 2026-04-29 | Worker as separate container | Cleaner restarts, independent scaling for ingest/alerts |
+| 2026-04-30 | Per-feature doc + PROGRESS.md | Single PLAN.md would balloon past usability; per-feature docs mirror FDD code structure and survive context resets |
+| 2026-04-30 | Foundation as standalone feature 00 | Self-contained checkpoint: app boots and `/api/health/ready` works regardless of business features |
+| 2026-04-30 | No email verification (Q-A1) | Invite-only signup means email is verified by receiving the link |
+| 2026-04-30 | No 2FA in MVP (Q-A2) | Internal tool; can add later as security feature |
+| 2026-04-30 | 30d rolling session, no remember-me toggle (Q-A3, Q-A4) | Internal tool; reduce login friction; keep one model |
+| 2026-04-30 | Setup wizard at `/setup` (Q-A5) | User-friendly bootstrap; no CLI/env-var required; auto-disabled after first user |
+| 2026-04-30 | Copy-link invitations in MVP (Q-A6) | No email provider yet; webhook hookup later without schema changes |
+| 2026-04-30 | Theme: dark/light/system in UserMenu (CC1) | Default `dark`. Persisted in `users.preferences`. Anonymous users follow system. |
+| 2026-04-30 | English-only with typed dictionary (CC2) | Strings in `core/i18n/dictionary.ts` from day one; multi-lang switch is mechanical later. |
+| 2026-04-30 | UTC in DB, local TZ in UI (CC3) | `timestamptz` columns; `Intl.DateTimeFormat` for display; UTC tooltip on hover. |
+| 2026-04-30 | No audit log in MVP (CC4) | pino structured logs cover internal traceability. |
+| 2026-04-30 | Rate limiting only on auth and ingest (CC5) | better-auth + custom ingest middleware; no other rate limits. |
+| 2026-04-30 | CORS allow-all on ingest (CC6) | API key is the security boundary. |
+| 2026-04-30 | No onboarding tour | Empty states + CTAs are enough; docs cover the rest. |
+| 2026-05-01 | Setup wizard guarded by advisory lock + COUNT(users) inside transaction | Middleware check is racy; without DB-level guard two simultaneous /setup submits both create owners. See feature 01. |
+| 2026-05-01 | `users.preferences` writes use jsonb `\|\|` merge, never full replace | Multiple features extend this jsonb; naive replace silently wipes sibling keys. See feature 01. |
+| 2026-05-01 | FK cascades pinned per-table (CASCADE / RESTRICT / SET NULL) | Predictable delete semantics; org-delete wipes membership but not events; events block hard project-delete; audit refs survive user deletion. See per-feature schema sections. |
+| 2026-05-01 | pg-boss schedules use singletonKey + worker pinned to replicas=1 | Two safeguards against double-execution of cron jobs (alert eval, partman maintenance) during rolling restart. See features 03, 06, 08. |
+| 2026-05-01 | Optimistic concurrency on `alert_rules.version` | Evaluator must not commit notifications based on a filter the user just edited. See feature 06. |
+| 2026-05-01 | Soft-deleted projects: events stay until partition drop, no archive UI | Events query JOINs projects + filters `deleted_at IS NULL` as the canonical access boundary. See features 02, 04, 06. |
+| 2026-05-01 | partman migration is idempotent (`DO $$ ... IF NOT EXISTS ... $$`) | Drizzle migrate may re-run; second `create_parent` would otherwise fail. See feature 03. |
+| 2026-05-01 | Filter parser strips invalid keys instead of erroring the page | Stale share links / typos shouldn't break the screen. See feature 04. |
+| 2026-05-01 | `useEventFilters` resets cursor on every filter change | Stale cursor against new filter set yields confusing empty results; centralized in the hook. See feature 04. |
 
 ---
 
 ## 18. How to Continue
 
 When resuming:
-1. Re-read §2 (Decisions) and §3 (Open Questions).
-2. Pick a roadmap item from §16.
-3. Drill into that feature: data flow, components, server actions, edge cases.
-4. Update this doc as decisions are made (append to §17, mark items as done in §16).
+1. Open `docs/PROGRESS.md` — it points to the current feature.
+2. Open the feature doc in `docs/features/`.
+3. Read its **Status**, **Locked decisions**, and **Implementation Checklist**.
+4. Find the first unchecked item, continue from there.
+5. After each work session, update the feature doc's Status block and PROGRESS.md.
+6. If a global decision changes (stack, schema, RBAC concept) → also append to §17 here.
