@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<link rel="stylesheet" href="../colors_and_type.css">
+<style>
+  body { background: var(--bg-base); margin: 0; padding: 16px; font-family: var(--font-sans); }
+  .section-title { font-size: 11px; font-weight: 600; color: var(--text-muted); letter-spacing: 0.08em; text-transform: uppercase; margin: 0 0 10px; }
+  .section { margin-bottom: 20px; }
+  table { width: 100%; border-collapse: collapse; }
+  th { font-size: 10px; font-weight: 600; color: var(--text-muted); text-align: left; padding: 0 12px 6px; letter-spacing: 0.06em; text-transform: uppercase; }
+  td { padding: 6px 12px; border-top: 1px solid var(--border-subtle); vertical-align: middle; }
+  .token { font-family: var(--font-mono); font-size: 11px; color: var(--accent-text); }
+  .sample { color: var(--text-primary); }
+  .meta  { font-size: 11px; color: var(--text-muted); }
+  .weight-label { font-size: 11px; color: var(--text-muted); }
+</style>
+</head>
+<body>
+<div class="section">
+  <div class="section-title">Type Scale — Geist Sans</div>
+  <table>
+    <thead><tr><th>Token</th><th>Size</th><th>Sample</th><th>Usage</th></tr></thead>
+    <tbody>
+      <tr><td class="token">--text-xs</td><td class="meta">12px</td><td><span style="font-size:12px;color:var(--text-secondary)">Timestamp · caption</span></td><td class="meta">Timestamps, helper text</td></tr>
+      <tr><td class="token">--text-sm</td><td class="meta">13px</td><td><span style="font-size:13px">Default body text</span></td><td class="meta">Default body, table cells</td></tr>
+      <tr><td class="token">--text-base</td><td class="meta">14px</td><td><span style="font-size:14px">Comfortable reading</span></td><td class="meta">Modal text, descriptions</td></tr>
+      <tr><td class="token">--text-md</td><td class="meta">15px</td><td><span style="font-size:15px;font-weight:500">Section heading</span></td><td class="meta">Section headings</td></tr>
+      <tr><td class="token">--text-lg</td><td class="meta">16px</td><td><span style="font-size:16px;font-weight:500">Page heading</span></td><td class="meta">Drawer titles, page heads</td></tr>
+      <tr><td class="token">--text-xl</td><td class="meta">18px</td><td><span style="font-size:18px;font-weight:600">Dashboard label</span></td><td class="meta">KPI labels</td></tr>
+      <tr><td class="token">--text-2xl</td><td class="meta">22px</td><td><span style="font-size:22px;font-weight:600">Page title</span></td><td class="meta">Page-level headings</td></tr>
+      <tr><td class="token">--text-3xl</td><td class="meta">28px</td><td><span style="font-size:28px;font-weight:600">1,482</span></td><td class="meta">Dashboard stat values</td></tr>
+    </tbody>
+  </table>
+</div>
+<div class="section">
+  <div class="section-title">Weights</div>
+  <table>
+    <thead><tr><th>Token</th><th>Value</th><th>Sample</th></tr></thead>
+    <tbody>
+      <tr><td class="token">--weight-regular</td><td class="meta">400</td><td><span style="font-weight:400;font-size:14px">Regular — body text, values</span></td></tr>
+      <tr><td class="token">--weight-medium</td><td class="meta">500</td><td><span style="font-weight:500;font-size:14px">Medium — labels, nav items</span></td></tr>
+      <tr><td class="token">--weight-semibold</td><td class="meta">600</td><td><span style="font-weight:600;font-size:14px">Semibold — headings, buttons</span></td></tr>
+    </tbody>
+  </table>
+</div>
+</body>
+</html>

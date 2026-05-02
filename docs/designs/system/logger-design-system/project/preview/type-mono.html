@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<link rel="stylesheet" href="../colors_and_type.css">
+<style>
+  body { background: var(--bg-base); margin: 0; padding: 16px; font-family: var(--font-sans); }
+  .section-title { font-size: 11px; font-weight: 600; color: var(--text-muted); letter-spacing: 0.08em; text-transform: uppercase; margin: 0 0 10px; }
+  .section { margin-bottom: 18px; }
+  .mono-specimen { background: var(--bg-raised); border: 1px solid var(--border-subtle); border-radius: 6px; padding: 14px 16px; font-family: var(--font-mono); line-height: 1.7; }
+  .row { display: flex; gap: 8px; margin-bottom: 6px; align-items: baseline; }
+  .size-label { font-size: 10px; color: var(--text-muted); width: 32px; flex-shrink: 0; }
+  .id-chip { display: inline-block; background: var(--bg-overlay); border: 1px solid var(--border-subtle); border-radius: 3px; padding: 1px 6px; font-family: var(--font-mono); font-size: 12px; color: var(--text-secondary); }
+  .use-cases { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
+  .use-row { display: flex; align-items: center; gap: 10px; }
+  .use-label { font-size: 11px; color: var(--text-muted); width: 80px; flex-shrink: 0; }
+  .use-val { font-family: var(--font-mono); font-size: 12px; color: var(--text-secondary); }
+</style>
+</head>
+<body>
+<div class="section">
+  <div class="section-title">Monospace — Geist Mono</div>
+  <div class="mono-specimen">
+    <div class="row"><span class="size-label">12px</span><span style="font-size:12px;color:var(--text-secondary)">2024-01-15T14:32:07.421Z · req_01HX7K2M · app/handlers/events.ts:142</span></div>
+    <div class="row"><span class="size-label">13px</span><span style="font-size:13px">Failed to connect to database: connection timed out after 5000ms</span></div>
+    <div class="row"><span class="size-label">14px</span><span style="font-size:14px;color:var(--level-error-text)">TypeError: Cannot read properties of undefined (reading 'userId')</span></div>
+  </div>
+</div>
+<div class="section">
+  <div class="section-title">Monospace Use Cases</div>
+  <div class="use-cases">
+    <div class="use-row"><span class="use-label">request_id</span><span class="use-val">req_01HX7K2M3N4P5Q6R7S8T9UVWX</span></div>
+    <div class="use-row"><span class="use-label">trace_id</span><span class="use-val">abc123def456</span></div>
+    <div class="use-row"><span class="use-label">api key</span><span class="use-val">lgr_sk_••••••••••••••••4f2a</span></div>
+    <div class="use-row"><span class="use-label">timestamp</span><span class="use-val">2024-01-15T14:32:07.421Z</span></div>
+    <div class="use-row"><span class="use-label">inline code</span><span class="id-chip">event.level</span></div>
+    <div class="use-row"><span class="use-label">duration</span><span class="use-val">1843ms</span></div>
+  </div>
+</div>
+</body>
+</html>

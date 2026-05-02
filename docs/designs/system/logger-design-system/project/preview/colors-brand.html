@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<link rel="stylesheet" href="../colors_and_type.css">
+<style>
+  body { background: var(--bg-base); margin: 0; padding: 16px; font-family: var(--font-sans); }
+  .section-title { font-size: 11px; font-weight: 600; color: var(--text-muted); letter-spacing: 0.08em; text-transform: uppercase; margin: 0 0 10px; }
+  .row { display: flex; gap: 8px; margin-bottom: 12px; }
+  .swatch { flex: 1; border-radius: 4px; overflow: hidden; }
+  .color { height: 56px; }
+  .label { padding: 6px 8px; background: var(--bg-raised); border: 1px solid var(--border-subtle); border-top: none; border-radius: 0 0 4px 4px; }
+  .name { font-size: 11px; font-weight: 500; color: var(--text-secondary); display: block; }
+  .hex  { font-size: 10px; color: var(--text-muted); font-family: var(--font-mono); }
+  .rationale { font-size: 11px; color: var(--text-muted); line-height: 1.5; margin-top: 12px; padding: 10px 12px; background: var(--bg-raised); border: 1px solid var(--border-subtle); border-radius: 4px; }
+  .demo-row { display: flex; gap: 8px; margin-top: 8px; align-items: center; }
+  .btn-primary { display: inline-flex; align-items: center; gap: 6px; padding: 0 12px; height: 32px; background: var(--accent); color: #fff; font-size: 13px; font-weight: 500; border-radius: 4px; border: none; cursor: pointer; font-family: var(--font-sans); }
+  .btn-secondary { display: inline-flex; align-items: center; gap: 6px; padding: 0 12px; height: 32px; background: transparent; color: var(--accent-text); font-size: 13px; font-weight: 500; border-radius: 4px; border: 1px solid var(--accent-border); cursor: pointer; font-family: var(--font-sans); }
+  .badge-accent { display: inline-flex; align-items: center; padding: 2px 8px; background: var(--accent-subtle); color: var(--accent-text); border: 1px solid var(--accent-border); border-radius: 4px; font-size: 11px; font-weight: 500; font-family: var(--font-sans); }
+</style>
+</head>
+<body>
+<div class="section-title">Brand Accent — Indigo Violet</div>
+<div class="row">
+  <div class="swatch"><div class="color" style="background:#3730a3"></div><div class="label"><span class="name">accent-muted</span><span class="hex">#3730a3</span></div></div>
+  <div class="swatch"><div class="color" style="background:#6366f1"></div><div class="label"><span class="name">accent</span><span class="hex">#6366f1</span></div></div>
+  <div class="swatch"><div class="color" style="background:#818cf8"></div><div class="label"><span class="name">accent-hover</span><span class="hex">#818cf8</span></div></div>
+  <div class="swatch"><div class="color" style="background:rgba(99,102,241,0.12);border:1px solid #26262d"></div><div class="label"><span class="name">accent-subtle</span><span class="hex">rgba(99,102,241,0.12)</span></div></div>
+  <div class="swatch"><div class="color" style="background:#a5b4fc"></div><div class="label"><span class="name">accent-text</span><span class="hex">#a5b4fc</span></div></div>
+</div>
+<div class="demo-row">
+  <button class="btn-primary">Primary button</button>
+  <button class="btn-secondary">Secondary</button>
+  <span class="badge-accent">Active</span>
+  <span style="color:#a5b4fc;font-size:13px;font-family:var(--font-mono)">accent-text on dark</span>
+</div>
+<div class="rationale">
+  <strong style="color:var(--text-secondary)">Rationale:</strong> Indigo-violet (#6366f1) is cool, technical, and not red/orange — which are reserved for errors. It sits between generic blue (used for info) and playful purple. It has strong contrast on dark surfaces (WCAG AA at 14px+) and is widely legible. Used by Linear, Vercel, and other developer-tool references.
+</div>
+</body>
+</html>

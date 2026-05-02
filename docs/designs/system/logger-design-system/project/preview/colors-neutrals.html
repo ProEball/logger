@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<link rel="stylesheet" href="../colors_and_type.css">
+<style>
+  body { background: var(--bg-base); margin: 0; padding: 16px; font-family: var(--font-sans); }
+  .grid { display: grid; grid-template-columns: repeat(12, 1fr); gap: 4px; }
+  .swatch { border-radius: 4px; overflow: hidden; }
+  .color { height: 48px; }
+  .label { padding: 6px 4px; }
+  .name { font-size: 11px; font-weight: 500; color: var(--text-secondary); display: block; }
+  .hex  { font-size: 10px; color: var(--text-muted); font-family: var(--font-mono); }
+  .section-title { font-size: 11px; font-weight: 600; color: var(--text-muted); letter-spacing: 0.08em; text-transform: uppercase; margin: 0 0 8px; }
+  .section { margin-bottom: 20px; }
+  .row { display: flex; gap: 4px; margin-bottom: 4px; }
+  .surface-swatch { flex: 1; border-radius: 4px; border: 1px solid var(--border-subtle); padding: 10px 12px; }
+  .surface-name { font-size: 11px; font-weight: 500; color: var(--text-secondary); }
+  .surface-hex { font-size: 10px; color: var(--text-muted); font-family: var(--font-mono); }
+</style>
+</head>
+<body>
+<div class="section">
+  <div class="section-title">Neutral Scale — Dark Theme</div>
+  <div class="grid">
+    <div class="swatch"><div class="color" style="background:#0d0d0f;border:1px solid #26262d"></div><div class="label"><span class="name">gray-0</span><span class="hex">#0d0d0f</span></div></div>
+    <div class="swatch"><div class="color" style="background:#111114;border:1px solid #26262d"></div><div class="label"><span class="name">gray-1</span><span class="hex">#111114</span></div></div>
+    <div class="swatch"><div class="color" style="background:#18181c"></div><div class="label"><span class="name">gray-2</span><span class="hex">#18181c</span></div></div>
+    <div class="swatch"><div class="color" style="background:#1e1e23"></div><div class="label"><span class="name">gray-3</span><span class="hex">#1e1e23</span></div></div>
+    <div class="swatch"><div class="color" style="background:#26262d"></div><div class="label"><span class="name">gray-4</span><span class="hex">#26262d</span></div></div>
+    <div class="swatch"><div class="color" style="background:#2e2e37"></div><div class="label"><span class="name">gray-5</span><span class="hex">#2e2e37</span></div></div>
+    <div class="swatch"><div class="color" style="background:#3a3a45"></div><div class="label"><span class="name">gray-6</span><span class="hex">#3a3a45</span></div></div>
+    <div class="swatch"><div class="color" style="background:#4d4d5c"></div><div class="label"><span class="name">gray-7</span><span class="hex">#4d4d5c</span></div></div>
+    <div class="swatch"><div class="color" style="background:#6b6b7e"></div><div class="label"><span class="name">gray-8</span><span class="hex">#6b6b7e</span></div></div>
+    <div class="swatch"><div class="color" style="background:#8e8ea0"></div><div class="label"><span class="name">gray-9</span><span class="hex">#8e8ea0</span></div></div>
+    <div class="swatch"><div class="color" style="background:#b8b8cc"></div><div class="label"><span class="name">gray-10</span><span class="hex">#b8b8cc</span></div></div>
+    <div class="swatch"><div class="color" style="background:#e8e8f0"></div><div class="label"><span class="name">gray-11</span><span class="hex">#e8e8f0</span></div></div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-title">Semantic Surface &amp; Text Tokens</div>
+  <div class="row">
+    <div class="surface-swatch" style="background:#0d0d0f"><span class="surface-name">bg-base</span><br><span class="surface-hex">Page background</span></div>
+    <div class="surface-swatch" style="background:#111114"><span class="surface-name">bg-surface</span><br><span class="surface-hex">Base surface</span></div>
+    <div class="surface-swatch" style="background:#18181c"><span class="surface-name">bg-raised</span><br><span class="surface-hex">Raised surface</span></div>
+    <div class="surface-swatch" style="background:#1e1e23"><span class="surface-name">bg-overlay</span><br><span class="surface-hex">Overlay / modal bg</span></div>
+  </div>
+  <div class="row">
+    <div class="surface-swatch" style="background:#18181c"><span class="surface-name" style="color:#e8e8f0">text-primary</span><br><span class="surface-hex">#e8e8f0</span></div>
+    <div class="surface-swatch" style="background:#18181c"><span class="surface-name" style="color:#8e8ea0">text-secondary</span><br><span class="surface-hex">#8e8ea0</span></div>
+    <div class="surface-swatch" style="background:#18181c"><span class="surface-name" style="color:#6b6b7e">text-muted</span><br><span class="surface-hex">#6b6b7e</span></div>
+    <div class="surface-swatch" style="background:#18181c"><span class="surface-name" style="color:#4d4d5c">text-disabled</span><br><span class="surface-hex">#4d4d5c</span></div>
+  </div>
+</div>
+</body>
+</html>

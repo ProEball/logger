@@ -1,11 +1,11 @@
 # 00. Foundation
 
 ## Status
-- [ ] Not started · [ ] In progress · [ ] Done
-- Started: —
-- Completed: —
-- Last touched: —
-- Progress: 0 / 49 checklist items
+- [x] Not started · [x] In progress · [x] Done
+- Started: 2026-05-02
+- Completed: 2026-05-02
+- Last touched: 2026-05-02
+- Progress: 49 / 49 checklist items
 
 ## Goal
 

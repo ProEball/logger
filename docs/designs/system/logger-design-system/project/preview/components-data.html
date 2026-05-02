@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<link rel="stylesheet" href="../colors_and_type.css">
+<style>
+  body { background: var(--bg-base); margin: 0; padding: 14px; font-family: var(--font-sans); }
+  .section-title { font-size: 11px; font-weight: 600; color: var(--text-muted); letter-spacing: 0.08em; text-transform: uppercase; margin: 0 0 10px; }
+  .section { margin-bottom: 20px; }
+
+  /* Code block */
+  .code-block { background: var(--syntax-bg); border: 1px solid var(--border-subtle); border-radius: 6px; overflow: hidden; }
+  .code-header { display: flex; align-items: center; justify-content: space-between; padding: 7px 12px; border-bottom: 1px solid var(--border-subtle); }
+  .code-lang { font-size: 11px; font-weight: 500; color: var(--text-muted); font-family: var(--font-mono); }
+  .copy-btn { display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--text-muted); cursor: pointer; padding: 3px 6px; border-radius: 3px; border: 1px solid transparent; background: transparent; font-family: var(--font-sans); }
+  .copy-btn:hover { background: var(--surface-hover); border-color: var(--border-subtle); color: var(--text-secondary); }
+  .code-body { padding: 12px 0; overflow-x: auto; }
+  .code-line { display: flex; font-size: 12px; font-family: var(--font-mono); line-height: 1.7; padding: 0; min-height: 22px; }
+  .code-line:hover { background: var(--syntax-line-hl); }
+  .code-line.highlight { background: var(--syntax-error-hl); }
+  .ln { width: 40px; text-align: right; padding-right: 16px; color: var(--syntax-gutter); user-select: none; flex-shrink: 0; }
+  .lc { padding: 0 16px; flex: 1; color: var(--syntax-text); }
+
+  /* Inline code */
+  .inline-code { display: inline; background: var(--bg-overlay); border: 1px solid var(--border-subtle); border-radius: 3px; padding: 1px 5px; font-family: var(--font-mono); font-size: 12px; color: var(--text-secondary); }
+
+  /* Key-value list */
+  .kv-list { border: 1px solid var(--border-subtle); border-radius: 6px; overflow: hidden; }
+  .kv-row { display: flex; align-items: baseline; gap: 8px; padding: 6px 12px; border-bottom: 1px solid var(--border-subtle); }
+  .kv-row:last-child { border-bottom: none; }
+  .kv-key { font-size: 12px; font-weight: 500; color: var(--text-muted); font-family: var(--font-mono); width: 140px; flex-shrink: 0; }
+  .kv-val { font-size: 12px; color: var(--text-primary); font-family: var(--font-mono); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .kv-val.string { color: var(--syntax-string); }
+  .kv-val.number { color: var(--syntax-number); }
+  .kv-val.url { color: var(--accent-text); }
+</style>
+</head>
+<body>
+
+<div class="section">
+  <div class="section-title">Code Block</div>
+  <div class="code-block">
+    <div class="code-header">
+      <span class="code-lang">typescript</span>
+      <button class="copy-btn">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+        Copy
+      </button>
+    </div>
+    <div class="code-body">
+      <div class="code-line"><span class="ln">1</span><span class="lc"><span style="color:var(--syntax-keyword)">import</span> <span style="color:var(--syntax-text)">{ Logger } </span><span style="color:var(--syntax-keyword)">from</span> <span style="color:var(--syntax-string)">'@logger/sdk'</span><span style="color:var(--syntax-text)">;</span></span></div>
+      <div class="code-line"><span class="ln">2</span><span class="lc"></span></div>
+      <div class="code-line"><span class="ln">3</span><span class="lc"><span style="color:var(--syntax-keyword)">const</span> <span style="color:var(--syntax-property)">log</span> <span style="color:var(--syntax-operator)">=</span> <span style="color:var(--syntax-keyword)">new</span> <span style="color:var(--syntax-function)">Logger</span><span style="color:var(--syntax-text)">({ </span><span style="color:var(--syntax-property)">project</span><span style="color:var(--syntax-text)">: </span><span style="color:var(--syntax-string)">'api-gateway'</span> <span style="color:var(--syntax-text)">});</span></span></div>
+      <div class="code-line highlight"><span class="ln">4</span><span class="lc"><span style="color:var(--syntax-property)">log</span><span style="color:var(--syntax-text)">.</span><span style="color:var(--syntax-function)">error</span><span style="color:var(--syntax-text)">(</span><span style="color:var(--syntax-string)">'Connection failed'</span><span style="color:var(--syntax-text)">, { </span><span style="color:var(--syntax-property)">retries</span><span style="color:var(--syntax-text)">: </span><span style="color:var(--syntax-number)">3</span><span style="color:var(--syntax-text)">, </span><span style="color:var(--syntax-property)">host</span><span style="color:var(--syntax-text)">: </span><span style="color:var(--syntax-string)">'db.prod'</span> <span style="color:var(--syntax-text)">});</span></span></div>
+    </div>
+  </div>
+  <div style="margin-top:8px; font-size:13px; color:var(--text-secondary)">
+    Use <span class="inline-code">log.error()</span> with context — the second argument accepts any <span class="inline-code">Record&lt;string, unknown&gt;</span>.
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-title">Key-Value List (Event Attributes)</div>
+  <div class="kv-list">
+    <div class="kv-row"><span class="kv-key">request_id</span><span class="kv-val string">req_01HX7K2M3N4P5Q6R7S8T9UVWX</span></div>
+    <div class="kv-row"><span class="kv-key">status_code</span><span class="kv-val number">500</span></div>
+    <div class="kv-row"><span class="kv-key">duration_ms</span><span class="kv-val number">1843</span></div>
+    <div class="kv-row"><span class="kv-key">user_agent</span><span class="kv-val">Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)</span></div>
+    <div class="kv-row"><span class="kv-key">url</span><span class="kv-val url">/api/v2/events?project=api-gateway</span></div>
+    <div class="kv-row"><span class="kv-key">environment</span><span class="kv-val string">production</span></div>
+  </div>
+</div>
+
+</body>
+</html>

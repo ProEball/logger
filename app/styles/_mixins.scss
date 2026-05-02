@@ -1,0 +1,66 @@
+// Logger Design System — SCSS mixins
+// Useful helpers around the CSS custom properties from _tokens / _themes.
+
+// ── Focus ring ──────────────────────────────────────────────────────
+// Applied via :focus-visible to avoid showing on mouse click.
+@mixin focus-ring {
+    outline: none;
+
+    &:focus-visible {
+        box-shadow: var(--focus-ring);
+    }
+}
+
+// ── Surfaces ────────────────────────────────────────────────────────
+@mixin surface-base {
+    background: var(--bg-base);
+    color: var(--text-primary);
+}
+
+@mixin surface-raised {
+    background: var(--bg-raised);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+}
+
+@mixin surface-overlay {
+    background: var(--bg-overlay);
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-lg);
+}
+
+// ── Log level coloring (badge / chip) ───────────────────────────────
+// Usage: @include level-colors('debug');
+@mixin level-colors($level) {
+    background: var(--level-#{$level}-bg);
+    border-color: var(--level-#{$level}-border);
+    color: var(--level-#{$level}-text);
+}
+
+// ── Status coloring ─────────────────────────────────────────────────
+// Usage: @include status-colors('success');
+@mixin status-colors($status) {
+    background: var(--status-#{$status}-bg);
+    border-color: var(--status-#{$status}-border);
+    color: var(--status-#{$status}-text);
+}
+
+// ── Truncate ────────────────────────────────────────────────────────
+@mixin truncate {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+// ── Visually hidden (a11y) ──────────────────────────────────────────
+@mixin sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}

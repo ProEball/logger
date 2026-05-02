@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<link rel="stylesheet" href="../colors_and_type.css">
+<style>
+  body { background: var(--bg-base); margin: 0; padding: 16px; font-family: var(--font-sans); }
+  .section-title { font-size: 11px; font-weight: 600; color: var(--text-muted); letter-spacing: 0.08em; text-transform: uppercase; margin: 0 0 10px; }
+  .section { margin-bottom: 18px; }
+  .row { display: flex; gap: 8px; }
+  .swatch { flex: 1; border-radius: 4px; overflow: hidden; }
+  .color { height: 44px; }
+  .label { padding: 6px 8px; background: var(--bg-raised); border: 1px solid var(--border-subtle); border-top: none; border-radius: 0 0 4px 4px; }
+  .name { font-size: 11px; font-weight: 500; color: var(--text-secondary); display: block; }
+  .hex  { font-size: 10px; color: var(--text-muted); font-family: var(--font-mono); }
+  .badge { display: inline-flex; align-items: center; gap: 5px; padding: 3px 8px; border-radius: 4px; font-size: 11px; font-weight: 500; border: 1px solid transparent; font-family: var(--font-sans); }
+  .badges { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+</style>
+</head>
+<body>
+<div class="section">
+  <div class="section-title">Status Colors</div>
+  <div class="row">
+    <div class="swatch"><div class="color" style="background:var(--status-success-bg);border:1px solid var(--status-success-border)"></div><div class="label"><span class="name">success</span><span class="hex">#22c55e</span></div></div>
+    <div class="swatch"><div class="color" style="background:var(--status-warning-bg);border:1px solid var(--status-warning-border)"></div><div class="label"><span class="name">warning</span><span class="hex">#f59e0b</span></div></div>
+    <div class="swatch"><div class="color" style="background:var(--status-danger-bg);border:1px solid var(--status-danger-border)"></div><div class="label"><span class="name">danger</span><span class="hex">#ef4444</span></div></div>
+    <div class="swatch"><div class="color" style="background:var(--status-info-bg);border:1px solid var(--status-info-border)"></div><div class="label"><span class="name">info</span><span class="hex">#3b82f6</span></div></div>
+  </div>
+  <div class="badges">
+    <span class="badge" style="background:var(--status-success-bg);border-color:var(--status-success-border);color:var(--status-success-text)">
+      <span style="width:6px;height:6px;border-radius:50%;background:var(--status-success);display:inline-block"></span>
+      Healthy
+    </span>
+    <span class="badge" style="background:var(--status-warning-bg);border-color:var(--status-warning-border);color:var(--status-warning-text)">
+      <span style="width:6px;height:6px;border-radius:50%;background:var(--status-warning);display:inline-block"></span>
+      Degraded
+    </span>
+    <span class="badge" style="background:var(--status-danger-bg);border-color:var(--status-danger-border);color:var(--status-danger-text)">
+      <span style="width:6px;height:6px;border-radius:50%;background:var(--status-danger);display:inline-block"></span>
+      Alert firing
+    </span>
+    <span class="badge" style="background:var(--status-info-bg);border-color:var(--status-info-border);color:var(--status-info-text)">
+      <span style="width:6px;height:6px;border-radius:50%;background:var(--status-info);display:inline-block"></span>
+      Ingesting
+    </span>
+  </div>
+</div>
+</body>
+</html>

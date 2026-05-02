@@ -1,0 +1,227 @@
+// Logger Design System — themed tokens (colors, shadows, focus ring)
+// Source: docs/designs/system/logger-design-system/project/colors_and_type.css
+//
+// Default = dark. `:root` and `[data-theme="dark"]` share the same block so
+// the page renders correctly even before the no-flash inline script sets the attribute.
+// Light theme is a full override under `[data-theme="light"]`.
+
+:root,
+[data-theme="dark"] {
+    // ── Neutral scale (12 steps) ─────────────────────────────────────
+    --gray-0:  #0d0d0f;   // page background
+    --gray-1:  #111114;   // base surface
+    --gray-2:  #18181c;   // raised surface
+    --gray-3:  #1e1e23;   // overlay surface
+    --gray-4:  #26262d;   // subtle border
+    --gray-5:  #2e2e37;   // default border
+    --gray-6:  #3a3a45;   // strong border / dividers
+    --gray-7:  #4d4d5c;   // muted icon
+    --gray-8:  #6b6b7e;   // placeholder text
+    --gray-9:  #8e8ea0;   // secondary text
+    --gray-10: #b8b8cc;   // primary text muted
+    --gray-11: #e8e8f0;   // high-contrast text
+
+    // Semantic surface
+    --bg-base:        var(--gray-0);
+    --bg-surface:     var(--gray-1);
+    --bg-raised:      var(--gray-2);
+    --bg-overlay:     var(--gray-3);
+    --surface-hover:  var(--gray-2);
+    --surface-active: var(--gray-3);
+
+    // Semantic border
+    --border-subtle:  var(--gray-4);
+    --border-default: var(--gray-5);
+    --border-strong:  var(--gray-6);
+
+    // Semantic text
+    --text-primary:     var(--gray-11);
+    --text-secondary:   var(--gray-9);
+    --text-muted:       var(--gray-8);
+    --text-placeholder: var(--gray-7);
+    --text-disabled:    var(--gray-7);
+
+    // Brand accent — indigo-violet
+    --accent:        #6366f1;
+    --accent-hover:  #818cf8;
+    --accent-muted:  #3730a3;
+    --accent-subtle: rgba(99, 102, 241, 0.12);
+    --accent-border: rgba(99, 102, 241, 0.35);
+    --accent-text:   #a5b4fc;
+
+    // Log levels
+    --level-debug-bg:     rgba(71, 85, 105, 0.15);
+    --level-debug-border: rgba(71, 85, 105, 0.35);
+    --level-debug-text:   #94a3b8;
+    --level-debug-dot:    #64748b;
+
+    --level-info-bg:      rgba(59, 130, 246, 0.12);
+    --level-info-border:  rgba(59, 130, 246, 0.30);
+    --level-info-text:    #93c5fd;
+    --level-info-dot:     #3b82f6;
+
+    --level-warn-bg:      rgba(245, 158, 11, 0.12);
+    --level-warn-border:  rgba(245, 158, 11, 0.30);
+    --level-warn-text:    #fcd34d;
+    --level-warn-dot:     #f59e0b;
+
+    --level-error-bg:     rgba(239, 68, 68, 0.12);
+    --level-error-border: rgba(239, 68, 68, 0.28);
+    --level-error-text:   #fca5a5;
+    --level-error-dot:    #ef4444;
+
+    --level-fatal-bg:     rgba(185, 28, 28, 0.20);
+    --level-fatal-border: rgba(220, 38, 38, 0.45);
+    --level-fatal-text:   #fecaca;
+    --level-fatal-dot:    #dc2626;
+
+    // Status
+    --status-success-bg:     rgba(34, 197, 94, 0.12);
+    --status-success-border: rgba(34, 197, 94, 0.30);
+    --status-success-text:   #86efac;
+    --status-success:        #22c55e;
+
+    --status-warning-bg:     rgba(245, 158, 11, 0.12);
+    --status-warning-border: rgba(245, 158, 11, 0.30);
+    --status-warning-text:   #fcd34d;
+    --status-warning:        #f59e0b;
+
+    --status-danger-bg:      rgba(239, 68, 68, 0.12);
+    --status-danger-border:  rgba(239, 68, 68, 0.28);
+    --status-danger-text:    #fca5a5;
+    --status-danger:         #ef4444;
+    --status-danger-hover:   rgba(239, 68, 68, 0.18);
+
+    --status-info-bg:        rgba(59, 130, 246, 0.12);
+    --status-info-border:    rgba(59, 130, 246, 0.30);
+    --status-info-text:      #93c5fd;
+    --status-info:           #3b82f6;
+
+    // Syntax highlight (Dracula-adjacent)
+    --syntax-bg:       #141417;
+    --syntax-comment:  #6272a4;
+    --syntax-string:   #f1fa8c;
+    --syntax-number:   #bd93f9;
+    --syntax-keyword:  #ff79c6;
+    --syntax-function: #50fa7b;
+    --syntax-property: #8be9fd;
+    --syntax-operator: #ff79c6;
+    --syntax-error-hl: rgba(255, 85, 85, 0.25);
+    --syntax-line-hl:  rgba(255, 255, 255, 0.04);
+    --syntax-gutter:   var(--gray-8);
+    --syntax-text:     #f8f8f2;
+
+    // Shadows: dark shadow + lighter border (no big blurry shadows on dark)
+    --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4), 0 0 0 1px var(--border-subtle);
+    --shadow-2: 0 4px 12px rgba(0, 0, 0, 0.5), 0 0 0 1px var(--border-default);
+    --shadow-3: 0 8px 32px rgba(0, 0, 0, 0.6), 0 0 0 1px var(--border-strong);
+
+    // Focus ring (2px outline color, with 2px transparent gap to bg)
+    --focus-ring: 0 0 0 2px var(--bg-base), 0 0 0 4px var(--accent);
+}
+
+// ── Light theme override ─────────────────────────────────────────────
+[data-theme="light"] {
+    --gray-0:  #ffffff;
+    --gray-1:  #fafafa;
+    --gray-2:  #f4f4f5;
+    --gray-3:  #e4e4e7;
+    --gray-4:  #d4d4d8;
+    --gray-5:  #a1a1aa;
+    --gray-6:  #71717a;
+    --gray-7:  #52525b;
+    --gray-8:  #3f3f46;
+    --gray-9:  #27272a;
+    --gray-10: #18181b;
+    --gray-11: #09090b;
+
+    --bg-base:        var(--gray-0);
+    --bg-surface:     var(--gray-1);
+    --bg-raised:      var(--gray-0);
+    --bg-overlay:     var(--gray-0);
+    --surface-hover:  var(--gray-2);
+    --surface-active: var(--gray-3);
+
+    --border-subtle:  var(--gray-3);
+    --border-default: var(--gray-4);
+    --border-strong:  var(--gray-5);
+
+    --text-primary:     var(--gray-11);
+    --text-secondary:   var(--gray-9);
+    --text-muted:       var(--gray-7);
+    --text-placeholder: var(--gray-5);
+    --text-disabled:    var(--gray-5);
+
+    --accent:        #4f46e5;
+    --accent-hover:  #4338ca;
+    --accent-muted:  #e0e7ff;
+    --accent-subtle: rgba(79, 70, 229, 0.08);
+    --accent-border: rgba(79, 70, 229, 0.25);
+    --accent-text:   #4f46e5;
+
+    --level-debug-bg:     rgba(71, 85, 105, 0.08);
+    --level-debug-border: rgba(71, 85, 105, 0.25);
+    --level-debug-text:   #475569;
+    --level-debug-dot:    #64748b;
+
+    --level-info-bg:      rgba(59, 130, 246, 0.08);
+    --level-info-border:  rgba(59, 130, 246, 0.25);
+    --level-info-text:    #2563eb;
+    --level-info-dot:     #3b82f6;
+
+    --level-warn-bg:      rgba(217, 119, 6, 0.10);
+    --level-warn-border:  rgba(217, 119, 6, 0.30);
+    --level-warn-text:    #b45309;
+    --level-warn-dot:     #f59e0b;
+
+    --level-error-bg:     rgba(220, 38, 38, 0.08);
+    --level-error-border: rgba(220, 38, 38, 0.25);
+    --level-error-text:   #dc2626;
+    --level-error-dot:    #ef4444;
+
+    --level-fatal-bg:     rgba(153, 27, 27, 0.12);
+    --level-fatal-border: rgba(185, 28, 28, 0.35);
+    --level-fatal-text:   #991b1b;
+    --level-fatal-dot:    #dc2626;
+
+    --status-success-bg:     rgba(22, 163, 74, 0.08);
+    --status-success-border: rgba(22, 163, 74, 0.25);
+    --status-success-text:   #16a34a;
+    --status-success:        #16a34a;
+
+    --status-warning-bg:     rgba(217, 119, 6, 0.10);
+    --status-warning-border: rgba(217, 119, 6, 0.30);
+    --status-warning-text:   #b45309;
+    --status-warning:        #d97706;
+
+    --status-danger-bg:      rgba(220, 38, 38, 0.08);
+    --status-danger-border:  rgba(220, 38, 38, 0.25);
+    --status-danger-text:    #dc2626;
+    --status-danger:         #dc2626;
+    --status-danger-hover:   rgba(220, 38, 38, 0.12);
+
+    --status-info-bg:        rgba(37, 99, 235, 0.08);
+    --status-info-border:    rgba(37, 99, 235, 0.25);
+    --status-info-text:      #2563eb;
+    --status-info:           #2563eb;
+
+    // Syntax (GitHub-adjacent)
+    --syntax-bg:       #f6f8fa;
+    --syntax-comment:  #6e7781;
+    --syntax-string:   #0a3069;
+    --syntax-number:   #0550ae;
+    --syntax-keyword:  #cf222e;
+    --syntax-function: #8250df;
+    --syntax-property: #0550ae;
+    --syntax-operator: #cf222e;
+    --syntax-error-hl: rgba(207, 34, 46, 0.10);
+    --syntax-line-hl:  rgba(0, 0, 0, 0.04);
+    --syntax-gutter:   #57606a;
+    --syntax-text:     #1f2328;
+
+    --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.06), 0 0 0 1px var(--border-subtle);
+    --shadow-2: 0 4px 12px rgba(0, 0, 0, 0.10), 0 0 0 1px var(--border-default);
+    --shadow-3: 0 8px 32px rgba(0, 0, 0, 0.14), 0 0 0 1px var(--border-strong);
+
+    --focus-ring: 0 0 0 2px var(--bg-base), 0 0 0 4px var(--accent);
+}

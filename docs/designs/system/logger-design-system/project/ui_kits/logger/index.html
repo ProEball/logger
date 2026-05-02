@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Logger — UI Kit</title>
+<link rel="stylesheet" href="../../colors_and_type.css">
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<style>
+  html, body, #root { height: 100%; margin: 0; }
+  body { background: var(--bg-base); font-family: var(--font-sans); -webkit-font-smoothing: antialiased; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel" src="Components.jsx"></script>
+<script type="text/babel" src="AppShell.jsx"></script>
+<script type="text/babel" src="EventsPage.jsx"></script>
+<script type="text/babel" src="EventDrawer.jsx"></script>
+<script type="text/babel" src="DashboardPage.jsx"></script>
+
+<script type="text/babel">
+const PROJECTS = [
+  { id: 'api-gateway', name: 'api-gateway' },
+  { id: 'auth-service', name: 'auth-service' },
+  { id: 'worker-pool', name: 'worker-pool' },
+];
+
+function App() {
+  const [page, setPage] = React.useState('events');
+  const [project, setProject] = React.useState('api-gateway');
+  const [selectedEvent, setSelectedEvent] = React.useState(null);
+  const [showAuth, setShowAuth] = React.useState(false);
+  const [authMode, setAuthMode] = React.useState('login');
+
+  function navigate(p, proj) {
+    setPage(p);
+    if (proj) setProject(proj);
+    setSelectedEvent(null);
+  }
+
+  if (showAuth) {
+    return React.createElement('div', { style: { height: '100vh', background: COLORS.bgBase } },
+      React.createElement(AuthPage, { mode: authMode }),
+      React.createElement('div', {
+        style: {
+          position: 'fixed', bottom: 16, right: 16,
+          display: 'flex', gap: 8,
+        }
+      },
+        React.createElement(Btn, { variant: 'secondary', size: 'sm', onClick: () => { setAuthMode('login'); setShowAuth(true); } }, 'Login view'),
+        React.createElement(Btn, { variant: 'secondary', size: 'sm', onClick: () => { setAuthMode('invite'); setShowAuth(true); } }, 'Invite view'),
+        React.createElement(Btn, { variant: 'primary', size: 'sm', onClick: () => setShowAuth(false) }, '→ Enter app'),
+      )
+    );
+  }
+
+  return React.createElement('div', { style: { height: '100vh', display: 'flex', overflow: 'hidden' } },
+    React.createElement(AppShell, {
+      activePage: page,
+      activeProject: project,
+      projects: PROJECTS,
+      onNavigate: navigate,
+    },
+      React.createElement('div', { style: { display: 'flex', height: '100%', overflow: 'hidden' } },
+        // Main content
+        React.createElement('div', { style: { flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' } },
+          page === 'events'    && React.createElement(EventsPage, {
+            project,
+            selectedEventId: selectedEvent?.id,
+            onSelectEvent: ev => setSelectedEvent(ev?.id === selectedEvent?.id ? null : ev),
+          }),
+          page === 'dashboard' && React.createElement(DashboardPage, null),
+          page === 'alerts'    && React.createElement(AlertsPage, null),
+          page === 'settings'  && React.createElement(SettingsPage, null),
+        ),
+
+        // Event drawer (slides in from right)
+        selectedEvent && page === 'events' && React.createElement(EventDrawer, {
+          event: selectedEvent,
+          onClose: () => setSelectedEvent(null),
+        })
+      )
+    ),
+
+    // Page switcher bar (bottom)
+    React.createElement('div', {
+      style: {
+        position: 'fixed', bottom: 16, left: '50%', transform: 'translateX(-50%)',
+        display: 'flex', gap: 6, padding: '6px 8px',
+        background: COLORS.bgOverlay, border: `1px solid ${COLORS.borderDefault}`,
+        borderRadius: 8, boxShadow: '0 4px 16px rgba(0,0,0,0.5)',
+        zIndex: 500,
+      }
+    },
+      [
+        { id: 'events', label: 'Events', icon: React.createElement(Icons.Filter, { size: 13 }) },
+        { id: 'dashboard', label: 'Dashboard', icon: React.createElement(Icons.BarChart, { size: 13 }) },
+        { id: 'alerts', label: 'Alerts', icon: React.createElement(Icons.Bell, { size: 13 }) },
+        { id: 'settings', label: 'Settings', icon: React.createElement(Icons.Settings, { size: 13 }) },
+      ].map(item =>
+        React.createElement('button', {
+          key: item.id,
+          onClick: () => navigate(item.id, project),
+          style: {
+            display: 'inline-flex', alignItems: 'center', gap: 6,
+            padding: '5px 10px', borderRadius: 5, border: 'none',
+            background: page === item.id ? COLORS.accentSubtle : 'transparent',
+            color: page === item.id ? COLORS.accentText : COLORS.textMuted,
+            cursor: 'pointer', fontSize: 12, fontWeight: page === item.id ? 500 : 400,
+            fontFamily: 'inherit', transition: 'all 100ms',
+            borderColor: page === item.id ? COLORS.accentBorder : 'transparent',
+            boxShadow: page === item.id ? `0 0 0 1px ${COLORS.accentBorder}` : 'none',
+          }
+        },
+          item.icon, item.label
+        )
+      ),
+      React.createElement('div', { style: { width: 1, background: COLORS.borderSubtle, margin: '0 4px', alignSelf: 'stretch' } }),
+      React.createElement('button', {
+        onClick: () => setShowAuth(true),
+        style: {
+          display: 'inline-flex', alignItems: 'center', gap: 6,
+          padding: '5px 10px', borderRadius: 5, border: 'none',
+          background: 'transparent', color: COLORS.textMuted,
+          cursor: 'pointer', fontSize: 12, fontFamily: 'inherit',
+        }
+      }, '→ Auth')
+    )
+  );
+}
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(React.createElement(App));
+</script>
+</body>
+</html>

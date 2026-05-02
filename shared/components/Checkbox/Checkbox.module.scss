@@ -1,0 +1,59 @@
+@use 'app/styles/mixins' as *;
+
+.row {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    cursor: pointer;
+}
+
+.disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
+}
+
+.input {
+    @include sr-only;
+}
+
+.box {
+    width: 15px;
+    height: 15px;
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg-raised);
+    border: 1px solid var(--border-default);
+    border-radius: 3px;
+    transition: var(--transition-colors);
+}
+
+.check {
+    display: block;
+    opacity: 0;
+    transition: opacity var(--duration-fast) var(--ease-out);
+}
+
+.label {
+    font-size: var(--text-sm);
+    color: var(--text-primary);
+    line-height: var(--leading-tight);
+}
+
+.input:checked + .box {
+    background: var(--accent);
+    border-color: var(--accent);
+
+    .check {
+        opacity: 1;
+    }
+}
+
+.input:focus-visible + .box {
+    box-shadow: var(--focus-ring);
+}
+
+.input:disabled + .box {
+    cursor: not-allowed;
+}

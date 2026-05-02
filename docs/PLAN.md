@@ -790,6 +790,12 @@ to start it, not all at once.
 | 2026-05-01 | partman migration is idempotent (`DO $$ ... IF NOT EXISTS ... $$`) | Drizzle migrate may re-run; second `create_parent` would otherwise fail. See feature 03. |
 | 2026-05-01 | Filter parser strips invalid keys instead of erroring the page | Stale share links / typos shouldn't break the screen. See feature 04. |
 | 2026-05-01 | `useEventFilters` resets cursor on every filter change | Stale cursor against new filter set yields confusing empty results; centralized in the hook. See feature 04. |
+| 2026-05-02 | Design system + UI kit as side track, not numbered feature | Cross-cutting infra used by all features; runs interleaved with Foundation. Tracker: `docs/features/design-system.md`. |
+| 2026-05-02 | Dark color tokens emit under `:root, [data-theme="dark"]` (shared block); light is full override | Page renders correctly in dark even before the no-flash inline script (foundation step 37). See `docs/features/design-system.md`. |
+| 2026-05-02 | Bare SCSS imports via `sassOptions.loadPaths = [process.cwd()]` | Mirrors TS `@/*` alias inside `.scss` files; avoids `../../../` chains. See `next.config.ts`. |
+| 2026-05-02 | `@floating-ui/react` for anchor-positioned overlays (Tooltip, Popover, future Combobox/Menu) | Industry standard, flip/shift/arrow/focus built in. Hand-rolling collision detection is the wrong tradeoff at this scope. ~10 KB gzip. |
+| 2026-05-02 | Modal uses native HTML `<dialog>` instead of custom portal/focus-trap | Browser handles focus trap, escape, top-layer stacking, `::backdrop`. No third-party focus-trap lib. See feature 'design-system'. |
+| 2026-05-02 | Toast state in Context (not Redux) for now | Foundation hasn't installed Redux yet; toast queue is isolated UI state, not domain data; refactor to Redux later if shared with other UI is straightforward. |
 
 ---
 

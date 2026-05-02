@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<link rel="stylesheet" href="../colors_and_type.css">
+<style>
+  body { background: var(--bg-base); margin: 0; padding: 16px; font-family: var(--font-sans); }
+  .section-title { font-size: 11px; font-weight: 600; color: var(--text-muted); letter-spacing: 0.08em; text-transform: uppercase; margin: 0 0 12px; }
+  .section { margin-bottom: 20px; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 8px; }
+
+  /* Buttons */
+  .btn { display: inline-flex; align-items: center; gap: 6px; padding: 0 12px; height: 32px; font-size: 13px; font-weight: 500; border-radius: 4px; border: 1px solid transparent; cursor: pointer; font-family: var(--font-sans); transition: var(--transition-colors); white-space: nowrap; }
+  .btn-sm { height: 28px; padding: 0 10px; font-size: 12px; }
+  .btn-primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .btn-primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
+  .btn-secondary { background: transparent; color: var(--text-primary); border-color: var(--border-default); }
+  .btn-secondary:hover { background: var(--surface-hover); }
+  .btn-ghost { background: transparent; color: var(--text-secondary); border-color: transparent; }
+  .btn-ghost:hover { background: var(--surface-hover); color: var(--text-primary); }
+  .btn-danger { background: transparent; color: var(--status-danger-text); border-color: var(--status-danger-border); }
+  .btn-danger:hover { background: var(--status-danger-hover); }
+  .btn-link { background: transparent; color: var(--accent-text); border-color: transparent; padding: 0 4px; text-decoration: underline; text-underline-offset: 2px; }
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .btn-icon { padding: 0; width: 32px; justify-content: center; }
+  .btn-icon-sm { padding: 0; width: 28px; justify-content: center; }
+
+  .divider { width: 1px; height: 24px; background: var(--border-subtle); margin: 0 4px; }
+  .group-label { font-size: 10px; color: var(--text-muted); letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 4px; }
+
+  svg { display: block; }
+</style>
+</head>
+<body>
+
+<div class="section">
+  <div class="section-title">Buttons — Variants (md)</div>
+  <div class="row">
+    <button class="btn btn-primary">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      Create alert
+    </button>
+    <button class="btn btn-secondary">Export</button>
+    <button class="btn btn-ghost">Cancel</button>
+    <button class="btn btn-danger">Delete project</button>
+    <button class="btn btn-link">View docs</button>
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-title">Buttons — Small (sm)</div>
+  <div class="row">
+    <button class="btn btn-primary btn-sm">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      Add filter
+    </button>
+    <button class="btn btn-secondary btn-sm">Edit</button>
+    <button class="btn btn-ghost btn-sm">Dismiss</button>
+    <button class="btn btn-danger btn-sm">Remove</button>
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-title">Icon Buttons + States</div>
+  <div class="row">
+    <div>
+      <div class="group-label">Icon only</div>
+      <div class="row" style="margin-bottom:0">
+        <button class="btn btn-secondary btn-icon" title="Copy">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+        </button>
+        <button class="btn btn-ghost btn-icon" title="Settings">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        </button>
+        <button class="btn btn-ghost btn-icon" title="More" >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>
+        </button>
+        <button class="btn btn-ghost btn-icon" disabled title="Disabled">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+        </button>
+      </div>
+    </div>
+    <div class="divider"></div>
+    <div>
+      <div class="group-label">Disabled state</div>
+      <div class="row" style="margin-bottom:0">
+        <button class="btn btn-primary" disabled>Create alert</button>
+        <button class="btn btn-secondary" disabled>Export</button>
+        <button class="btn btn-danger" disabled>Delete</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

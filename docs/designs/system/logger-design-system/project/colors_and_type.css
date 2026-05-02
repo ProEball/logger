@@ -1,0 +1,421 @@
+/*
+ * Logger Design System — Design Tokens
+ * All tokens as CSS custom properties.
+ * Dark theme is :root default. Light theme via [data-theme="light"].
+ *
+ * Font stacks use Geist (loaded from Google Fonts / CDN if available),
+ * falling back to Inter, then system sans / mono.
+ */
+
+/* ─────────────────────────────────────────────
+   FONTS
+───────────────────────────────────────────── */
+@import url('https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap');
+
+:root {
+  --font-sans: 'Geist', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono: 'Geist Mono', 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+}
+
+/* ─────────────────────────────────────────────
+   DARK THEME (default)
+───────────────────────────────────────────── */
+:root {
+  /* ── Neutral scale (12 steps, dark) ──────── */
+  --gray-0:  #0d0d0f;   /* page background */
+  --gray-1:  #111114;   /* base surface */
+  --gray-2:  #18181c;   /* raised surface */
+  --gray-3:  #1e1e23;   /* overlay surface */
+  --gray-4:  #26262d;   /* subtle border */
+  --gray-5:  #2e2e37;   /* default border */
+  --gray-6:  #3a3a45;   /* strong border / dividers */
+  --gray-7:  #4d4d5c;   /* muted icon */
+  --gray-8:  #6b6b7e;   /* placeholder text */
+  --gray-9:  #8e8ea0;   /* secondary text */
+  --gray-10: #b8b8cc;   /* primary text muted */
+  --gray-11: #e8e8f0;   /* high-contrast text */
+
+  /* ── Semantic surface tokens ─────────────── */
+  --bg-base:          var(--gray-0);
+  --bg-surface:       var(--gray-1);
+  --bg-raised:        var(--gray-2);
+  --bg-overlay:       var(--gray-3);
+  --surface-hover:    var(--gray-2);
+  --surface-active:   var(--gray-3);
+
+  /* ── Semantic border tokens ──────────────── */
+  --border-subtle:    var(--gray-4);
+  --border-default:   var(--gray-5);
+  --border-strong:    var(--gray-6);
+
+  /* ── Semantic text tokens ────────────────── */
+  --text-primary:     var(--gray-11);
+  --text-secondary:   var(--gray-9);
+  --text-muted:       var(--gray-8);
+  --text-placeholder: var(--gray-7);
+  --text-disabled:    var(--gray-7);
+
+  /* ── Brand accent: Indigo-violet ─────────── */
+  /* Rationale: cool, technical, not red/orange (reserved for errors).
+     Sits between blue (too generic) and purple (too playful).
+     Good contrast on dark surfaces. Distinct from info blue. */
+  --accent:           #6366f1;   /* primary brand */
+  --accent-hover:     #818cf8;   /* hover / lighter */
+  --accent-muted:     #3730a3;   /* very subtle bg tint */
+  --accent-subtle:    rgba(99, 102, 241, 0.12); /* bg fill */
+  --accent-border:    rgba(99, 102, 241, 0.35); /* border in accent context */
+  --accent-text:      #a5b4fc;   /* text on dark bg */
+
+  /* ── Log level colors ────────────────────── */
+  /* debug: muted blue-gray — low salience, barely there */
+  --level-debug-bg:   rgba(71, 85, 105, 0.15);
+  --level-debug-border: rgba(71, 85, 105, 0.35);
+  --level-debug-text: #94a3b8;
+  --level-debug-dot:  #64748b;
+
+  /* info: neutral blue — standard informational */
+  --level-info-bg:    rgba(59, 130, 246, 0.12);
+  --level-info-border: rgba(59, 130, 246, 0.30);
+  --level-info-text:  #93c5fd;
+  --level-info-dot:   #3b82f6;
+
+  /* warn: amber — caution, attention needed */
+  --level-warn-bg:    rgba(245, 158, 11, 0.12);
+  --level-warn-border: rgba(245, 158, 11, 0.30);
+  --level-warn-text:  #fcd34d;
+  --level-warn-dot:   #f59e0b;
+
+  /* error: red — something broke */
+  --level-error-bg:   rgba(239, 68, 68, 0.12);
+  --level-error-border: rgba(239, 68, 68, 0.28);
+  --level-error-text: #fca5a5;
+  --level-error-dot:  #ef4444;
+
+  /* fatal: deeper saturated red — distinguishable from error at a glance */
+  --level-fatal-bg:   rgba(185, 28, 28, 0.20);
+  --level-fatal-border: rgba(220, 38, 38, 0.45);
+  --level-fatal-text: #fecaca;
+  --level-fatal-dot:  #dc2626;
+
+  /* ── Status colors ───────────────────────── */
+  --status-success-bg:     rgba(34, 197, 94, 0.12);
+  --status-success-border: rgba(34, 197, 94, 0.30);
+  --status-success-text:   #86efac;
+  --status-success:        #22c55e;
+
+  --status-warning-bg:     rgba(245, 158, 11, 0.12);
+  --status-warning-border: rgba(245, 158, 11, 0.30);
+  --status-warning-text:   #fcd34d;
+  --status-warning:        #f59e0b;
+
+  --status-danger-bg:      rgba(239, 68, 68, 0.12);
+  --status-danger-border:  rgba(239, 68, 68, 0.28);
+  --status-danger-text:    #fca5a5;
+  --status-danger:         #ef4444;
+  --status-danger-hover:   rgba(239, 68, 68, 0.18);
+
+  --status-info-bg:        rgba(59, 130, 246, 0.12);
+  --status-info-border:    rgba(59, 130, 246, 0.30);
+  --status-info-text:      #93c5fd;
+  --status-info:           #3b82f6;
+
+  /* ── Syntax highlight (dark, Dracula-adjacent) ── */
+  --syntax-bg:         #141417;
+  --syntax-comment:    #6272a4;
+  --syntax-string:     #f1fa8c;
+  --syntax-number:     #bd93f9;
+  --syntax-keyword:    #ff79c6;
+  --syntax-function:   #50fa7b;
+  --syntax-property:   #8be9fd;
+  --syntax-operator:   #ff79c6;
+  --syntax-error-hl:   rgba(255, 85, 85, 0.25);
+  --syntax-line-hl:    rgba(255, 255, 255, 0.04);
+  --syntax-gutter:     var(--gray-8);
+  --syntax-text:       #f8f8f2;
+
+  /* ── Shadows (dark: dark shadow + lighter border) ── */
+  /* Rationale: huge blurry shadows don't work on dark; border contrast does */
+  --shadow-1: 0 1px 2px rgba(0,0,0,0.4), 0 0 0 1px var(--border-subtle);
+  --shadow-2: 0 4px 12px rgba(0,0,0,0.5), 0 0 0 1px var(--border-default);
+  --shadow-3: 0 8px 32px rgba(0,0,0,0.6), 0 0 0 1px var(--border-strong);
+
+  /* ── Focus ring ──────────────────────────── */
+  --focus-ring: 0 0 0 2px var(--bg-base), 0 0 0 4px var(--accent);
+}
+
+/* ─────────────────────────────────────────────
+   LIGHT THEME
+───────────────────────────────────────────── */
+[data-theme="light"] {
+  --gray-0:  #ffffff;
+  --gray-1:  #fafafa;
+  --gray-2:  #f4f4f5;
+  --gray-3:  #e4e4e7;
+  --gray-4:  #d4d4d8;
+  --gray-5:  #a1a1aa;
+  --gray-6:  #71717a;
+  --gray-7:  #52525b;
+  --gray-8:  #3f3f46;
+  --gray-9:  #27272a;
+  --gray-10: #18181b;
+  --gray-11: #09090b;
+
+  --bg-base:          var(--gray-0);
+  --bg-surface:       var(--gray-1);
+  --bg-raised:        var(--gray-0);
+  --bg-overlay:       var(--gray-0);
+  --surface-hover:    var(--gray-2);
+  --surface-active:   var(--gray-3);
+
+  --border-subtle:    var(--gray-3);
+  --border-default:   var(--gray-4);
+  --border-strong:    var(--gray-5);
+
+  --text-primary:     var(--gray-11);
+  --text-secondary:   var(--gray-9);
+  --text-muted:       var(--gray-7);
+  --text-placeholder: var(--gray-5);
+  --text-disabled:    var(--gray-5);
+
+  --accent:           #4f46e5;
+  --accent-hover:     #4338ca;
+  --accent-muted:     #e0e7ff;
+  --accent-subtle:    rgba(79, 70, 229, 0.08);
+  --accent-border:    rgba(79, 70, 229, 0.25);
+  --accent-text:      #4f46e5;
+
+  /* Log levels — light theme */
+  --level-debug-bg:   rgba(71, 85, 105, 0.08);
+  --level-debug-border: rgba(71, 85, 105, 0.25);
+  --level-debug-text: #475569;
+
+  --level-info-bg:    rgba(59, 130, 246, 0.08);
+  --level-info-border: rgba(59, 130, 246, 0.25);
+  --level-info-text:  #2563eb;
+
+  --level-warn-bg:    rgba(217, 119, 6, 0.10);
+  --level-warn-border: rgba(217, 119, 6, 0.30);
+  --level-warn-text:  #b45309;
+
+  --level-error-bg:   rgba(220, 38, 38, 0.08);
+  --level-error-border: rgba(220, 38, 38, 0.25);
+  --level-error-text: #dc2626;
+
+  --level-fatal-bg:   rgba(153, 27, 27, 0.12);
+  --level-fatal-border: rgba(185, 28, 28, 0.35);
+  --level-fatal-text: #991b1b;
+
+  /* Status — light */
+  --status-success-bg:     rgba(22, 163, 74, 0.08);
+  --status-success-border: rgba(22, 163, 74, 0.25);
+  --status-success-text:   #16a34a;
+  --status-success:        #16a34a;
+
+  --status-warning-bg:     rgba(217, 119, 6, 0.10);
+  --status-warning-border: rgba(217, 119, 6, 0.30);
+  --status-warning-text:   #b45309;
+  --status-warning:        #d97706;
+
+  --status-danger-bg:      rgba(220, 38, 38, 0.08);
+  --status-danger-border:  rgba(220, 38, 38, 0.25);
+  --status-danger-text:    #dc2626;
+  --status-danger:         #dc2626;
+  --status-danger-hover:   rgba(220, 38, 38, 0.12);
+
+  --status-info-bg:        rgba(37, 99, 235, 0.08);
+  --status-info-border:    rgba(37, 99, 235, 0.25);
+  --status-info-text:      #2563eb;
+  --status-info:           #2563eb;
+
+  /* Syntax (GitHub-adjacent) */
+  --syntax-bg:        #f6f8fa;
+  --syntax-comment:   #6e7781;
+  --syntax-string:    #0a3069;
+  --syntax-number:    #0550ae;
+  --syntax-keyword:   #cf222e;
+  --syntax-function:  #8250df;
+  --syntax-property:  #0550ae;
+  --syntax-operator:  #cf222e;
+  --syntax-error-hl:  rgba(207, 34, 46, 0.10);
+  --syntax-line-hl:   rgba(0,0,0,0.04);
+  --syntax-gutter:    #57606a;
+  --syntax-text:      #1f2328;
+
+  --shadow-1: 0 1px 2px rgba(0,0,0,0.06), 0 0 0 1px var(--border-subtle);
+  --shadow-2: 0 4px 12px rgba(0,0,0,0.10), 0 0 0 1px var(--border-default);
+  --shadow-3: 0 8px 32px rgba(0,0,0,0.14), 0 0 0 1px var(--border-strong);
+
+  --focus-ring: 0 0 0 2px var(--bg-base), 0 0 0 4px var(--accent);
+}
+
+/* ─────────────────────────────────────────────
+   TYPOGRAPHY SCALE
+───────────────────────────────────────────── */
+:root {
+  /* Font size scale */
+  --text-xs:   12px;   /* timestamps, captions, helper text */
+  --text-sm:   13px;   /* default body, table cells */
+  --text-base: 14px;   /* slightly larger body, modals */
+  --text-md:   15px;   /* section headings in content */
+  --text-lg:   16px;   /* page headings, drawer titles */
+  --text-xl:   18px;   /* card KPI labels */
+  --text-2xl:  22px;   /* page-level headings */
+  --text-3xl:  28px;   /* dashboard stat values */
+
+  /* Font weights */
+  --weight-regular:  400;
+  --weight-medium:   500;
+  --weight-semibold: 600;
+
+  /* Line heights */
+  --leading-none:    1;
+  --leading-tight:   1.25;   /* headings */
+  --leading-snug:    1.375;  /* subheadings */
+  --leading-normal:  1.5;    /* body text */
+  --leading-relaxed: 1.625;  /* long-form prose in drawers */
+
+  /* Letter spacing */
+  --tracking-tight:  -0.02em;
+  --tracking-normal:  0;
+  --tracking-wide:    0.04em;  /* badges, labels, all-caps */
+  --tracking-wider:   0.08em;
+}
+
+/* Semantic type tokens */
+:root {
+  --type-h1: var(--weight-semibold) var(--text-2xl)/var(--leading-tight) var(--font-sans);
+  --type-h2: var(--weight-semibold) var(--text-xl)/var(--leading-tight) var(--font-sans);
+  --type-h3: var(--weight-medium) var(--text-lg)/var(--leading-snug) var(--font-sans);
+  --type-h4: var(--weight-medium) var(--text-md)/var(--leading-snug) var(--font-sans);
+  --type-body-sm: var(--weight-regular) var(--text-sm)/var(--leading-normal) var(--font-sans);
+  --type-body: var(--weight-regular) var(--text-base)/var(--leading-normal) var(--font-sans);
+  --type-label: var(--weight-medium) var(--text-sm)/var(--leading-tight) var(--font-sans);
+  --type-caption: var(--weight-regular) var(--text-xs)/var(--leading-normal) var(--font-sans);
+  --type-code: var(--weight-regular) var(--text-sm)/var(--leading-relaxed) var(--font-mono);
+  --type-code-sm: var(--weight-regular) var(--text-xs)/var(--leading-normal) var(--font-mono);
+}
+
+/* ─────────────────────────────────────────────
+   SPACING SCALE (4px base)
+───────────────────────────────────────────── */
+:root {
+  --space-0:   0px;
+  --space-0-5: 2px;
+  --space-1:   4px;
+  --space-1-5: 6px;
+  --space-2:   8px;
+  --space-3:   12px;
+  --space-4:   16px;
+  --space-5:   20px;
+  --space-6:   24px;
+  --space-8:   32px;
+  --space-10:  40px;
+  --space-12:  48px;
+  --space-16:  64px;
+
+  /* Common layout measurements */
+  --sidebar-width:          240px;
+  --sidebar-collapsed-width: 56px;
+  --topbar-height:           48px;
+  --drawer-width:            520px;
+  --table-row-height:        34px;
+  --input-height-sm:         28px;
+  --input-height-md:         32px;
+}
+
+/* ─────────────────────────────────────────────
+   BORDER RADII
+───────────────────────────────────────────── */
+:root {
+  /* Rationale: sharp radii (4px) feel technical, like CLI tools / code editors.
+     Rounder only for larger surfaces where hard corners feel harsh. */
+  --radius-none: 0px;
+  --radius-sm:   4px;   /* inputs, buttons, badges, chips, tags */
+  --radius-md:   6px;   /* cards, panels */
+  --radius-lg:   8px;   /* modals, popovers, drawers */
+  --radius-full: 9999px; /* only for pill-style things if needed */
+}
+
+/* ─────────────────────────────────────────────
+   MOTION / TRANSITIONS
+───────────────────────────────────────────── */
+:root {
+  --duration-fast:   100ms;  /* hover bg color */
+  --duration-base:   150ms;  /* most interactions */
+  --duration-medium: 200ms;  /* dropdowns, popovers */
+  --duration-slow:   250ms;  /* modals, drawers */
+
+  --ease-out:     cubic-bezier(0.0, 0.0, 0.2, 1);
+  --ease-in:      cubic-bezier(0.4, 0.0, 1, 1);
+  --ease-in-out:  cubic-bezier(0.4, 0.0, 0.2, 1);
+
+  --transition-base:   all var(--duration-base) var(--ease-out);
+  --transition-colors: background-color var(--duration-fast) var(--ease-out),
+                       border-color var(--duration-fast) var(--ease-out),
+                       color var(--duration-fast) var(--ease-out);
+}
+
+/* Reduced motion override */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --duration-fast:   0ms;
+    --duration-base:   0ms;
+    --duration-medium: 0ms;
+    --duration-slow:   0ms;
+  }
+}
+
+/* ─────────────────────────────────────────────
+   Z-INDEX SCALE
+───────────────────────────────────────────── */
+:root {
+  --z-base:     0;
+  --z-raised:   1;       /* inline raised elements (cards, badges) */
+  --z-sticky:   10;      /* sticky table header, topbar */
+  --z-dropdown: 100;     /* dropdowns, filter menus */
+  --z-popover:  200;     /* popovers, tooltips */
+  --z-drawer:   300;     /* side drawers */
+  --z-modal:    400;     /* modal dialogs */
+  --z-toast:    500;     /* toast notifications */
+  --z-tooltip:  600;     /* always-on-top tooltips */
+}
+
+/* ─────────────────────────────────────────────
+   BASE RESET / GLOBAL DEFAULTS
+───────────────────────────────────────────── */
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+body {
+  background: var(--bg-base);
+  color: var(--text-primary);
+  font: var(--type-body-sm);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+code, pre, kbd, samp {
+  font-family: var(--font-mono);
+}
+
+/* ─────────────────────────────────────────────
+   UTILITY CLASSES (minimal; prefer tokens directly)
+───────────────────────────────────────────── */
+.text-primary    { color: var(--text-primary); }
+.text-secondary  { color: var(--text-secondary); }
+.text-muted      { color: var(--text-muted); }
+.text-accent     { color: var(--accent-text); }
+.text-mono       { font-family: var(--font-mono); }
+
+.surface-base    { background: var(--bg-base); }
+.surface-raised  { background: var(--bg-raised); border: 1px solid var(--border-subtle); }
+.surface-overlay { background: var(--bg-overlay); border: 1px solid var(--border-default); }
+
+/* Log level text utilities */
+.level-debug { color: var(--level-debug-text); }
+.level-info  { color: var(--level-info-text); }
+.level-warn  { color: var(--level-warn-text); }
+.level-error { color: var(--level-error-text); }
+.level-fatal { color: var(--level-fatal-text); }

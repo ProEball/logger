@@ -1,0 +1,29 @@
+.field {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+}
+
+.label {
+    font-size: var(--text-xs);
+    font-weight: var(--weight-medium);
+    color: var(--text-secondary);
+    line-height: var(--leading-tight);
+}
+
+.required {
+    margin-left: 2px;
+    color: var(--status-danger-text);
+}
+
+.helper {
+    font-size: 11px;
+    color: var(--text-muted);
+    line-height: var(--leading-normal);
+}
+
+.error {
+    font-size: 11px;
+    color: var(--status-danger-text);
+    line-height: var(--leading-normal);
+}

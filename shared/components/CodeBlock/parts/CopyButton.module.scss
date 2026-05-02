@@ -1,0 +1,27 @@
+.btn {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    font-size: 11px;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 3px var(--space-1-5);
+    border-radius: var(--radius-sm);
+    border: 1px solid transparent;
+    background: transparent;
+    font-family: var(--font-sans);
+    transition: background-color var(--duration-fast) var(--ease-out),
+        color var(--duration-fast) var(--ease-out),
+        border-color var(--duration-fast) var(--ease-out);
+
+    &:hover {
+        background: var(--bg-overlay);
+        border-color: var(--border-subtle);
+        color: var(--text-secondary);
+    }
+
+    &:focus-visible {
+        outline: none;
+        box-shadow: var(--focus-ring);
+    }
+}

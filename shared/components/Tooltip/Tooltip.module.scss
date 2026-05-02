@@ -1,0 +1,21 @@
+.tooltip {
+    z-index: var(--z-tooltip);
+    background: var(--bg-overlay);
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-sm);
+    padding: 5px var(--space-2);
+    font-size: 11px;
+    color: var(--text-secondary);
+    white-space: nowrap;
+    box-shadow: var(--shadow-2);
+    pointer-events: none;
+    max-width: 280px;
+}
+
+.arrow {
+    fill: var(--bg-overlay);
+
+    & [stroke] {
+        stroke: var(--border-default);
+    }
+}

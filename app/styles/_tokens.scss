@@ -1,0 +1,114 @@
+// Logger Design System — non-themed tokens
+// Source: docs/designs/system/logger-design-system/project/colors_and_type.css
+// Themed tokens (colors, shadows, focus ring) live in _themes.scss.
+
+:root {
+    // ── Fonts ────────────────────────────────────────────────────────
+    // --font-geist-sans / --font-geist-mono are exposed by next/font in app/layout.tsx
+    --font-sans: var(--font-geist-sans), 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    --font-mono: var(--font-geist-mono), 'JetBrains Mono', 'Fira Code', 'Cascadia Code', ui-monospace, monospace;
+
+    // ── Typography scale ────────────────────────────────────────────
+    --text-xs:   12px;   // timestamps, captions, helper text
+    --text-sm:   13px;   // default body, table cells
+    --text-base: 14px;   // slightly larger body, modals
+    --text-md:   15px;   // section headings in content
+    --text-lg:   16px;   // page headings, drawer titles
+    --text-xl:   18px;   // card KPI labels
+    --text-2xl:  22px;   // page-level headings
+    --text-3xl:  28px;   // dashboard stat values
+
+    --weight-regular:  400;
+    --weight-medium:   500;
+    --weight-semibold: 600;
+
+    --leading-none:    1;
+    --leading-tight:   1.25;
+    --leading-snug:    1.375;
+    --leading-normal:  1.5;
+    --leading-relaxed: 1.625;
+
+    --tracking-tight:  -0.02em;
+    --tracking-normal: 0;
+    --tracking-wide:   0.04em;
+    --tracking-wider:  0.08em;
+
+    // Semantic type shorthand tokens
+    --type-h1:      var(--weight-semibold) var(--text-2xl) / var(--leading-tight) var(--font-sans);
+    --type-h2:      var(--weight-semibold) var(--text-xl)  / var(--leading-tight) var(--font-sans);
+    --type-h3:      var(--weight-medium)   var(--text-lg)  / var(--leading-snug)  var(--font-sans);
+    --type-h4:      var(--weight-medium)   var(--text-md)  / var(--leading-snug)  var(--font-sans);
+    --type-body-sm: var(--weight-regular)  var(--text-sm)  / var(--leading-normal) var(--font-sans);
+    --type-body:    var(--weight-regular)  var(--text-base)/ var(--leading-normal) var(--font-sans);
+    --type-label:   var(--weight-medium)   var(--text-sm)  / var(--leading-tight) var(--font-sans);
+    --type-caption: var(--weight-regular)  var(--text-xs)  / var(--leading-normal) var(--font-sans);
+    --type-code:    var(--weight-regular)  var(--text-sm)  / var(--leading-relaxed) var(--font-mono);
+    --type-code-sm: var(--weight-regular)  var(--text-xs)  / var(--leading-normal) var(--font-mono);
+
+    // ── Spacing (4px base) ───────────────────────────────────────────
+    --space-0:   0px;
+    --space-0-5: 2px;
+    --space-1:   4px;
+    --space-1-5: 6px;
+    --space-2:   8px;
+    --space-3:   12px;
+    --space-4:   16px;
+    --space-5:   20px;
+    --space-6:   24px;
+    --space-8:   32px;
+    --space-10:  40px;
+    --space-12:  48px;
+    --space-16:  64px;
+
+    // ── Layout primitives ────────────────────────────────────────────
+    --sidebar-width:           240px;
+    --sidebar-collapsed-width: 56px;
+    --topbar-height:           48px;
+    --drawer-width:            520px;
+    --table-row-height:        34px;
+    --input-height-sm:         28px;
+    --input-height-md:         32px;
+
+    // ── Radii ────────────────────────────────────────────────────────
+    --radius-none: 0px;
+    --radius-sm:   4px;   // inputs, buttons, badges, chips
+    --radius-md:   6px;   // cards, panels
+    --radius-lg:   8px;   // modals, popovers, drawers
+    --radius-full: 9999px;
+
+    // ── Motion ───────────────────────────────────────────────────────
+    --duration-fast:   100ms;
+    --duration-base:   150ms;
+    --duration-medium: 200ms;
+    --duration-slow:   250ms;
+
+    --ease-out:    cubic-bezier(0.0, 0.0, 0.2, 1);
+    --ease-in:     cubic-bezier(0.4, 0.0, 1,   1);
+    --ease-in-out: cubic-bezier(0.4, 0.0, 0.2, 1);
+
+    --transition-base:   all var(--duration-base) var(--ease-out);
+    --transition-colors: background-color var(--duration-fast) var(--ease-out),
+                         border-color var(--duration-fast) var(--ease-out),
+                         color var(--duration-fast) var(--ease-out);
+
+    // ── Z-index ──────────────────────────────────────────────────────
+    --z-base:     0;
+    --z-raised:   1;
+    --z-sticky:   10;
+    --z-dropdown: 100;
+    --z-popover:  200;
+    --z-drawer:   300;
+    --z-modal:    400;
+    --z-toast:    500;
+    --z-tooltip:  600;
+}
+
+// ── Reduced motion override ─────────────────────────────────────────
+@media (prefers-reduced-motion: reduce) {
+    :root {
+        --duration-fast:   0ms;
+        --duration-base:   0ms;
+        --duration-medium: 0ms;
+        --duration-slow:   0ms;
+    }
+}
