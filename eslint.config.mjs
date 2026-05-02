@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Design system handoff bundle from claude.ai/design — reference, not our code.
+    "docs/designs/**",
   ]),
 ]);
 

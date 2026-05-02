@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<link rel="stylesheet" href="../colors_and_type.css">
+<style>
+  body { background: var(--bg-base); margin: 0; padding: 16px; font-family: var(--font-sans); }
+  .section-title { font-size: 11px; font-weight: 600; color: var(--text-muted); letter-spacing: 0.08em; text-transform: uppercase; margin: 0 0 10px; }
+  .code-block { background: var(--syntax-bg); border: 1px solid var(--border-subtle); border-radius: 6px; padding: 14px 16px; font-family: var(--font-mono); font-size: 12px; line-height: 1.7; margin-bottom: 12px; }
+  .palette { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 16px; }
+  .token { display: flex; align-items: center; gap: 6px; padding: 4px 8px; background: var(--bg-raised); border: 1px solid var(--border-subtle); border-radius: 4px; }
+  .dot { width: 12px; height: 12px; border-radius: 3px; flex-shrink: 0; }
+  .tname { font-size: 11px; font-weight: 500; color: var(--text-secondary); }
+  .thex { font-size: 10px; color: var(--text-muted); font-family: var(--font-mono); }
+</style>
+</head>
+<body>
+<div class="section-title">Syntax Highlight — Dark (Dracula-adjacent)</div>
+<div class="palette">
+  <div class="token"><div class="dot" style="background:#6272a4"></div><span class="tname">comment</span><span class="thex">#6272a4</span></div>
+  <div class="token"><div class="dot" style="background:#f1fa8c"></div><span class="tname">string</span><span class="thex">#f1fa8c</span></div>
+  <div class="token"><div class="dot" style="background:#bd93f9"></div><span class="tname">number</span><span class="thex">#bd93f9</span></div>
+  <div class="token"><div class="dot" style="background:#ff79c6"></div><span class="tname">keyword</span><span class="thex">#ff79c6</span></div>
+  <div class="token"><div class="dot" style="background:#50fa7b"></div><span class="tname">function</span><span class="thex">#50fa7b</span></div>
+  <div class="token"><div class="dot" style="background:#8be9fd"></div><span class="tname">property</span><span class="thex">#8be9fd</span></div>
+</div>
+<div class="code-block">
+<span style="color:#6272a4">// Stack trace frame — TypeError</span><br>
+<span style="color:#ff79c6">at</span> <span style="color:#50fa7b">processRequest</span><span style="color:#f8f8f2"> (</span><span style="color:#f1fa8c">app/handlers/events.ts</span><span style="color:#f8f8f2">:</span><span style="color:#bd93f9">142</span><span style="color:#f8f8f2">:</span><span style="color:#bd93f9">18</span><span style="color:#f8f8f2">)</span><br>
+<span style="color:#ff79c6">at</span> <span style="color:#50fa7b">Router.handle</span><span style="color:#f8f8f2"> (</span><span style="color:#f1fa8c">node_modules/express/lib/router/index.js</span><span style="color:#f8f8f2">:</span><span style="color:#bd93f9">284</span><span style="color:#f8f8f2">)</span><br>
+<br>
+<span style="color:#6272a4">// Event attributes JSON</span><br>
+<span style="color:#f8f8f2">{</span><br>
+&nbsp;&nbsp;<span style="color:#8be9fd">"request_id"</span><span style="color:#f8f8f2">: </span><span style="color:#f1fa8c">"req_01HX7K2M3N4P5Q6R7S8T9"</span><span style="color:#f8f8f2">,</span><br>
+&nbsp;&nbsp;<span style="color:#8be9fd">"status_code"</span><span style="color:#f8f8f2">: </span><span style="color:#bd93f9">500</span><span style="color:#f8f8f2">,</span><br>
+&nbsp;&nbsp;<span style="color:#8be9fd">"duration_ms"</span><span style="color:#f8f8f2">: </span><span style="color:#bd93f9">1843</span><br>
+<span style="color:#f8f8f2">}</span>
+</div>
+</body>
+</html>

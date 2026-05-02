@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<link rel="stylesheet" href="../colors_and_type.css">
+<style>
+  body { background: var(--bg-base); margin: 0; padding: 16px; font-family: var(--font-sans); }
+  .section-title { font-size: 11px; font-weight: 600; color: var(--text-muted); letter-spacing: 0.08em; text-transform: uppercase; margin: 0 0 10px; }
+  .levels { display: flex; flex-direction: column; gap: 6px; }
+  .level-row { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 4px; border: 1px solid transparent; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .badge { display: inline-flex; align-items: center; padding: 2px 7px; border-radius: 4px; font-size: 11px; font-weight: 600; letter-spacing: 0.04em; border: 1px solid transparent; font-family: var(--font-sans); text-transform: uppercase; }
+  .msg { font-family: var(--font-mono); font-size: 12px; flex: 1; }
+  .tokens { font-size: 10px; color: var(--text-muted); font-family: var(--font-mono); margin-left: auto; text-align: right; line-height: 1.6; }
+  .debug-row  { background: var(--level-debug-bg);  border-color: var(--level-debug-border); }
+  .info-row   { background: var(--level-info-bg);   border-color: var(--level-info-border); }
+  .warn-row   { background: var(--level-warn-bg);   border-color: var(--level-warn-border); }
+  .error-row  { background: var(--level-error-bg);  border-color: var(--level-error-border); }
+  .fatal-row  { background: var(--level-fatal-bg);  border-color: var(--level-fatal-border); }
+</style>
+</head>
+<body>
+<div class="section-title">Log Level Colors</div>
+<div class="levels">
+  <div class="level-row debug-row">
+    <div class="dot" style="background:var(--level-debug-dot)"></div>
+    <span class="badge" style="background:var(--level-debug-bg);border-color:var(--level-debug-border);color:var(--level-debug-text)">DEBUG</span>
+    <span class="msg" style="color:var(--level-debug-text)">Initialized connection pool with 10 workers</span>
+    <span class="tokens">--level-debug-*<br>#64748b · #94a3b8</span>
+  </div>
+  <div class="level-row info-row">
+    <div class="dot" style="background:var(--level-info-dot)"></div>
+    <span class="badge" style="background:var(--level-info-bg);border-color:var(--level-info-border);color:var(--level-info-text)">INFO</span>
+    <span class="msg" style="color:var(--level-info-text)">Server started on port 3000</span>
+    <span class="tokens">--level-info-*<br>#3b82f6 · #93c5fd</span>
+  </div>
+  <div class="level-row warn-row">
+    <div class="dot" style="background:var(--level-warn-dot)"></div>
+    <span class="badge" style="background:var(--level-warn-bg);border-color:var(--level-warn-border);color:var(--level-warn-text)">WARN</span>
+    <span class="msg" style="color:var(--level-warn-text)">Rate limit approaching: 87% of quota used</span>
+    <span class="tokens">--level-warn-*<br>#f59e0b · #fcd34d</span>
+  </div>
+  <div class="level-row error-row">
+    <div class="dot" style="background:var(--level-error-dot)"></div>
+    <span class="badge" style="background:var(--level-error-bg);border-color:var(--level-error-border);color:var(--level-error-text)">ERROR</span>
+    <span class="msg" style="color:var(--level-error-text)">Failed to connect to database: connection timeout</span>
+    <span class="tokens">--level-error-*<br>#ef4444 · #fca5a5</span>
+  </div>
+  <div class="level-row fatal-row">
+    <div class="dot" style="background:var(--level-fatal-dot)"></div>
+    <span class="badge" style="background:var(--level-fatal-bg);border-color:var(--level-fatal-border);color:var(--level-fatal-text)">FATAL</span>
+    <span class="msg" style="color:var(--level-fatal-text)">Unhandled exception: segmentation fault in worker process</span>
+    <span class="tokens">--level-fatal-*<br>#dc2626 · #fecaca</span>
+  </div>
+</div>
+</body>
+</html>

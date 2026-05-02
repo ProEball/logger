@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<link rel="stylesheet" href="../colors_and_type.css">
+<style>
+  body { background: var(--bg-base); margin: 0; padding: 14px; font-family: var(--font-sans); display: flex; gap: 12px; flex-wrap: wrap; }
+
+  /* Toast */
+  .toast { display: flex; align-items: flex-start; gap: 10px; padding: 12px 14px; background: var(--bg-overlay); border: 1px solid var(--border-default); border-radius: 6px; box-shadow: var(--shadow-2); width: 300px; }
+  .toast-icon { flex-shrink: 0; margin-top: 1px; }
+  .toast-title { font-size: 13px; font-weight: 500; color: var(--text-primary); margin-bottom: 2px; }
+  .toast-body { font-size: 12px; color: var(--text-secondary); }
+  .toast-close { margin-left: auto; color: var(--text-muted); cursor: pointer; flex-shrink: 0; }
+  .toast-close:hover { color: var(--text-primary); }
+  .toast.success { border-color: var(--status-success-border); }
+  .toast.danger  { border-color: var(--status-danger-border); }
+
+  /* Tooltip */
+  .tooltip-wrap { position: relative; display: inline-flex; }
+  .tooltip { position: absolute; bottom: calc(100% + 6px); left: 50%; transform: translateX(-50%); background: var(--bg-overlay); border: 1px solid var(--border-default); border-radius: 4px; padding: 5px 8px; font-size: 11px; color: var(--text-secondary); white-space: nowrap; box-shadow: var(--shadow-2); pointer-events: none; }
+  .tooltip::after { content: ''; position: absolute; top: 100%; left: 50%; transform: translateX(-50%); border: 5px solid transparent; border-top-color: var(--border-default); }
+
+  .btn { display: inline-flex; align-items: center; gap: 6px; padding: 0 12px; height: 32px; font-size: 13px; font-weight: 500; border-radius: 4px; border: 1px solid var(--border-default); cursor: pointer; font-family: var(--font-sans); background: var(--bg-raised); color: var(--text-primary); }
+
+  /* Popover */
+  .popover { background: var(--bg-overlay); border: 1px solid var(--border-default); border-radius: 6px; box-shadow: var(--shadow-2); width: 220px; overflow: hidden; }
+  .popover-header { padding: 10px 12px 8px; border-bottom: 1px solid var(--border-subtle); }
+  .popover-title { font-size: 13px; font-weight: 500; color: var(--text-primary); }
+  .popover-body { padding: 10px 12px; font-size: 12px; color: var(--text-secondary); line-height: 1.5; }
+  .popover-footer { padding: 8px 12px; border-top: 1px solid var(--border-subtle); display: flex; gap: 6px; justify-content: flex-end; }
+  .btn-sm { height: 26px; padding: 0 10px; font-size: 12px; }
+  .btn-primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .btn-ghost { background: transparent; color: var(--text-secondary); border-color: transparent; }
+
+  .section-label { font-size: 10px; font-weight: 600; color: var(--text-muted); letter-spacing: 0.07em; text-transform: uppercase; margin-bottom: 6px; }
+  .col { display: flex; flex-direction: column; gap: 8px; }
+</style>
+</head>
+<body>
+
+<div class="col">
+  <div class="section-label">Toasts</div>
+  <div class="toast">
+    <span class="toast-icon"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--status-success)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg></span>
+    <div>
+      <div class="toast-title">Alert rule created</div>
+      <div class="toast-body">Fires when error count ≥ 10 in 5 min.</div>
+    </div>
+    <span class="toast-close"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span>
+  </div>
+
+  <div class="toast danger">
+    <span class="toast-icon"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--status-danger)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg></span>
+    <div>
+      <div class="toast-title">Failed to save alert rule</div>
+      <div class="toast-body">Server returned 422. Check the condition threshold.</div>
+    </div>
+    <span class="toast-close"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span>
+  </div>
+
+  <div style="display:flex; gap:10px; align-items:flex-end; margin-top:4px;">
+    <div class="col">
+      <div class="section-label">Tooltip</div>
+      <div class="tooltip-wrap">
+        <button class="btn">Copy key</button>
+        <div class="tooltip">Copies API key to clipboard</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="col">
+  <div class="section-label">Popover / Confirm</div>
+  <div class="popover">
+    <div class="popover-header">
+      <div class="popover-title">Delete project</div>
+    </div>
+    <div class="popover-body">
+      This will permanently delete <strong style="color:var(--text-primary)">api-gateway</strong> and all its events. This cannot be undone.
+    </div>
+    <div class="popover-footer">
+      <button class="btn btn-sm btn-ghost">Cancel</button>
+      <button class="btn btn-sm" style="background:var(--status-danger);border-color:var(--status-danger);color:#fff;">Delete project</button>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

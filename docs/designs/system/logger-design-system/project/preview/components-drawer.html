@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<link rel="stylesheet" href="../colors_and_type.css">
+<style>
+  body { background: var(--bg-base); margin: 0; padding: 14px; font-family: var(--font-sans); }
+  .section-title { font-size: 11px; font-weight: 600; color: var(--text-muted); letter-spacing: 0.08em; text-transform: uppercase; margin: 0 0 10px; }
+  .section { margin-bottom: 18px; }
+
+  /* Drawer */
+  .drawer { width: 360px; background: var(--bg-surface); border-left: 1px solid var(--border-default); border-radius: 0 6px 6px 0; display: flex; flex-direction: column; max-height: 400px; box-shadow: var(--shadow-3); }
+  .drawer-header { padding: 14px 16px 12px; border-bottom: 1px solid var(--border-subtle); flex-shrink: 0; }
+  .drawer-level-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+  .drawer-title { font-size: 13px; font-weight: 500; color: var(--text-primary); font-family: var(--font-mono); line-height: 1.45; }
+  .drawer-meta { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
+  .drawer-ts { font-size: 11px; color: var(--text-muted); font-family: var(--font-mono); }
+  .drawer-source { font-size: 11px; color: var(--text-muted); }
+  .drawer-actions { display: flex; gap: 6px; margin-left: auto; }
+
+  .badge { display: inline-flex; align-items: center; gap: 4px; padding: 2px 7px; border-radius: 4px; font-size: 10px; font-weight: 600; border: 1px solid transparent; text-transform: uppercase; }
+  .badge-fatal { background: var(--level-fatal-bg); border-color: var(--level-fatal-border); color: var(--level-fatal-text); }
+  .badge-dot { width: 5px; height: 5px; border-radius: 50%; }
+
+  .tabs { display: flex; border-bottom: 1px solid var(--border-subtle); padding: 0 16px; }
+  .tab { padding: 8px 12px; font-size: 12px; color: var(--text-muted); cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+  .tab:hover { color: var(--text-primary); }
+  .tab.active { color: var(--text-primary); border-bottom-color: var(--accent); font-weight: 500; }
+
+  .drawer-body { flex: 1; overflow-y: auto; padding: 14px 16px; }
+
+  .kv-list { display: flex; flex-direction: column; gap: 0; border: 1px solid var(--border-subtle); border-radius: 5px; overflow: hidden; }
+  .kv-row { display: flex; align-items: baseline; gap: 8px; padding: 5px 10px; border-bottom: 1px solid var(--border-subtle); }
+  .kv-row:last-child { border-bottom: none; }
+  .kv-key { font-size: 11px; font-weight: 500; color: var(--text-muted); font-family: var(--font-mono); width: 110px; flex-shrink: 0; }
+  .kv-val { font-size: 11px; color: var(--text-primary); font-family: var(--font-mono); flex: 1; }
+  .kv-val.string { color: var(--syntax-string); }
+  .kv-val.number { color: var(--syntax-number); }
+
+  .btn-icon { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 4px; border: 1px solid var(--border-default); background: transparent; color: var(--text-muted); cursor: pointer; }
+  .btn-icon:hover { background: var(--surface-hover); color: var(--text-primary); }
+  .close-btn { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 4px; border: none; background: transparent; color: var(--text-muted); cursor: pointer; }
+  .close-btn:hover { background: var(--surface-hover); color: var(--text-primary); }
+
+  .section-label { font-size: 10px; font-weight: 600; color: var(--text-muted); letter-spacing: 0.07em; text-transform: uppercase; margin-bottom: 8px; }
+
+  .stack-frame { display: flex; align-items: flex-start; gap: 8px; padding: 5px 0; border-bottom: 1px solid var(--border-subtle); }
+  .stack-frame:last-child { border-bottom: none; }
+  .frame-num { font-size: 10px; color: var(--text-muted); font-family: var(--font-mono); width: 18px; text-align: right; flex-shrink: 0; padding-top: 2px; }
+  .frame-fn { font-size: 11px; font-weight: 500; color: var(--syntax-function); font-family: var(--font-mono); }
+  .frame-loc { font-size: 10px; color: var(--text-muted); font-family: var(--font-mono); }
+  .frame-loc span { color: var(--accent-text); }
+</style>
+</head>
+<body>
+<div class="section">
+  <div class="section-title">Event Detail Drawer</div>
+  <div class="drawer">
+    <div class="drawer-header">
+      <div class="drawer-level-row">
+        <span class="badge badge-fatal"><span class="badge-dot" style="background:var(--level-fatal-dot)"></span>FATAL</span>
+        <div class="drawer-actions">
+          <button class="btn-icon" title="Copy as JSON">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+          </button>
+          <button class="btn-icon" title="Open in new tab">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+          </button>
+          <button class="close-btn" title="Close">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+      </div>
+      <div class="drawer-title">Unhandled exception: segmentation fault in worker process at pid 14872</div>
+      <div class="drawer-meta">
+        <span class="drawer-ts">2024-01-15 14:32:07.421 UTC</span>
+        <span class="drawer-source">api-gateway · prod</span>
+      </div>
+    </div>
+
+    <div class="tabs">
+      <div class="tab active">Details</div>
+      <div class="tab">Attributes</div>
+      <div class="tab">Stack trace</div>
+    </div>
+
+    <div class="drawer-body">
+      <div class="section-label" style="margin-bottom:8px">Event details</div>
+      <div class="kv-list">
+        <div class="kv-row"><span class="kv-key">event_id</span><span class="kv-val string">evt_01HX7K2M3N</span></div>
+        <div class="kv-row"><span class="kv-key">level</span><span class="kv-val">fatal</span></div>
+        <div class="kv-row"><span class="kv-key">project</span><span class="kv-val">api-gateway</span></div>
+        <div class="kv-row"><span class="kv-key">environment</span><span class="kv-val string">production</span></div>
+        <div class="kv-row"><span class="kv-key">request_id</span><span class="kv-val string">req_01HX7K2M3N4P5Q6R</span></div>
+        <div class="kv-row"><span class="kv-key">status_code</span><span class="kv-val number">500</span></div>
+        <div class="kv-row"><span class="kv-key">duration_ms</span><span class="kv-val number">1843</span></div>
+      </div>
+
+      <div class="section-label" style="margin-top:14px;margin-bottom:8px">Stack trace preview</div>
+      <div style="border:1px solid var(--border-subtle);border-radius:5px;padding:8px 10px;">
+        <div class="stack-frame">
+          <span class="frame-num">1</span>
+          <div><div class="frame-fn">processRequest</div><div class="frame-loc"><span>app/handlers/events.ts</span>:142:18</div></div>
+        </div>
+        <div class="stack-frame">
+          <span class="frame-num">2</span>
+          <div><div class="frame-fn">Router.handle</div><div class="frame-loc">node_modules/express/lib/router/index.js:284:12</div></div>
+        </div>
+        <div class="stack-frame">
+          <span class="frame-num">3</span>
+          <div><div class="frame-fn">next</div><div class="frame-loc">node_modules/express/lib/router/index.js:260:14</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

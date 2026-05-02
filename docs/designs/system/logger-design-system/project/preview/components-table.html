@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<link rel="stylesheet" href="../colors_and_type.css">
+<style>
+  body { background: var(--bg-base); margin: 0; padding: 0; font-family: var(--font-sans); }
+
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; }
+
+  thead tr { background: var(--bg-raised); border-bottom: 1px solid var(--border-default); position: sticky; top: 0; z-index: var(--z-sticky); }
+  th { padding: 0 12px; height: 34px; font-size: 11px; font-weight: 600; color: var(--text-muted); text-align: left; white-space: nowrap; letter-spacing: 0.04em; text-transform: uppercase; border-right: 1px solid var(--border-subtle); user-select: none; }
+  th:last-child { border-right: none; }
+  th .sort-icon { display: inline-flex; margin-left: 4px; vertical-align: middle; opacity: 0.4; }
+  th.sorted .sort-icon { opacity: 1; color: var(--accent-text); }
+
+  tbody tr { border-bottom: 1px solid var(--border-subtle); cursor: pointer; transition: background 100ms; height: var(--table-row-height); }
+  tbody tr:hover { background: var(--surface-hover); }
+  tbody tr.selected { background: var(--accent-subtle); }
+  tbody tr.error-row { background: var(--level-error-bg); }
+  tbody tr.error-row:hover { background: rgba(239,68,68,0.18); }
+  tbody tr.fatal-row { background: var(--level-fatal-bg); }
+
+  td { padding: 0 12px; font-size: 12px; color: var(--text-primary); white-space: nowrap; overflow: hidden; max-width: 0; border-right: 1px solid var(--border-subtle); }
+  td:last-child { border-right: none; }
+  td.ts { font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); width: 130px; }
+  td.level-cell { width: 80px; }
+  td.msg { max-width: 320px; overflow: hidden; text-overflow: ellipsis; font-family: var(--font-mono); font-size: 12px; }
+  td.source { width: 110px; color: var(--text-secondary); font-size: 12px; }
+  td.env-cell { width: 80px; }
+  td.chevron { width: 32px; text-align: center; color: var(--text-muted); }
+
+  .badge { display: inline-flex; align-items: center; gap: 4px; padding: 1px 6px; border-radius: 4px; font-size: 10px; font-weight: 600; border: 1px solid transparent; letter-spacing: 0.03em; text-transform: uppercase; }
+  .badge-dot { width: 5px; height: 5px; border-radius: 50%; flex-shrink: 0; }
+  .badge-debug { background: var(--level-debug-bg); border-color: var(--level-debug-border); color: var(--level-debug-text); }
+  .badge-info  { background: var(--level-info-bg);  border-color: var(--level-info-border);  color: var(--level-info-text); }
+  .badge-warn  { background: var(--level-warn-bg);  border-color: var(--level-warn-border);  color: var(--level-warn-text); }
+  .badge-error { background: var(--level-error-bg); border-color: var(--level-error-border); color: var(--level-error-text); }
+  .badge-fatal { background: var(--level-fatal-bg); border-color: var(--level-fatal-border); color: var(--level-fatal-text); }
+  .badge-env { background: var(--bg-overlay); border-color: var(--border-default); color: var(--text-secondary); }
+
+  .checkbox-cell { width: 36px; text-align: center; }
+  .cb { width: 13px; height: 13px; border-radius: 3px; border: 1px solid var(--border-default); background: var(--bg-raised); display: inline-block; vertical-align: middle; }
+  .cb.checked { background: var(--accent); border-color: var(--accent); }
+
+  /* Loading skeleton */
+  .skeleton { height: 10px; border-radius: 3px; background: linear-gradient(90deg, var(--bg-raised) 25%, var(--bg-overlay) 50%, var(--bg-raised) 75%); background-size: 200% 100%; animation: shimmer 1.4s infinite; }
+  @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+</style>
+</head>
+<body>
+<div class="table-wrap">
+<table>
+  <thead>
+    <tr>
+      <th class="checkbox-cell"><div class="cb checked" style="display:inline-flex;align-items:center;justify-content:center"><svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div></th>
+      <th>Timestamp<span class="sort-icon"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M7 15l5 5 5-5"/><path d="M7 9l5-5 5 5" opacity=".4"/></svg></span></th>
+      <th class="sorted">Level<span class="sort-icon"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M7 15l5 5 5-5"/></svg></span></th>
+      <th>Message</th>
+      <th>Source</th>
+      <th>Environment</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr class="fatal-row selected">
+      <td class="checkbox-cell"><div class="cb checked" style="display:inline-flex;align-items:center;justify-content:center"><svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div></td>
+      <td class="ts">14:32:07.421</td>
+      <td class="level-cell"><span class="badge badge-fatal"><span class="badge-dot" style="background:var(--level-fatal-dot)"></span>FATAL</span></td>
+      <td class="msg">Unhandled exception: segmentation fault in worker</td>
+      <td class="source">api-gateway</td>
+      <td class="env-cell"><span class="badge badge-env">prod</span></td>
+      <td class="chevron"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="9 18 15 12 9 6"/></svg></td>
+    </tr>
+    <tr class="error-row">
+      <td class="checkbox-cell"><div class="cb"></div></td>
+      <td class="ts">14:31:58.003</td>
+      <td class="level-cell"><span class="badge badge-error"><span class="badge-dot" style="background:var(--level-error-dot)"></span>ERROR</span></td>
+      <td class="msg">TypeError: Cannot read properties of undefined (reading 'userId')</td>
+      <td class="source">auth-service</td>
+      <td class="env-cell"><span class="badge badge-env">prod</span></td>
+      <td class="chevron"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="9 18 15 12 9 6"/></svg></td>
+    </tr>
+    <tr>
+      <td class="checkbox-cell"><div class="cb"></div></td>
+      <td class="ts">14:31:44.781</td>
+      <td class="level-cell"><span class="badge badge-warn"><span class="badge-dot" style="background:var(--level-warn-dot)"></span>WARN</span></td>
+      <td class="msg">Rate limit approaching: 87% of quota used (8,700 / 10,000 req/min)</td>
+      <td class="source">rate-limiter</td>
+      <td class="env-cell"><span class="badge badge-env">prod</span></td>
+      <td class="chevron"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="9 18 15 12 9 6"/></svg></td>
+    </tr>
+    <tr>
+      <td class="checkbox-cell"><div class="cb"></div></td>
+      <td class="ts">14:31:39.220</td>
+      <td class="level-cell"><span class="badge badge-info"><span class="badge-dot" style="background:var(--level-info-dot)"></span>INFO</span></td>
+      <td class="msg">Worker process restarted successfully after 3 retries</td>
+      <td class="source">worker-pool</td>
+      <td class="env-cell"><span class="badge badge-env">staging</span></td>
+      <td class="chevron"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="9 18 15 12 9 6"/></svg></td>
+    </tr>
+    <tr>
+      <td class="checkbox-cell"><div class="cb"></div></td>
+      <td class="ts">14:31:22.119</td>
+      <td class="level-cell"><span class="badge badge-debug"><span class="badge-dot" style="background:var(--level-debug-dot)"></span>DEBUG</span></td>
+      <td class="msg">Cache miss for key: user:session:c3f8e2a1b4d7</td>
+      <td class="source">cache-layer</td>
+      <td class="env-cell"><span class="badge badge-env">dev</span></td>
+      <td class="chevron"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="9 18 15 12 9 6"/></svg></td>
+    </tr>
+    <!-- Skeleton loading row -->
+    <tr style="opacity:0.5">
+      <td class="checkbox-cell"><div class="cb"></div></td>
+      <td class="ts"><div class="skeleton" style="width:80px"></div></td>
+      <td class="level-cell"><div class="skeleton" style="width:48px"></div></td>
+      <td class="msg"><div class="skeleton" style="width:240px"></div></td>
+      <td class="source"><div class="skeleton" style="width:70px"></div></td>
+      <td class="env-cell"><div class="skeleton" style="width:40px"></div></td>
+      <td class="chevron"></td>
+    </tr>
+  </tbody>
+</table>
+</div>
+</body>
+</html>

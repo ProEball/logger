@@ -1,0 +1,143 @@
+.wrap {
+    overflow-x: auto;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    background: var(--bg-base);
+}
+
+.table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--text-xs);
+
+    thead {
+        tr {
+            background: var(--bg-raised);
+            border-bottom: 1px solid var(--border-default);
+        }
+    }
+
+    th {
+        padding: 0 var(--space-3);
+        height: 34px;
+        font-size: 11px;
+        font-weight: var(--weight-semibold);
+        color: var(--text-muted);
+        text-align: left;
+        white-space: nowrap;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        border-right: 1px solid var(--border-subtle);
+        user-select: none;
+
+        &:last-child {
+            border-right: none;
+        }
+    }
+
+    tbody tr {
+        border-bottom: 1px solid var(--border-subtle);
+        height: var(--table-row-height);
+        transition: background-color var(--duration-fast) var(--ease-out);
+    }
+
+    td {
+        padding: 0 var(--space-3);
+        color: var(--text-primary);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        border-right: 1px solid var(--border-subtle);
+
+        &:last-child {
+            border-right: none;
+        }
+    }
+}
+
+.sticky {
+    tr {
+        position: sticky;
+        top: 0;
+        z-index: var(--z-sticky);
+    }
+}
+
+.sortBtn {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    padding: 0;
+    background: none;
+    border: 0;
+    color: inherit;
+    font: inherit;
+    text-transform: inherit;
+    letter-spacing: inherit;
+    cursor: pointer;
+
+    &:hover {
+        color: var(--text-secondary);
+    }
+
+    &:focus-visible {
+        outline: none;
+        box-shadow: var(--focus-ring);
+        border-radius: var(--radius-sm);
+    }
+}
+
+.sortIcon {
+    flex-shrink: 0;
+    color: var(--accent-text);
+}
+
+.sortIconUnsorted {
+    color: var(--text-muted);
+    opacity: 0.5;
+}
+
+.sorted {
+    color: var(--text-primary);
+}
+
+.clickable {
+    cursor: pointer;
+
+    &:hover {
+        background: var(--surface-hover);
+    }
+}
+
+.selected {
+    background: var(--accent-subtle);
+
+    &:hover {
+        background: var(--accent-subtle);
+    }
+}
+
+.rowError {
+    background: var(--level-error-bg);
+}
+
+.rowFatal {
+    background: var(--level-fatal-bg);
+}
+
+.alignLeft {
+    text-align: left;
+}
+
+.alignRight {
+    text-align: right;
+}
+
+.alignCenter {
+    text-align: center;
+}
+
+.skeletonRow {
+    opacity: 0.5;
+    pointer-events: none;
+}

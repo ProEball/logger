@@ -1,0 +1,72 @@
+// Logger — global stylesheet
+// Imported once from app/layout.tsx. All themed/token data lives in app/styles/.
+
+@use 'app/styles/tokens';
+@use 'app/styles/themes';
+
+// ── Reset ───────────────────────────────────────────────────────────
+*,
+*::before,
+*::after {
+    box-sizing: border-box;
+    padding: 0;
+    margin: 0;
+}
+
+html {
+    height: 100%;
+    color-scheme: dark light;
+}
+
+html,
+body {
+    max-width: 100vw;
+    overflow-x: hidden;
+}
+
+body {
+    min-height: 100%;
+    background: var(--bg-base);
+    color: var(--text-primary);
+    font: var(--type-body-sm);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+a {
+    color: inherit;
+    text-decoration: none;
+}
+
+code,
+pre,
+kbd,
+samp {
+    font-family: var(--font-mono);
+}
+
+// ── Custom scrollbars (matches dump's Components.jsx) ───────────────
+::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+    background: var(--border-subtle);
+    border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: var(--border-strong);
+}
+
+// ── Skeleton shimmer keyframe (used by shared Skeleton component) ───
+@keyframes shimmer {
+    0%   { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+}

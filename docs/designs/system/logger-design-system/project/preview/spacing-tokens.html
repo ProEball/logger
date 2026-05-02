@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<link rel="stylesheet" href="../colors_and_type.css">
+<style>
+  body { background: var(--bg-base); margin: 0; padding: 16px; font-family: var(--font-sans); }
+  .section-title { font-size: 11px; font-weight: 600; color: var(--text-muted); letter-spacing: 0.08em; text-transform: uppercase; margin: 0 0 10px; }
+  .section { margin-bottom: 18px; }
+  table { width: 100%; border-collapse: collapse; margin-bottom: 10px; }
+  th { font-size: 10px; font-weight: 600; color: var(--text-muted); text-align: left; padding: 0 10px 5px; letter-spacing: 0.06em; text-transform: uppercase; }
+  td { padding: 5px 10px; border-top: 1px solid var(--border-subtle); vertical-align: middle; }
+  .token { font-family: var(--font-mono); font-size: 11px; color: var(--accent-text); }
+  .val { font-size: 12px; color: var(--text-secondary); }
+  .bar-wrap { display: flex; align-items: center; gap: 8px; }
+  .bar { height: 14px; border-radius: 2px; background: var(--accent); opacity: 0.7; }
+  /* Shadow specimens */
+  .shadow-demos { display: flex; gap: 12px; margin-top: 6px; }
+  .shadow-box { flex: 1; border-radius: 6px; padding: 14px 12px; background: var(--bg-raised); }
+  .shadow-label { font-size: 11px; color: var(--text-secondary); font-weight: 500; margin-bottom: 3px; }
+  .shadow-sub { font-size: 10px; color: var(--text-muted); font-family: var(--font-mono); }
+  /* Radius demos */
+  .radius-demos { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  .radius-box { background: var(--bg-raised); border: 1px solid var(--border-default); padding: 10px 16px; font-size: 11px; color: var(--text-secondary); }
+</style>
+</head>
+<body>
+<div class="section">
+  <div class="section-title">Spacing Scale (4px base)</div>
+  <table>
+    <thead><tr><th>Token</th><th>Value</th><th>Visual</th></tr></thead>
+    <tbody>
+      <tr><td class="token">--space-0-5</td><td class="val">2px</td><td><div class="bar-wrap"><div class="bar" style="width:2px"></div></div></td></tr>
+      <tr><td class="token">--space-1</td><td class="val">4px</td><td><div class="bar-wrap"><div class="bar" style="width:4px"></div></div></td></tr>
+      <tr><td class="token">--space-1-5</td><td class="val">6px</td><td><div class="bar-wrap"><div class="bar" style="width:6px"></div></div></td></tr>
+      <tr><td class="token">--space-2</td><td class="val">8px</td><td><div class="bar-wrap"><div class="bar" style="width:8px"></div></div></td></tr>
+      <tr><td class="token">--space-3</td><td class="val">12px</td><td><div class="bar-wrap"><div class="bar" style="width:12px"></div></div></td></tr>
+      <tr><td class="token">--space-4</td><td class="val">16px</td><td><div class="bar-wrap"><div class="bar" style="width:16px"></div></div></td></tr>
+      <tr><td class="token">--space-5</td><td class="val">20px</td><td><div class="bar-wrap"><div class="bar" style="width:20px"></div></div></td></tr>
+      <tr><td class="token">--space-6</td><td class="val">24px</td><td><div class="bar-wrap"><div class="bar" style="width:24px"></div></div></td></tr>
+      <tr><td class="token">--space-8</td><td class="val">32px</td><td><div class="bar-wrap"><div class="bar" style="width:32px"></div></div></td></tr>
+      <tr><td class="token">--space-10</td><td class="val">40px</td><td><div class="bar-wrap"><div class="bar" style="width:40px"></div></div></td></tr>
+      <tr><td class="token">--space-12</td><td class="val">48px</td><td><div class="bar-wrap"><div class="bar" style="width:48px"></div></div></td></tr>
+      <tr><td class="token">--space-16</td><td class="val">64px</td><td><div class="bar-wrap"><div class="bar" style="width:64px"></div></div></td></tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="section">
+  <div class="section-title">Border Radii</div>
+  <div class="radius-demos">
+    <div class="radius-box" style="border-radius:0px">none · 0px<br><span style="font-size:10px;color:var(--text-muted)">table cells</span></div>
+    <div class="radius-box" style="border-radius:4px">sm · 4px<br><span style="font-size:10px;color:var(--text-muted)">inputs, buttons, badges</span></div>
+    <div class="radius-box" style="border-radius:6px">md · 6px<br><span style="font-size:10px;color:var(--text-muted)">cards, panels</span></div>
+    <div class="radius-box" style="border-radius:8px">lg · 8px<br><span style="font-size:10px;color:var(--text-muted)">modals, drawers</span></div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-title">Elevation Shadows</div>
+  <div class="shadow-demos">
+    <div class="shadow-box" style="box-shadow: 0 1px 2px rgba(0,0,0,0.4), 0 0 0 1px #26262d">
+      <div class="shadow-label">shadow-1</div>
+      <div class="shadow-sub">Cards, static surfaces</div>
+    </div>
+    <div class="shadow-box" style="box-shadow: 0 4px 12px rgba(0,0,0,0.5), 0 0 0 1px #2e2e37">
+      <div class="shadow-label">shadow-2</div>
+      <div class="shadow-sub">Dropdowns, popovers</div>
+    </div>
+    <div class="shadow-box" style="box-shadow: 0 8px 32px rgba(0,0,0,0.6), 0 0 0 1px #3a3a45">
+      <div class="shadow-label">shadow-3</div>
+      <div class="shadow-sub">Modals, drawers</div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-title">Motion</div>
+  <table>
+    <thead><tr><th>Token</th><th>Value</th><th>Usage</th></tr></thead>
+    <tbody>
+      <tr><td class="token">--duration-fast</td><td class="val">100ms</td><td class="val" style="color:var(--text-muted)">Hover bg color</td></tr>
+      <tr><td class="token">--duration-base</td><td class="val">150ms</td><td class="val" style="color:var(--text-muted)">Most interactions</td></tr>
+      <tr><td class="token">--duration-medium</td><td class="val">200ms</td><td class="val" style="color:var(--text-muted)">Dropdowns, popovers</td></tr>
+      <tr><td class="token">--duration-slow</td><td class="val">250ms</td><td class="val" style="color:var(--text-muted)">Modals, drawers</td></tr>
+      <tr><td class="token">--ease-out</td><td class="val" style="font-family:var(--font-mono);font-size:11px">cubic-bezier(0,0,0.2,1)</td><td class="val" style="color:var(--text-muted)">All entries</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="section">
+  <div class="section-title">Z-Index Scale</div>
+  <table>
+    <thead><tr><th>Token</th><th>Value</th><th>Usage</th></tr></thead>
+    <tbody>
+      <tr><td class="token">--z-sticky</td><td class="val">10</td><td class="val" style="color:var(--text-muted)">Sticky table header, topbar</td></tr>
+      <tr><td class="token">--z-dropdown</td><td class="val">100</td><td class="val" style="color:var(--text-muted)">Dropdowns, filter menus</td></tr>
+      <tr><td class="token">--z-popover</td><td class="val">200</td><td class="val" style="color:var(--text-muted)">Popovers, tooltips</td></tr>
+      <tr><td class="token">--z-drawer</td><td class="val">300</td><td class="val" style="color:var(--text-muted)">Side drawers</td></tr>
+      <tr><td class="token">--z-modal</td><td class="val">400</td><td class="val" style="color:var(--text-muted)">Modal dialogs</td></tr>
+      <tr><td class="token">--z-toast</td><td class="val">500</td><td class="val" style="color:var(--text-muted)">Toast notifications</td></tr>
+      <tr><td class="token">--z-tooltip</td><td class="val">600</td><td class="val" style="color:var(--text-muted)">Always-on-top tooltips</td></tr>
+    </tbody>
+  </table>
+</div>
+</body>
+</html>

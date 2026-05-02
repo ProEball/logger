@@ -2,16 +2,16 @@
 
 > Single source of truth for "where are we right now". Update after every work session.
 
-**Last updated**: 2026-04-30
+**Last updated**: 2026-05-02 (Feature 00 complete)
 
 ---
 
 ## Current Phase
 
-**Feature 00 — Foundation** · `docs/features/00-foundation.md`
-Status: ⬜ Not started · 0 / N items
+**Feature 01 — Auth + Organizations + Roles** · `docs/features/01-auth-organizations-roles.md`
+Status: 🟦 Up next
 
-> First action when resuming: open the feature doc above, find the first unchecked item in its Implementation Checklist, continue from there.
+> First action when resuming: open `docs/features/01-auth-organizations-roles.md`, find the first unchecked item, continue from there. Foundation is complete — db client, env, Redux, theme, health endpoints, test tooling all wired.
 
 ---
 
@@ -21,8 +21,9 @@ Each feature has its own implementation doc with a status block, decisions, sche
 
 | # | Feature | Status | Doc |
 |---|---|---|---|
-| 00 | Foundation | ⬜ Not started | [features/00-foundation.md](features/00-foundation.md) |
-| 01 | Auth + Organizations + Roles | ⬜ Not started | [features/01-auth-organizations-roles.md](features/01-auth-organizations-roles.md) |
+| — | Design System + UI kit (side track) | ✅ Done | [features/design-system.md](features/design-system.md) |
+| 00 | Foundation | ✅ Done | [features/00-foundation.md](features/00-foundation.md) |
+| 01 | Auth + Organizations + Roles | 🟦 Up next | [features/01-auth-organizations-roles.md](features/01-auth-organizations-roles.md) |
 | 02 | Projects + API keys | 🟦 Planned | [features/02-projects-api-keys.md](features/02-projects-api-keys.md) |
 | 03 | Ingest | 🟦 Planned | [features/03-ingest.md](features/03-ingest.md) |
 | 04 | Events list + filters + detail | 🟦 Planned | [features/04-events-list-filters.md](features/04-events-list-filters.md) |

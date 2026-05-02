@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<link rel="stylesheet" href="../colors_and_type.css">
+<style>
+  body { background: var(--bg-base); margin: 0; padding: 16px; font-family: var(--font-sans); }
+  .section-title { font-size: 11px; font-weight: 600; color: var(--text-muted); letter-spacing: 0.08em; text-transform: uppercase; margin: 0 0 10px; }
+  .section { margin-bottom: 18px; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 8px; }
+
+  .badge { display: inline-flex; align-items: center; gap: 5px; padding: 2px 7px; border-radius: 4px; font-size: 11px; font-weight: 600; border: 1px solid transparent; font-family: var(--font-sans); letter-spacing: 0.03em; white-space: nowrap; }
+  .badge-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+
+  /* Log level badges */
+  .badge-debug { background: var(--level-debug-bg); border-color: var(--level-debug-border); color: var(--level-debug-text); }
+  .badge-info  { background: var(--level-info-bg);  border-color: var(--level-info-border);  color: var(--level-info-text); }
+  .badge-warn  { background: var(--level-warn-bg);  border-color: var(--level-warn-border);  color: var(--level-warn-text); }
+  .badge-error { background: var(--level-error-bg); border-color: var(--level-error-border); color: var(--level-error-text); }
+  .badge-fatal { background: var(--level-fatal-bg); border-color: var(--level-fatal-border); color: var(--level-fatal-text); }
+
+  /* Status badges */
+  .badge-success { background: var(--status-success-bg); border-color: var(--status-success-border); color: var(--status-success-text); }
+  .badge-warning { background: var(--status-warning-bg); border-color: var(--status-warning-border); color: var(--status-warning-text); }
+  .badge-danger  { background: var(--status-danger-bg);  border-color: var(--status-danger-border);  color: var(--status-danger-text); }
+  .badge-neutral { background: var(--bg-raised); border-color: var(--border-default); color: var(--text-secondary); }
+  .badge-accent  { background: var(--accent-subtle); border-color: var(--accent-border); color: var(--accent-text); }
+
+  /* Tags / chips */
+  .chip { display: inline-flex; align-items: center; gap: 5px; padding: 3px 8px; border-radius: 4px; font-size: 12px; font-weight: 500; border: 1px solid var(--border-default); color: var(--text-secondary); background: var(--bg-raised); cursor: default; }
+  .chip-remove { display: inline-flex; align-items: center; justify-content: center; width: 14px; height: 14px; border-radius: 2px; color: var(--text-muted); cursor: pointer; }
+  .chip-remove:hover { background: var(--surface-active); color: var(--text-primary); }
+  .chip-key { color: var(--text-muted); font-size: 11px; }
+  .chip-val { color: var(--text-primary); }
+
+  /* In-context: event row level badges */
+  .event-row { display: flex; align-items: center; gap: 12px; padding: 8px 12px; background: var(--bg-raised); border: 1px solid var(--border-subtle); border-radius: 4px; }
+  .ts { font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); }
+  .msg { font-family: var(--font-mono); font-size: 12px; color: var(--text-primary); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+</style>
+</head>
+<body>
+
+<div class="section">
+  <div class="section-title">Log Level Badges</div>
+  <div class="row">
+    <span class="badge badge-debug"><span class="badge-dot" style="background:var(--level-debug-dot)"></span>DEBUG</span>
+    <span class="badge badge-info"><span class="badge-dot" style="background:var(--level-info-dot)"></span>INFO</span>
+    <span class="badge badge-warn"><span class="badge-dot" style="background:var(--level-warn-dot)"></span>WARN</span>
+    <span class="badge badge-error"><span class="badge-dot" style="background:var(--level-error-dot)"></span>ERROR</span>
+    <span class="badge badge-fatal"><span class="badge-dot" style="background:var(--level-fatal-dot)"></span>FATAL</span>
+  </div>
+  <div class="event-row">
+    <span class="ts">14:32:07.421</span>
+    <span class="badge badge-error"><span class="badge-dot" style="background:var(--level-error-dot)"></span>ERROR</span>
+    <span class="msg">TypeError: Cannot read properties of undefined (reading 'userId') at processRequest</span>
+    <span class="ts">api</span>
+    <span class="ts">prod</span>
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-title">Status &amp; Generic Badges</div>
+  <div class="row">
+    <span class="badge badge-success"><span class="badge-dot" style="background:var(--status-success)"></span>Healthy</span>
+    <span class="badge badge-warning"><span class="badge-dot" style="background:var(--status-warning)"></span>Degraded</span>
+    <span class="badge badge-danger"><span class="badge-dot" style="background:var(--status-danger)"></span>Firing</span>
+    <span class="badge badge-neutral">Inactive</span>
+    <span class="badge badge-accent">Active</span>
+    <span class="badge badge-neutral">prod</span>
+    <span class="badge badge-neutral">staging</span>
+    <span class="badge badge-neutral">v2.3.1</span>
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-title">Filter Chips (removable)</div>
+  <div class="row">
+    <span class="chip">
+      <span class="chip-key">level:</span>
+      <span class="chip-val">error, fatal</span>
+      <span class="chip-remove">
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </span>
+    </span>
+    <span class="chip">
+      <span class="chip-key">env:</span>
+      <span class="chip-val">prod</span>
+      <span class="chip-remove">
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </span>
+    </span>
+    <span class="chip">
+      <span class="chip-key">message contains:</span>
+      <span class="chip-val">"timeout"</span>
+      <span class="chip-remove">
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </span>
+    </span>
+  </div>
+</div>
+
+</body>
+</html>

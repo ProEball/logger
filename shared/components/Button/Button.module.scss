@@ -1,0 +1,108 @@
+@use 'app/styles/mixins' as *;
+
+.btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    font-family: inherit;
+    font-weight: var(--weight-medium);
+    white-space: nowrap;
+    cursor: pointer;
+    transition: var(--transition-colors);
+
+    @include focus-ring;
+
+    &:disabled {
+        cursor: not-allowed;
+        opacity: 0.45;
+    }
+}
+
+// ── Sizes ───────────────────────────────────────────────────────────
+.sm {
+    height: var(--input-height-sm);
+    padding: 0 10px;
+    font-size: var(--text-xs);
+}
+
+.md {
+    height: var(--input-height-md);
+    padding: 0 var(--space-3);
+    font-size: var(--text-sm);
+}
+
+// ── Variants ────────────────────────────────────────────────────────
+.primary {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+
+    &:not(:disabled):hover {
+        background: var(--accent-hover);
+        border-color: var(--accent-hover);
+    }
+}
+
+.secondary {
+    background: transparent;
+    border-color: var(--border-default);
+    color: var(--text-primary);
+
+    &:not(:disabled):hover {
+        background: var(--surface-hover);
+    }
+
+    &:not(:disabled):active {
+        background: var(--surface-active);
+    }
+}
+
+.ghost {
+    background: transparent;
+    border-color: transparent;
+    color: var(--text-secondary);
+
+    &:not(:disabled):hover {
+        background: var(--surface-hover);
+        color: var(--text-primary);
+    }
+}
+
+.danger {
+    background: transparent;
+    border-color: var(--status-danger-border);
+    color: var(--status-danger-text);
+
+    &:not(:disabled):hover {
+        background: var(--status-danger-hover);
+    }
+}
+
+.link {
+    height: auto;
+    padding: 0 var(--space-1);
+    background: transparent;
+    border-color: transparent;
+    color: var(--accent-text);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+
+    &:not(:disabled):hover {
+        color: var(--accent-hover);
+    }
+}
+
+// ── Slots ───────────────────────────────────────────────────────────
+.icon {
+    display: inline-flex;
+    align-items: center;
+    flex-shrink: 0;
+}
+
+.label {
+    display: inline-flex;
+    align-items: center;
+}

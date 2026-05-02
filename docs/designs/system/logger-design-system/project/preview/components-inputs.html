@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<link rel="stylesheet" href="../colors_and_type.css">
+<style>
+  body { background: var(--bg-base); margin: 0; padding: 16px; font-family: var(--font-sans); }
+  .section-title { font-size: 11px; font-weight: 600; color: var(--text-muted); letter-spacing: 0.08em; text-transform: uppercase; margin: 0 0 10px; }
+  .section { margin-bottom: 18px; }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-start; margin-bottom: 8px; }
+  .col { display: flex; flex-direction: column; gap: 6px; }
+
+  /* Input base */
+  .field { display: flex; flex-direction: column; gap: 4px; }
+  .label { font-size: 12px; font-weight: 500; color: var(--text-secondary); }
+  .input { display: flex; align-items: center; gap: 6px; height: 32px; padding: 0 10px; background: var(--bg-raised); border: 1px solid var(--border-default); border-radius: 4px; font-size: 13px; color: var(--text-primary); font-family: var(--font-sans); outline: none; width: 200px; }
+  .input-sm { height: 28px; font-size: 12px; width: 160px; }
+  .input:focus { border-color: var(--accent); box-shadow: 0 0 0 2px var(--bg-base), 0 0 0 4px var(--accent); }
+  .input.error { border-color: var(--status-danger); }
+  .input.disabled { opacity: 0.45; cursor: not-allowed; background: var(--bg-surface); }
+  .input-icon { color: var(--text-muted); flex-shrink: 0; }
+  .input-fake { display: flex; align-items: center; gap: 6px; height: 32px; padding: 0 10px; background: var(--bg-raised); border: 1px solid var(--border-default); border-radius: 4px; font-size: 13px; color: var(--text-placeholder); font-family: var(--font-sans); width: 200px; cursor: text; }
+  .input-fake.focus-demo { border-color: var(--accent); box-shadow: 0 0 0 2px var(--bg-base), 0 0 0 4px var(--accent); color: var(--text-primary); }
+  .input-fake.error-demo { border-color: var(--status-danger); }
+  .helper { font-size: 11px; color: var(--text-muted); }
+  .helper-error { font-size: 11px; color: var(--status-danger-text); }
+
+  /* Select */
+  .select-fake { display: flex; align-items: center; justify-content: space-between; gap: 6px; height: 32px; padding: 0 10px; background: var(--bg-raised); border: 1px solid var(--border-default); border-radius: 4px; font-size: 13px; color: var(--text-primary); font-family: var(--font-sans); width: 180px; cursor: pointer; }
+
+  /* Textarea */
+  .textarea-fake { padding: 8px 10px; background: var(--bg-raised); border: 1px solid var(--border-default); border-radius: 4px; font-size: 13px; color: var(--text-primary); font-family: var(--font-sans); width: 300px; min-height: 64px; line-height: 1.5; }
+
+  /* Checkbox / Radio */
+  .check-row { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+  .checkbox { width: 15px; height: 15px; border-radius: 3px; border: 1px solid var(--border-default); background: var(--bg-raised); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .checkbox.checked { background: var(--accent); border-color: var(--accent); }
+  .checkbox.indeterminate { background: var(--accent); border-color: var(--accent); }
+  .radio { width: 15px; height: 15px; border-radius: 50%; border: 1px solid var(--border-default); background: var(--bg-raised); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .radio.checked { border-color: var(--accent); }
+  .radio-inner { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
+  .check-label { font-size: 13px; color: var(--text-primary); }
+
+  /* Switch */
+  .switch { width: 32px; height: 18px; border-radius: 9999px; background: var(--bg-overlay); border: 1px solid var(--border-default); position: relative; cursor: pointer; transition: background 150ms; flex-shrink: 0; }
+  .switch.on { background: var(--accent); border-color: var(--accent); }
+  .switch-thumb { width: 12px; height: 12px; border-radius: 50%; background: #fff; position: absolute; top: 2px; left: 2px; transition: left 150ms; }
+  .switch.on .switch-thumb { left: 16px; }
+</style>
+</head>
+<body>
+
+<div class="section">
+  <div class="section-title">Text Inputs — States</div>
+  <div class="row">
+    <div class="field">
+      <span class="label">Default</span>
+      <div class="input-fake">Filter events…</div>
+    </div>
+    <div class="field">
+      <span class="label">Focus</span>
+      <div class="input-fake focus-demo">
+        <svg class="input-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        connection timeout
+      </div>
+    </div>
+    <div class="field">
+      <span class="label">Error</span>
+      <div class="input-fake error-demo">invalid@</div>
+      <span class="helper-error">Enter a valid email address</span>
+    </div>
+    <div class="field">
+      <span class="label">Disabled</span>
+      <div class="input-fake disabled" style="opacity:0.45;cursor:not-allowed">Disabled input</div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-title">Search Input with Icon</div>
+  <div class="row">
+    <div class="input-fake" style="width:260px;color:var(--text-muted)">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      Search events…
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-title">Select &amp; Textarea</div>
+  <div class="row">
+    <div class="field">
+      <span class="label">Select</span>
+      <div class="select-fake">
+        <span>production</span>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+      </div>
+    </div>
+    <div class="field">
+      <span class="label">Textarea</span>
+      <div class="textarea-fake">Webhook fires when error count exceeds threshold within the given window.</div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-title">Checkbox, Radio &amp; Switch</div>
+  <div class="row">
+    <div class="col">
+      <div class="check-row">
+        <div class="checkbox checked">
+          <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+        </div>
+        <span class="check-label">Receive alerts</span>
+      </div>
+      <div class="check-row">
+        <div class="checkbox indeterminate">
+          <svg width="9" height="2" viewBox="0 0 9 2"><rect width="9" height="2" rx="1" fill="white"/></svg>
+        </div>
+        <span class="check-label">Select all (indeterminate)</span>
+      </div>
+      <div class="check-row">
+        <div class="checkbox"></div>
+        <span class="check-label" style="color:var(--text-muted)">Disabled option</span>
+      </div>
+    </div>
+    <div class="col">
+      <div class="check-row">
+        <div class="radio checked"><div class="radio-inner"></div></div>
+        <span class="check-label">Error &amp; Fatal only</span>
+      </div>
+      <div class="check-row">
+        <div class="radio"></div>
+        <span class="check-label">All levels</span>
+      </div>
+    </div>
+    <div class="col">
+      <div class="check-row">
+        <div class="switch on"><div class="switch-thumb"></div></div>
+        <span class="check-label">Notifications enabled</span>
+      </div>
+      <div class="check-row">
+        <div class="switch"><div class="switch-thumb"></div></div>
+        <span class="check-label">Pause alerts</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

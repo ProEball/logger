@@ -1,36 +1,56 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Logger
 
-## Getting Started
+A Next.js 16 application for structured log management.
 
-First, run the development server:
+## Prerequisites
+
+- Node.js 20+
+- Docker (for local Postgres)
+
+## Local development
+
+**1. Start Postgres:**
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+docker compose -f docker-compose.dev.yml up -d
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+**2. Copy env and install deps:**
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+cp .env.example .env.local
+npm install
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+**3. Run migrations and start dev server:**
 
-## Learn More
+```bash
+npm run db:migrate
+npm run dev
+```
 
-To learn more about Next.js, take a look at the following resources:
+App runs at http://localhost:80.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Commands
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```bash
+npm run dev          # dev server (port 80)
+npm run build        # production build
+npm run start        # production server (port 80)
+npm run lint         # ESLint
 
-## Deploy on Vercel
+npm run db:generate  # generate Drizzle migration from schema
+npm run db:migrate   # apply pending migrations
+npm run db:push      # push schema without migrations (dev only)
+npm run db:studio    # open Drizzle Studio
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+npm run test         # Vitest unit + integration tests
+npm run test:e2e     # Playwright end-to-end tests
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Health checks
+
+```
+GET /api/health        # liveness — always 200
+GET /api/health/ready  # readiness — 200 if DB ok, 503 if DB down
+```
