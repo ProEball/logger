@@ -2,16 +2,30 @@
 
 > Single source of truth for "where are we right now". Update after every work session.
 
-**Last updated**: 2026-05-02 (Feature 00 complete)
+**Last updated**: 2026-05-04 (Feature 01 — items 1–61 done)
 
 ---
 
 ## Current Phase
 
 **Feature 01 — Auth + Organizations + Roles** · `docs/features/01-auth-organizations-roles.md`
-Status: 🟦 Up next
+Status: 🟨 In progress · 61 / 69 items
 
-> First action when resuming: open `docs/features/01-auth-organizations-roles.md`, find the first unchecked item, continue from there. Foundation is complete — db client, env, Redux, theme, health endpoints, test tooling all wired.
+> First action when resuming: open `docs/features/01-auth-organizations-roles.md`, find the first unchecked item, continue from there.
+
+**Done (1–61):** full auth, orgs, invitations, member management, roles CRUD, account pages, org settings, full App Shell (Sidebar + TopBar + OrgSwitcher + UserMenu + ThemeSwitcher + Redux hydration), live check passed.
+
+**Remaining (62–69):**
+- 62 — Unit tests (Vitest): `hasPermission`, `seedSystemRoles`, invite token validation, theme cookie roundtrip. Files: `shared/permissions/check.test.ts`, `features/roles/utils/seed-system-roles.test.ts`, `features/organizations/actions/invite-member.test.ts`, `core/theme/cookie.test.ts`
+- 63 — E2E `e2e/auth-bootstrap.spec.ts`: setup wizard → org creation
+- 64 — E2E `e2e/invite.spec.ts`: create invite → register via link → accept → role applied
+- 65 — E2E `e2e/role-management.spec.ts`: create custom role → assign to user → user sees only those perms
+- 66 — E2E `e2e/theme.spec.ts`: toggle theme → reload → state preserved
+- 67 — Update PROGRESS.md row for feature 01 → ✅ Done
+- 68 — Update Status block in feature doc
+- 69 — End-to-end live check (see "Live check" section in feature doc)
+
+**Test infra note:** Vitest config at `vitest.config.ts`, E2E via Playwright at `e2e/`. Check existing test in `shared/permissions/check.test.ts` (item 11, already written) as a reference for style.
 
 ---
 
@@ -23,7 +37,7 @@ Each feature has its own implementation doc with a status block, decisions, sche
 |---|---|---|---|
 | — | Design System + UI kit (side track) | ✅ Done | [features/design-system.md](features/design-system.md) |
 | 00 | Foundation | ✅ Done | [features/00-foundation.md](features/00-foundation.md) |
-| 01 | Auth + Organizations + Roles | 🟦 Up next | [features/01-auth-organizations-roles.md](features/01-auth-organizations-roles.md) |
+| 01 | Auth + Organizations + Roles | 🟨 In progress | [features/01-auth-organizations-roles.md](features/01-auth-organizations-roles.md) |
 | 02 | Projects + API keys | 🟦 Planned | [features/02-projects-api-keys.md](features/02-projects-api-keys.md) |
 | 03 | Ingest | 🟦 Planned | [features/03-ingest.md](features/03-ingest.md) |
 | 04 | Events list + filters + detail | 🟦 Planned | [features/04-events-list-filters.md](features/04-events-list-filters.md) |

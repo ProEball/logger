@@ -1,11 +1,11 @@
 # 01. Auth + Organizations + Roles
 
 ## Status
-- [ ] Not started · [ ] In progress · [ ] Done
-- Started: —
+- [ ] Not started · [x] In progress · [ ] Done
+- Started: 2026-05-02
 - Completed: —
-- Last touched: 2026-04-30 (planning)
-- Progress: 0 / 69 checklist items
+- Last touched: 2026-05-04
+- Progress: 61 / 69 checklist items
 
 ## Goal
 
@@ -252,98 +252,98 @@ ORGANIZATION SCOPE                  permission required
 ## Implementation Checklist
 
 ### Schema
-- [ ] 1. Drizzle schema: `users` (with `preferences jsonb default '{"theme":"dark"}'`), `sessions`, `accounts`, `verification_tokens` (better-auth) — extend better-auth users table via `additionalFields` config
-- [ ] 2. Drizzle schema: `organizations`, `roles`
-- [ ] 3. Drizzle schema: `organization_members`, `project_member_roles` (empty placeholder)
-- [ ] 4. Drizzle schema: `invitations`
-- [ ] 5. Generate migrations 0001–0004, run `db:migrate`, inspect via `db:studio`
+- [x] 1. Drizzle schema: `users` (with `preferences jsonb default '{"theme":"dark"}'`), `sessions`, `accounts`, `verification_tokens` (better-auth) — extend better-auth users table via `additionalFields` config
+- [x] 2. Drizzle schema: `organizations`, `roles`
+- [x] 3. Drizzle schema: `organization_members`, `project_member_roles` (empty placeholder)
+- [x] 4. Drizzle schema: `invitations`
+- [x] 5. Generate migrations 0001–0004, run `db:migrate`, inspect via `db:studio`
 
 ### Permissions module
-- [ ] 6. `shared/permissions/registry.ts` — `PERMISSIONS` const + `Permission` type + `ownerOnly` markers
-- [ ] 7. `shared/permissions/groups.ts` — group keys + display labels for UI
-- [ ] 8. `shared/permissions/check.ts` — `hasPermission(member, perm)`
-- [ ] 9. `shared/permissions/guards.ts` — `assertPermission`, `assertOwner`, custom `ForbiddenError`
-- [ ] 10. `shared/permissions/hooks.ts` — `usePermission(perm)` reading from Redux org slice
-- [ ] 11. Unit test: `hasPermission` for owner, member with role, member without permission, owner-only perm denial
+- [x] 6. `shared/permissions/registry.ts` — `PERMISSIONS` const + `Permission` type + `ownerOnly` markers
+- [x] 7. `shared/permissions/groups.ts` — group keys + display labels for UI
+- [x] 8. `shared/permissions/check.ts` — `hasPermission(member, perm)`
+- [x] 9. `shared/permissions/guards.ts` — `assertPermission`, `assertOwner`, custom `ForbiddenError`
+- [x] 10. `shared/permissions/hooks.ts` — `usePermission(perm)` reading from Redux org slice
+- [x] 11. Unit test: `hasPermission` for owner, member with role, member without permission, owner-only perm denial
 
 ### Auth core (better-auth)
-- [ ] 12. `core/auth/config.ts` — better-auth init with email+password, 30d session rolling, Drizzle adapter
-- [ ] 13. `core/auth/server.ts` — exports `auth`, `getSession`, `getCurrentUser`
-- [ ] 14. `app/api/auth/[...all]/route.ts` — wired to better-auth handler
-- [ ] 15. Add `AUTH_SECRET` to `.env.example` and `core/env/index.ts` schema
-- [ ] 16. Live check: `curl POST /api/auth/sign-up` with test creds creates a user row
+- [x] 12. `core/auth/config.ts` — better-auth init with email+password, 30d session rolling, Drizzle adapter
+- [x] 13. `core/auth/server.ts` — exports `auth`, `getSession`, `getCurrentUser`
+- [x] 14. `app/api/auth/[...all]/route.ts` — wired to better-auth handler
+- [x] 15. Add `AUTH_SECRET` to `.env.example` and `core/env/index.ts` schema
+- [x] 16. Live check: `curl POST /api/auth/sign-up` with test creds creates a user row
 
 ### System role seeding utility
-- [ ] 17. `features/roles/utils/seed-system-roles.ts` — creates Admin/Member/Viewer rows, returns IDs
-- [ ] 18. Unit test: seeding produces three rows with correct permission sets
+- [x] 17. `features/roles/utils/seed-system-roles.ts` — creates Admin/Member/Viewer rows, returns IDs
+- [x] 18. Unit test: seeding produces three rows with correct permission sets
 
 ### Setup wizard
-- [ ] 19. `app/setup/page.tsx` + `SetupWizard.tsx` (gform-react form: org name + email + name + password)
-- [ ] 20. `features/auth/actions/setup.action.ts` — transactional: insert user, insert org, seed roles, insert organization_members with is_owner=true, sign-in.
+- [x] 19. `app/setup/page.tsx` + `SetupWizard.tsx` (gform-react form: org name + email + name + password)
+- [x] 20. `features/auth/actions/setup.action.ts` — transactional: insert user, insert org, seed roles, insert organization_members with is_owner=true, sign-in.
   - **Race guard inside the transaction**: take a Postgres advisory lock with a fixed key (e.g. `SELECT pg_advisory_xact_lock(7438291)`), then `SELECT COUNT(*) FROM users` — if non-zero, abort with `SetupAlreadyDoneError`. Without this, two simultaneous `/setup` submits both pass the middleware check and both create owners.
-- [ ] 21. `middleware.ts` — guard: redirect to `/setup` if `users` is empty (cache result with short TTL, e.g. 5 s); 404 `/setup` otherwise. Cache invalidates on first successful setup.
-- [ ] 22. Live check: fresh DB → open app → redirect to /setup → submit form → land on /[org] as owner. Repeat submit in another tab → second request hits `SetupAlreadyDoneError` and shows "Setup already complete".
+- [x] 21. `proxy.ts` (Next.js 16 renamed middleware → proxy) — guard: redirect to `/setup` if `users` is empty; 404 `/setup` once done. Only caches `setupDone=true` (never caches `false` to avoid stale-redirect after setup completes).
+- [x] 22. Live check: fresh DB → open app → redirect to /setup → submit form → land on /[org] as owner. Repeat submit in another tab → second request hits `SetupAlreadyDoneError` and shows "Setup already complete".
 
 ### Login / logout
-- [ ] 23. `app/login/page.tsx` + `LoginForm.tsx` (gform-react: email + password)
-- [ ] 24. `features/auth/actions/login.action.ts` — calls better-auth signIn, redirects to `/`
-- [ ] 25. `UserMenu` (in TopBar) — logout button calling `logout.action.ts`
-- [ ] 26. Live check: logout → /login → enter creds → land on /[org]
+- [x] 23. `app/login/page.tsx` + `LoginForm.tsx` (gform-react: email + password)
+- [x] 24. `features/auth/actions/login.action.ts` — calls better-auth signIn, redirects to `/`
+- [x] 25. `UserMenu` (in TopBar) — logout button calling `logout.action.ts`
+- [x] 26. Live check: logout → /login → enter creds → land on /[org]
 
 ### Forgot / reset password
-- [ ] 27. `app/forgot-password/page.tsx` + `ForgotPasswordForm.tsx`
-- [ ] 28. `features/auth/actions/request-password-reset.action.ts` — generates token, stores in `verification_tokens`, **logs reset URL via pino** (TEMP — will switch to email when provider is wired)
-- [ ] 29. `app/reset-password/[token]/page.tsx` + `ResetPasswordForm.tsx`
-- [ ] 30. `features/auth/actions/reset-password.action.ts` — validates token, updates password, deletes token
-- [ ] 31. Live check: trigger reset → grab URL from logs → open in browser → set new password → log in
+- [x] 27. `app/forgot-password/page.tsx` + `ForgotPasswordForm.tsx`
+- [x] 28. `features/auth/actions/request-password-reset.action.ts` — generates token, stores in `verification_tokens`, **logs reset URL via pino** (TEMP — will switch to email when provider is wired)
+- [x] 29. `app/reset-password/[token]/page.tsx` + `ResetPasswordForm.tsx`
+- [x] 30. `features/auth/actions/reset-password.action.ts` — validates token, updates password, deletes token
+- [x] 31. Live check: trigger reset → grab URL from logs → open in browser → set new password → log in
 
 ### Invitations (link-copy flow)
-- [ ] 32. `app/[org]/team/page.tsx` — server component, lists members + pending invitations
-- [ ] 33. `MembersList.tsx` + `InvitationsList.tsx`
-- [ ] 34. `InviteMemberDialog.tsx` — gform: email + role select
-- [ ] 35. `features/organizations/actions/invite-member.action.ts` — generates token, inserts row, returns full URL
-- [ ] 36. `InvitationCreatedDialog.tsx` — modal showing the URL with "Copy" button (not closeable until copied or dismissed)
-- [ ] 37. `app/invite/[token]/page.tsx` — three states:
+- [x] 32. `app/[org]/team/page.tsx` — server component, lists members + pending invitations
+- [x] 33. `MembersList.tsx` + `InvitationsList.tsx`
+- [x] 34. `InviteMemberDialog.tsx` — gform: email + role select
+- [x] 35. `features/organizations/actions/invite-member.action.ts` — generates token, inserts row, returns full URL
+- [x] 36. `InvitationCreatedDialog.tsx` — modal showing the URL with "Copy" button (not closeable until copied or dismissed)
+- [x] 37. `app/invite/[token]/page.tsx` — three states:
   - token invalid/expired → friendly error page
   - no logged-in user → registration form (`AcceptInviteForm`)
   - logged-in user matching invitation email → "Accept" button
   - logged-in different user → "Sign out and continue with [email]" hint
-- [ ] 38. `features/organizations/actions/accept-invitation.action.ts` — transactional: insert organization_members, set accepted_at
-- [ ] 39. `features/organizations/actions/revoke-invitation.action.ts` — guard with `members.invite`
-- [ ] 40. Live check: create invite → copy URL → open in incognito → register → land in /[org] with assigned role
+- [x] 38. `features/organizations/actions/accept-invitation.action.ts` — transactional: insert organization_members, set accepted_at
+- [x] 39. `features/organizations/actions/revoke-invitation.action.ts` — guard with `members.invite`
+- [x] 40. Live check: create invite → copy URL → open in incognito → register → land in /[org] with assigned role
 
 ### Member management
-- [ ] 41. `MemberRow` actions (kebab menu): change role (`change-member-role.action.ts`), remove (`remove-member.action.ts`), transfer ownership (`transfer-ownership.action.ts`)
-- [ ] 42. ConfirmDialog for destructive actions
-- [ ] 43. Guards: cannot remove owner, only owner can transfer ownership, cannot remove self if last owner
-- [ ] 44. Live check: create second user via invite → change their role → remove them → re-invite → transfer ownership
+- [x] 41. `MemberRow` actions (kebab menu): change role (`change-member-role.action.ts`), remove (`remove-member.action.ts`), transfer ownership (`transfer-ownership.action.ts`)
+- [x] 42. ConfirmDialog for destructive actions
+- [x] 43. Guards: cannot remove owner, only owner can transfer ownership, cannot remove self if last owner
+- [x] 44. Live check: create second user via invite → change their role → remove them → re-invite → transfer ownership
 
 ### Roles management UI (owner-only)
-- [ ] 45. `app/[org]/settings/roles/page.tsx` + `RolesList.tsx`
-- [ ] 46. `app/[org]/settings/roles/new/page.tsx` + `RoleEditor.tsx` + `PermissionMatrix.tsx` (grouped checkboxes; owner-only perms hidden)
-- [ ] 47. `app/[org]/settings/roles/[id]/page.tsx` — same editor in edit mode; system roles can be edited but not renamed/deleted
-- [ ] 48. CRUD server actions with `assertOwner` (since `roles.manage` is owner-only)
+- [x] 45. `app/[org]/settings/roles/page.tsx` + `RolesList.tsx`
+- [x] 46. `app/[org]/settings/roles/new/page.tsx` + `RoleEditor.tsx` + `PermissionMatrix.tsx` (grouped checkboxes; owner-only perms hidden)
+- [x] 47. `app/[org]/settings/roles/[id]/page.tsx` — same editor in edit mode; system roles can be edited but not renamed/deleted
+- [x] 48. CRUD server actions with `assertOwner` (since `roles.manage` is owner-only)
 
 ### Account
-- [ ] 49. `app/account/page.tsx` — view/edit name, change password
-- [ ] 50. `app/account/sessions/page.tsx` — list active sessions with revoke buttons
+- [x] 49. `app/account/page.tsx` — view/edit name, change password
+- [x] 50. `app/account/sessions/page.tsx` — list active sessions with revoke buttons
 
 ### Org settings
-- [ ] 51. `app/[org]/settings/page.tsx` — name + slug edit (slug change is destructive — confirm dialog)
-- [ ] 52. `app/[org]/settings/danger/page.tsx` — transfer ownership (alt path) + delete org (cascade) — owner-only
+- [x] 51. `app/[org]/settings/page.tsx` — name + slug edit (slug change is destructive — confirm dialog)
+- [x] 52. `app/[org]/settings/danger/page.tsx` — transfer ownership (alt path) + delete org (cascade) — owner-only
 
 ### App shell
-- [ ] 53. `AppShell` layout in `app/[org]/layout.tsx`
-- [ ] 54. `Sidebar` with org-level nav
-- [ ] 55. `TopBar` with org switcher, user menu
-- [ ] 56. `OrgSwitcher` lists user's orgs (from Redux org slice or server)
-- [ ] 57. `UserMenu` dropdown items: Account, Sessions, Theme submenu (Dark/Light/System), Logout
-- [ ] 58. `ThemeSwitcher` component — calls `update-preferences.action.ts`, updates Redux + cookie + DB
-- [ ] 59. `update-preferences.action.ts` — Zod-validated, **MERGES** into `users.preferences` (does NOT replace).
+- [x] 53. `AppShell` layout in `app/[org]/layout.tsx`
+- [x] 54. `Sidebar` with org-level nav
+- [x] 55. `TopBar` with org switcher, user menu
+- [x] 56. `OrgSwitcher` lists user's orgs (from Redux org slice or server)
+- [x] 57. `UserMenu` dropdown items: Account, Sessions, Theme submenu (Dark/Light/System), Logout
+- [x] 58. `ThemeSwitcher` component — calls `update-preferences.action.ts`, updates Redux + cookie + DB
+- [x] 59. `update-preferences.action.ts` — Zod-validated, **MERGES** into `users.preferences` (does NOT replace).
   - **Critical pattern**: `UPDATE users SET preferences = preferences || $1::jsonb WHERE id = $2`. Naive `SET preferences = $1` would wipe other keys (e.g. theme update sneaks `autoRefresh` away — feature 04 adds that key). All future preference writers MUST use this pattern. Document in `Decision log (local)` below.
   - Zod validates the partial object: `z.object({ theme: themeEnum.optional(), autoRefresh: refreshEnum.optional() }).strict()`. Each new feature extending preferences widens this schema.
-- [ ] 60. On login, hydrate Redux theme from `users.preferences.theme`. Sync cookie too. Handles SSR by reading cookie first, then upgrading from DB on auth.
-- [ ] 61. Live check: log in as user A with theme=light → theme persists across logout/login → log in as user B with theme=dark → see dark
+- [x] 60. On login, hydrate Redux theme from `users.preferences.theme`. Sync cookie too. Handles SSR by reading cookie first, then upgrading from DB on auth.
+- [x] 61. Live check: log in as user A with theme=light → theme persists across logout/login → log in as user B with theme=dark → see dark
 
 ### Tests
 - [ ] 62. Unit: `hasPermission`, `seedSystemRoles`, invite token validation, theme cookie roundtrip
@@ -390,3 +390,16 @@ A fresh DB plus a fresh `npm run dev` produces this end-to-end success:
 | 2026-05-01 | Setup wizard guarded by `pg_advisory_xact_lock` + COUNT(users) inside transaction | Middleware check is racy; two simultaneous submits would both create owners without DB-level guard |
 | 2026-05-01 | `users.preferences` writes use `preferences \|\| $1::jsonb` merge, never full replace | Multiple features extend this jsonb (theme in 01, autoRefresh in 04, more later); naive replace silently wipes sibling keys |
 | 2026-05-01 | FK cascades: org-owned tables CASCADE, role refs RESTRICT, audit refs SET NULL | Predictable org-delete semantics; prevents accidental role wipe; preserves history when users go away |
+| 2026-05-02 | Single migration file `0000_narrow_sway.sql` instead of planned 0001–0004 split | Drizzle kit generates one file per schema snapshot; traceability covered by schema file split (auth.ts / organizations.ts / orgMembership.ts / invitations.ts) |
+| 2026-05-02 | Auth table IDs are `text` (not `uuid`); org table IDs are `uuid` | better-auth controls ID generation for its own tables and passes string IDs to the adapter; FKs from org tables to `users.id` are `text` to match |
+| 2026-05-02 | `verifications` is the schema export key for the `verification_tokens` PG table | Drizzle adapter with `usePlural: true` maps better-auth model `verification` → key `verifications`; actual table name is `verification_tokens` as planned |
+| 2026-05-03 | `proxy.ts` instead of `middleware.ts`; function `proxy` instead of `middleware` | Next.js 16 deprecated the `middleware` file convention and renamed it to `proxy`. Edge runtime removed — only Node.js is supported. |
+| 2026-05-03 | Setup guard only caches `setupDone=true`, never `setupDone=false` | Caching the negative state would cause the redirect after setup action to bounce back to /setup within the 5 s TTL window. |
+| 2026-05-03 | `SetupWizard` attaches native `submit` listener via `useRef` to always call `e.preventDefault()` | GForm only calls `e.preventDefault()` when `state.isValid`; without this, an invalid submit triggers the browser's native GET fallback and appends form fields as query params. |
+| 2026-05-03 | `useId()` instead of `input.gid` for `htmlFor`/`id` pairs in GForm components | GForm generates `gid` via `Date.now() + Math.random()` — different on server vs client, causing React hydration mismatch. `useId()` is SSR-stable by design. Applied to SetupWizard and LoginForm; all future GForm components must follow this pattern. |
+| 2026-05-03 | `proxy.ts` calls `auth.api.getSession` on every non-static request | Session must be verified at the proxy level to protect all routes uniformly. Only caches setupDone; session check is cheap (indexed session token lookup). |
+| 2026-05-03 | Password reset uses `auth.api.requestPasswordReset` + `sendResetPassword` hook; token extracted from DB for live check | Delegating to better-auth means token lifecycle (generation, hashing, expiry, deletion) is handled correctly. Live check reads `identifier LIKE 'reset-password:%'` from `verification_tokens` to avoid parsing pino logs. |
+| 2026-05-03 | `core/logger/index.ts` — plain `pino({ level: "info" })` without pino-pretty transport | pino-pretty is a devDependency; transport config in production build would fail. JSON stdout is sufficient; pipe through pino-pretty manually for local dev if needed. |
+| 2026-05-03 | `shared/components/Modal/Modal.tsx` — `isProgrammaticClose` ref suppresses `onClose` when component calls `dialog.close()` internally | Native `<dialog>` fires a `close` DOM event on every close, including programmatic ones triggered by the `open` prop going false. Without the guard, `onClose` fires on every programmatic close, causing parent state resets that race with concurrent state transitions (e.g. "invite" → "created" in InviteSection). |
+| 2026-05-04 | `MembersList` is a client component that manages all member-action dialogs; `MemberRow` only renders `<tr>` and calls `onAction` callback | Putting dialogs inside `MemberRow` would place `<dialog>` elements inside `<tbody>` (invalid HTML). Lifting dialog state to `MembersList` keeps the table valid and avoids portal complexity. |
+| 2026-05-04 | E2E re-invite acceptance uses DB helper (`dbAcceptInvite`) rather than browser UI | After removal, the user account still exists; opening the invite link without a session shows the registration form, which fails because the email already exists. The invite-acceptance UI flow was fully tested in item 40; this live check focuses on member management actions. |

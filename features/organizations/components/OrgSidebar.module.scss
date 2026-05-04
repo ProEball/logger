@@ -1,0 +1,11 @@
+.settingsItem {
+    // Inherits base sidebar item styles — no overrides needed
+}
+
+.dangerItem {
+    color: var(--status-error, var(--level-error-text));
+
+    &:hover {
+        color: var(--level-error-text);
+    }
+}

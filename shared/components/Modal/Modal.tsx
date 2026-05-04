@@ -28,33 +28,41 @@ export function Modal({
     className,
 }: ModalProps) {
     const dialogRef = useRef<HTMLDialogElement>(null);
+    // Track programmatic closes so the native close event doesn't call onClose.
+    // When open→false we call dialog.close() ourselves; the resulting close event
+    // must be ignored, otherwise callers whose onClose resets state would
+    // overwrite any concurrent state transitions (e.g. "invite" → "created").
+    const isProgrammaticClose = useRef(false);
 
     useEffect(() => {
         const node = dialogRef.current;
-        if (!node) {
-            return;
-        }
+        if (!node) return;
         if (open && !node.open) {
             node.showModal();
         } else if (!open && node.open) {
+            isProgrammaticClose.current = true;
             node.close();
         }
     }, [open]);
 
-    const handleBackdropClick = (event: MouseEvent<HTMLDialogElement>) => {
-        if (!closeOnBackdropClick) {
+    const handleNativeClose = () => {
+        if (isProgrammaticClose.current) {
+            isProgrammaticClose.current = false;
             return;
         }
-        if (event.target === dialogRef.current) {
-            onClose();
-        }
+        onClose();
+    };
+
+    const handleBackdropClick = (event: MouseEvent<HTMLDialogElement>) => {
+        if (!closeOnBackdropClick) return;
+        if (event.target === dialogRef.current) onClose();
     };
 
     return (
         <dialog
             ref={dialogRef}
             className={cx(styles.dialog, styles[size], className)}
-            onClose={onClose}
+            onClose={handleNativeClose}
             onClick={handleBackdropClick}
         >
             <div className={styles.surface}>

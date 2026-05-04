@@ -10,6 +10,9 @@ export type { BreadcrumbItem, BreadcrumbsProps } from './Breadcrumbs/Breadcrumbs
 export { Button } from './Button/Button';
 export type { ButtonProps, ButtonSize, ButtonVariant } from './Button/Button';
 
+export { ConfirmDialog } from './ConfirmDialog/ConfirmDialog';
+export type { ConfirmDialogProps } from './ConfirmDialog/ConfirmDialog';
+
 export { Checkbox } from './Checkbox/Checkbox';
 export type { CheckboxProps } from './Checkbox/Checkbox';
 
