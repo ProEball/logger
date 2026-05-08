@@ -10,6 +10,7 @@ import {
 
 import { users } from "./auth";
 import { organizations, roles } from "./organizations";
+import { projects } from "./projects";
 
 export const organizationMembers = pgTable(
     "organization_members",
@@ -32,11 +33,11 @@ export const organizationMembers = pgTable(
     }),
 );
 
-// Placeholder table — FK to projects.id is added in feature 02
+// Placeholder table — per-project role overrides (MVP: org-level roles only)
 export const projectMemberRoles = pgTable(
     "project_member_roles",
     {
-        projectId: uuid("project_id").notNull(),
+        projectId: uuid("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
         userId: text("user_id")
             .notNull()
             .references(() => users.id, { onDelete: "cascade" }),

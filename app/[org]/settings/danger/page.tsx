@@ -1,7 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 import { getCurrentUser } from "@/core/auth/server";
-import { DeleteOrgForm } from "@/features/organizations/components/DeleteOrgForm";
-import { TransferOwnershipForm } from "@/features/organizations/components/TransferOwnershipForm";
+import { DeleteOrgForm } from "@/features/organizations/components/DeleteOrgForm/DeleteOrgForm";
+import { TransferOwnershipForm } from "@/features/organizations/components/TransferOwnershipForm/TransferOwnershipForm";
 import {
     getMembership,
     getOrgBySlug,

@@ -1,4 +1,4 @@
-import { ForgotPasswordForm } from "@/features/auth/components/ForgotPasswordForm";
+import { ForgotPasswordForm } from "@/features/auth/components/ForgotPasswordForm/ForgotPasswordForm";
 import { requestPasswordResetAction } from "@/features/auth/actions/request-password-reset.action";
 import styles from "./page.module.scss";
 

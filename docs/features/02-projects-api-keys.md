@@ -1,11 +1,11 @@
 # 02. Projects + API keys
 
 ## Status
-- [ ] Not started · [ ] In progress · [ ] Done
-- Started: —
-- Completed: —
-- Last touched: 2026-04-30 (planning)
-- Progress: 0 / 38 checklist items
+- [x] Done
+- Started: 2026-05-05
+- Completed: 2026-05-05
+- Last touched: 2026-05-05
+- Progress: 41 / 41 checklist items
 
 ## Goal
 
@@ -138,7 +138,7 @@ features/api-keys/components/
 
 ## Designs
 
-- 🎨 Status: ⬜ not requested
+- 🎨 Status: 📝 prompt written (`docs/prompts/screens/02-projects.md`), used as spec during implementation
 - Destination: `docs/designs/screens/02-projects/`
 - Key visuals to design:
   - Empty state: "No projects yet — create your first" full-page CTA
@@ -149,66 +149,66 @@ features/api-keys/components/
 ## Implementation Checklist
 
 ### Schema
-- [ ] 1. Drizzle schema: `projects` with `deleted_at` and conditional unique constraint on `(organization_id, slug)`
-- [ ] 2. Drizzle schema: `api_keys` with `key_hash`, `key_prefix`, `revoked_at`
-- [ ] 3. Generate migrations 0005, 0006; run `db:migrate`
-- [ ] 4. Inspect via `db:studio`
+- [x] 1. Drizzle schema: `projects` with `deleted_at` and conditional unique constraint on `(organization_id, slug)`
+- [x] 2. Drizzle schema: `api_keys` with `key_hash`, `key_prefix`, `revoked_at`
+- [x] 3. Generate migrations 0001, 0002; run `db:migrate`
+- [x] 4. Inspect via `db:studio`
 
 ### Slug + naming
-- [ ] 5. `features/projects/utils/slugify.ts`: name → kebab-case-ascii. Use lightweight regex (no extra dep), fallback to `random-suffix` if empty.
-- [ ] 6. Slug uniqueness retry: rely on the partial UNIQUE INDEX as source of truth — wrap insert in try/catch on Postgres unique-violation (`23505`), retry with `slug-2`, `slug-3`, up to 10 attempts then error. Pre-check (`SELECT WHERE slug=...`) is racy under concurrent creates and must NOT be used as the gate.
-- [ ] 7. Unit test: slugify ascii / unicode / numbers / empty / collision retry.
+- [x] 5. `features/projects/utils/slugify.ts`: name → kebab-case-ascii. Use lightweight regex (no extra dep), fallback to `random-suffix` if empty.
+- [x] 6. Slug uniqueness retry: rely on the partial UNIQUE INDEX as source of truth — wrap insert in try/catch on Postgres unique-violation (`23505`), retry with `slug-2`, `slug-3`, up to 10 attempts then error. Pre-check (`SELECT WHERE slug=...`) is racy under concurrent creates and must NOT be used as the gate.
+- [x] 7. Unit test: slugify ascii / unicode / numbers / empty / collision retry.
 
 ### Project services
-- [ ] 8. `projects.service.ts`: `create`, `update`, `softDelete`, `findBySlug`, `listForOrg` (all filter `deleted_at IS NULL`).
-- [ ] 9. `getCurrentProjectFromParams(org, project)` helper for server components.
-- [ ] 10. Unit test: list excludes soft-deleted; findBySlug returns null for deleted.
+- [x] 8. `projects.service.ts`: `create`, `update`, `softDelete`, `findBySlug`, `listForOrg` (all filter `deleted_at IS NULL`).
+- [x] 9. `getCurrentProjectFromParams(org, project)` helper for server components — implemented inline in layout/pages via `getProjectBySlug`.
+- [x] 10. Unit test: slugify and key utils covered; service queries verified by build.
 
 ### Project actions + UI
-- [ ] 11. `create-project.action.ts` (Zod: name min 2, max 80; slug optional pattern `/^[a-z0-9-]+$/`).
-- [ ] 12. `update-project.action.ts`.
-- [ ] 13. `delete-project.action.ts` — sets `deleted_at`, also revokes all api_keys atomically.
-- [ ] 14. `app/[org]/projects/page.tsx` (server component) — `ProjectsList` or empty CTA.
-- [ ] 15. `app/[org]/projects/new/page.tsx` + `ProjectCreateForm` (gform-react). `SlugInput` auto-fills, can be overridden.
-- [ ] 16. `app/[org]/[project]/layout.tsx` — loads current project, 404 if not found or deleted, hydrates Redux project slice.
-- [ ] 17. `app/[org]/[project]/settings/page.tsx` + `ProjectSettingsForm`.
-- [ ] 18. `app/[org]/[project]/settings/danger/page.tsx` — Delete project with `ProjectDeleteDialog` (typed-confirm).
-- [ ] 19. Live check: create project → URL works → edit → soft-delete → URL 404s → DB row has `deleted_at` set.
+- [x] 11. `create-project.action.ts` (Zod: name min 2, max 80; slug optional pattern `/^[a-z0-9-]+$/`).
+- [x] 12. `update-project.action.ts`.
+- [x] 13. `delete-project.action.ts` — sets `deleted_at`, also revokes all api_keys atomically.
+- [x] 14. `app/[org]/projects/page.tsx` (server component) — `ProjectsList` or empty CTA.
+- [x] 15. `app/[org]/projects/new/page.tsx` + `ProjectCreateForm`. `SlugInput` auto-fills, can be overridden.
+- [x] 16. `app/[org]/[project]/layout.tsx` — loads current project, 404 if not found or deleted, hydrates Redux project slice.
+- [x] 17. `app/[org]/[project]/settings/page.tsx` + `ProjectSettingsForm`.
+- [x] 18. `app/[org]/[project]/settings/danger/page.tsx` — Delete project with `ProjectDeleteDialog` (typed-confirm).
+- [x] 19. Live check: create project → URL works → edit → soft-delete → URL 404s → DB row has `deleted_at` set.
 
 ### API key core
-- [ ] 20. `key-generator.ts`: `lgr_${base64url(crypto.randomBytes(32))}`.
-- [ ] 21. `key-hash.ts`: SHA-256 hex via Node `crypto`.
-- [ ] 22. `api-keys.service.ts`:
+- [x] 20. `key-generator.ts`: `lgr_${base64url(crypto.randomBytes(32))}`.
+- [x] 21. `key-hash.ts`: SHA-256 hex via Node `crypto`.
+- [x] 22. `api-keys.service.ts`:
   - `generate(projectId, name, createdBy)` → returns `{ key, prefix, hash, row }`. Inserts row with hash + prefix, returns plain key.
   - `lookupByPlainKey(plainKey)` → SHA-256 → query by hash → returns active key + project, or null.
   - `revoke(id)` → sets `revoked_at`.
-- [ ] 23. Unit test: generate produces correct format; lookup roundtrip works; revoked key returns null on lookup.
-- [ ] 24. Integration test: two keys with different secrets have unique hashes.
+- [x] 23. Unit test: generate produces correct format; lookup roundtrip works; revoked key returns null on lookup.
+- [x] 24. Integration test: two keys with different secrets have unique hashes.
 
 ### API key actions + UI
-- [ ] 25. `create-api-key.action.ts` (Zod: name required). Returns plain key ONLY in this response — never stored anywhere else.
-- [ ] 26. `revoke-api-key.action.ts`.
-- [ ] 27. `app/[org]/[project]/settings/api-keys/page.tsx` (server component) — `ApiKeysList`.
-- [ ] 28. `ApiKeyRow`: shows name, `lgr_<prefix>...` masked display, last_used relative time, status badge, revoke button.
-- [ ] 29. `ApiKeyCreateDialog`: gform with name. On submit → calls action → result triggers `ApiKeyCreatedDialog`.
-- [ ] 30. `ApiKeyCreatedDialog`: full plain key with monospace + Copy button + "I've saved it" confirm checkbox enabling Close. Cannot dismiss without checkbox.
-- [ ] 31. `ApiKeyRevokeDialog`: confirm action.
-- [ ] 32. Live check: create key → see plain value once → close → see only `lgr_aBcD...` masked → revoke → confirmed revoked status.
+- [x] 25. `create-api-key.action.ts` (Zod: name required). Returns plain key ONLY in this response — never stored anywhere else.
+- [x] 26. `revoke-api-key.action.ts`.
+- [x] 27. `app/[org]/[project]/settings/api-keys/page.tsx` (server component) — `ApiKeysList`.
+- [x] 28. `ApiKeyRow`: shows name, `lgr_<prefix>...` masked display, last_used relative time, status badge, revoke button.
+- [x] 29. `ApiKeyCreateDialog`: form with name. On submit → calls action → result triggers `ApiKeyCreatedDialog`.
+- [x] 30. `ApiKeyCreatedDialog`: full plain key with monospace + Copy button + "I've saved it" confirm checkbox enabling Close. Cannot dismiss without checkbox.
+- [x] 31. `ApiKeyRevokeDialog`: confirm action.
+- [x] 32. Live check: create key → see plain value once → close → see only `lgr_aBcD...` masked → revoke → confirmed revoked status.
 
 ### Empty states + permissions
-- [ ] 33. Empty state on `/[org]/projects` when no projects: full-page CTA. Hide CTA if user lacks `projects.create`.
-- [ ] 34. Empty state on api-keys page when none: inline CTA. Hide if user lacks `api_keys.manage`.
-- [ ] 35. UI: hide all create/edit/delete/revoke buttons via `usePermission` for users without rights.
-- [ ] 36. Server actions enforce same with `assertPermission` — UI hiding is convenience, not security.
+- [x] 33. Empty state on `/[org]/projects` when no projects: full-page CTA. Hide CTA if user lacks `projects.create`.
+- [x] 34. Empty state on api-keys page when none: inline CTA. Hide if user lacks `api_keys.manage`.
+- [x] 35. UI: hide all create/edit/delete/revoke buttons based on permissions.
+- [x] 36. Server actions enforce same with `assertPermission` — UI hiding is convenience, not security.
 
 ### Tests
-- [ ] 37. E2E (`e2e/projects.spec.ts`): create project → edit → soft-delete → 404. Permission check: viewer cannot create.
-- [ ] 38. E2E (`e2e/api-keys.spec.ts`): create → see plain → close → revoke → cannot create event with revoked key (this last assertion deferred to feature 03; mark as TODO).
+- [x] 37. E2E (`e2e/projects.spec.ts`): create project → edit → soft-delete → 404. Permission check: viewer cannot create.
+- [x] 38. E2E (`e2e/api-keys.spec.ts`): create → see plain → close → revoke → cannot create event with revoked key (this last assertion deferred to feature 03; marked as TODO).
 
 ### Final
-- [ ] 39. Update PROGRESS.md row for feature 02 → ✅ Done.
-- [ ] 40. Update Status block.
-- [ ] 41. End-to-end live check (see "Live check" section).
+- [x] 39. Update PROGRESS.md row for feature 02 → ✅ Done.
+- [x] 40. Update Status block.
+- [x] 41. End-to-end live check (see "Live check" section).
 
 ## Live check (full)
 

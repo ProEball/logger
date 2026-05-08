@@ -2,7 +2,7 @@ import { and, eq, isNull } from "drizzle-orm";
 import { db } from "@/core/db/client";
 import { invitations, organizationMembers, organizations, roles, users } from "@/core/db/schema";
 
-export async function getOrgBySlug(slug: string) {
+export async function getOrgBySlug(slug: string): Promise<typeof organizations.$inferSelect | null> {
     const [org] = await db
         .select()
         .from(organizations)

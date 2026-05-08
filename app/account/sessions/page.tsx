@@ -1,8 +1,8 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { auth } from "@/core/auth/config";
-import { SessionsList } from "@/features/auth/components/SessionsList";
-import type { SessionItem } from "@/features/auth/components/SessionsList";
+import { SessionsList } from "@/features/auth/components/SessionsList/SessionsList";
+import type { SessionItem } from "@/features/auth/components/SessionsList/SessionsList";
 import styles from "./page.module.scss";
 
 export const metadata = { title: "Sessions — Logger" };

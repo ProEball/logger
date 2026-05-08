@@ -1,4 +1,4 @@
-import { ResetPasswordForm } from "@/features/auth/components/ResetPasswordForm";
+import { ResetPasswordForm } from "@/features/auth/components/ResetPasswordForm/ResetPasswordForm";
 import { resetPasswordAction } from "@/features/auth/actions/reset-password.action";
 import styles from "./page.module.scss";
 

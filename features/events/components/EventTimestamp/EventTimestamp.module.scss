@@ -1,0 +1,16 @@
+.tooltipContent {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    font-size: 12px;
+    white-space: nowrap;
+}
+
+.utc {
+    color: var(--color-text-secondary);
+}
+
+.relative {
+    color: var(--color-text-tertiary);
+    font-style: italic;
+}

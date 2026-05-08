@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { getCurrentUser } from "@/core/auth/server";
-import { RolesList } from "@/features/roles/components/RolesList";
+import { RolesList } from "@/features/roles/components/RolesList/RolesList";
 import { getOrgRoles } from "@/features/roles/services/roles.service";
 import { getMembership, getOrgBySlug } from "@/features/organizations/services/organizations.service";
 import styles from "./page.module.scss";

@@ -5,8 +5,8 @@ import { auth } from "@/core/auth/config";
 import { getCurrentUser } from "@/core/auth/server";
 import { db } from "@/core/db/client";
 import { invitations } from "@/core/db/schema";
-import { AcceptInviteForm } from "@/features/auth/components/AcceptInviteForm";
-import { AcceptButton } from "@/features/organizations/components/AcceptButton";
+import { AcceptInviteForm } from "@/features/auth/components/AcceptInviteForm/AcceptInviteForm";
+import { AcceptButton } from "@/features/organizations/components/AcceptButton/AcceptButton";
 import {
     acceptInvitationAction,
     registerAndAcceptAction,

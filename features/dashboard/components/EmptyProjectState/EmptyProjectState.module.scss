@@ -1,0 +1,43 @@
+.root {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-4);
+    padding: var(--space-12) var(--space-6);
+    text-align: center;
+    max-width: 600px;
+    margin: 0 auto;
+}
+
+.icon {
+    color: var(--text-muted);
+}
+
+.heading {
+    font-size: var(--text-xl);
+    font-weight: var(--weight-semibold);
+    color: var(--text-primary);
+    margin: 0;
+}
+
+.body {
+    font-size: var(--text-base);
+    color: var(--text-secondary);
+    margin: 0;
+    max-width: 440px;
+}
+
+.example {
+    width: 100%;
+    text-align: left;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+}
+
+.exampleLabel {
+    font-size: var(--text-sm);
+    font-weight: var(--weight-medium);
+    color: var(--text-primary);
+    margin: 0;
+}

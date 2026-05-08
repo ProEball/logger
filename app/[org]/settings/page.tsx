@@ -1,6 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 import { getCurrentUser } from "@/core/auth/server";
-import { OrgSettingsForm } from "@/features/organizations/components/OrgSettingsForm";
+import { OrgSettingsForm } from "@/features/organizations/components/OrgSettingsForm/OrgSettingsForm";
 import { getMembership, getOrgBySlug } from "@/features/organizations/services/organizations.service";
 import { hasPermission } from "@/shared/permissions/check";
 import styles from "./page.module.scss";

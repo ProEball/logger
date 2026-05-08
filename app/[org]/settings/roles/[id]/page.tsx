@@ -1,6 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 import { getCurrentUser } from "@/core/auth/server";
-import { RoleEditor } from "@/features/roles/components/RoleEditor";
+import { RoleEditor } from "@/features/roles/components/RoleEditor/RoleEditor";
 import { getRoleById } from "@/features/roles/services/roles.service";
 import { getMembership, getOrgBySlug } from "@/features/organizations/services/organizations.service";
 import styles from "./page.module.scss";

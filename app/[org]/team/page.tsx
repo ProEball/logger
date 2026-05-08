@@ -3,9 +3,9 @@ import { notFound, redirect } from "next/navigation";
 import { getCurrentUser } from "@/core/auth/server";
 import { db } from "@/core/db/client";
 import { roles } from "@/core/db/schema";
-import { MembersList } from "@/features/organizations/components/MembersList";
-import { InvitationsList } from "@/features/organizations/components/InvitationsList";
-import { InviteSection } from "@/features/organizations/components/InviteSection";
+import { MembersList } from "@/features/organizations/components/MembersList/MembersList";
+import { InvitationsList } from "@/features/organizations/components/InvitationsList/InvitationsList";
+import { InviteSection } from "@/features/organizations/components/InviteSection/InviteSection";
 import {
     getOrgBySlug,
     getMembership,

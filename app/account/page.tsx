@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/core/auth/server";
-import { AccountProfileForm } from "@/features/auth/components/AccountProfileForm";
-import { ChangePasswordForm } from "@/features/auth/components/ChangePasswordForm";
+import { AccountProfileForm } from "@/features/auth/components/AccountProfileForm/AccountProfileForm";
+import { ChangePasswordForm } from "@/features/auth/components/ChangePasswordForm/ChangePasswordForm";
 import styles from "./page.module.scss";
 
 export const metadata = { title: "Account — Logger" };

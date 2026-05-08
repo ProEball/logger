@@ -5,8 +5,9 @@ import { getCurrentUser } from "@/core/auth/server";
 import { getThemeFromCookie } from "@/core/theme/cookie";
 import type { ThemeValue } from "@/core/store/slices/theme";
 import { getMembership, getOrgBySlug, getUserOrgs } from "@/features/organizations/services/organizations.service";
-import { OrgSidebar } from "@/features/organizations/components/OrgSidebar";
-import { OrgTopBar } from "@/features/organizations/components/OrgTopBar";
+import { OrgSidebar } from "@/features/organizations/components/OrgSidebar/OrgSidebar";
+import { OrgTopBar } from "@/features/organizations/components/OrgTopBar/OrgTopBar";
+import { parsePreferences } from "@/shared/types/user-preferences.types";
 
 interface OrgLayoutProps {
     children: React.ReactNode;
@@ -26,10 +27,9 @@ export default async function OrgLayout({ children, params }: OrgLayoutProps) {
     if (!membership) redirect("/login");
 
     // Prefer DB-stored theme; fall back to cookie (handles first load before DB is written)
-    const rawPrefs = user.preferences as Record<string, unknown> | null;
-    const dbTheme = rawPrefs?.theme as ThemeValue | undefined;
+    const preferences = parsePreferences(user.preferences);
     const cookieTheme = await getThemeFromCookie();
-    const theme: ThemeValue = dbTheme ?? cookieTheme;
+    const theme: ThemeValue = preferences.theme ?? cookieTheme;
 
     const userOrgs = await getUserOrgs(user.id);
 
@@ -40,6 +40,7 @@ export default async function OrgLayout({ children, params }: OrgLayoutProps) {
                 orgSlug={org.slug}
                 membership={membership}
                 theme={theme}
+                preferences={preferences}
             />
             <AppShell
                 sidebar={<OrgSidebar orgSlug={org.slug} orgName={org.name} />}

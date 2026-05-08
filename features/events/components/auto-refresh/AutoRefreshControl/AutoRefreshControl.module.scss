@@ -1,0 +1,44 @@
+.control {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.label {
+    font-size: 12px;
+    color: var(--color-text-secondary);
+    white-space: nowrap;
+}
+
+.options {
+    display: flex;
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    overflow: hidden;
+}
+
+.option {
+    padding: 4px 10px;
+    font-size: 12px;
+    background: none;
+    border: none;
+    border-right: 1px solid var(--color-border);
+    cursor: pointer;
+    color: var(--color-text-secondary);
+    transition: background 0.1s, color 0.1s;
+
+    &:last-child {
+        border-right: none;
+    }
+
+    &:hover {
+        background: var(--color-surface-hover);
+        color: var(--color-text-primary);
+    }
+
+    &.active {
+        background: var(--color-accent);
+        color: var(--color-text-on-accent);
+        font-weight: 500;
+    }
+}

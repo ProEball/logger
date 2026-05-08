@@ -1,4 +1,4 @@
-import { SetupWizard } from "@/features/auth/components/SetupWizard";
+import { SetupWizard } from "@/features/auth/components/SetupWizard/SetupWizard";
 import { setupAction } from "@/features/auth/actions/setup.action";
 import styles from "./page.module.scss";
 

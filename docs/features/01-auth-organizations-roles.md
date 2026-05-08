@@ -1,11 +1,11 @@
 # 01. Auth + Organizations + Roles
 
 ## Status
-- [ ] Not started · [x] In progress · [ ] Done
+- [ ] Not started · [ ] In progress · [x] Done
 - Started: 2026-05-02
-- Completed: —
+- Completed: 2026-05-04
 - Last touched: 2026-05-04
-- Progress: 61 / 69 checklist items
+- Progress: 69 / 69 checklist items
 
 ## Goal
 
@@ -346,16 +346,16 @@ ORGANIZATION SCOPE                  permission required
 - [x] 61. Live check: log in as user A with theme=light → theme persists across logout/login → log in as user B with theme=dark → see dark
 
 ### Tests
-- [ ] 62. Unit: `hasPermission`, `seedSystemRoles`, invite token validation, theme cookie roundtrip
-- [ ] 63. E2E (`e2e/auth-bootstrap.spec.ts`): full setup wizard → org creation flow
-- [ ] 64. E2E (`e2e/invite.spec.ts`): create invite → register via link → accept → role applied
-- [ ] 65. E2E (`e2e/role-management.spec.ts`): create custom role → assign to user → user sees only those perms
-- [ ] 66. E2E (`e2e/theme.spec.ts`): toggle theme → reload → state preserved
+- [x] 62. Unit: `hasPermission`, `seedSystemRoles`, invite token validation, theme cookie roundtrip
+- [x] 63. E2E (`e2e/auth-bootstrap.spec.ts`): full setup wizard → org creation flow
+- [x] 64. E2E (`e2e/invite.spec.ts`): create invite → register via link → accept → role applied
+- [x] 65. E2E (`e2e/role-management.spec.ts`): create custom role → assign to user → user sees only those perms
+- [x] 66. E2E (`e2e/theme.spec.ts`): toggle theme → reload → state preserved
 
 ### Final
-- [ ] 67. Update `PROGRESS.md` row for feature 01 → ✅ Done
-- [ ] 68. Update Status block at top of this file
-- [ ] 69. End-to-end live check (see "Live check" section)
+- [x] 67. Update `PROGRESS.md` row for feature 01 → ✅ Done
+- [x] 68. Update Status block at top of this file
+- [x] 69. End-to-end live check (see "Live check" section)
 
 > **Note**: counts may shift as we discover sub-tasks. The first 48 items are the planning estimate; final count goes here when we finish.
 
