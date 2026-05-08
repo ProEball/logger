@@ -2,30 +2,30 @@
 
 > Single source of truth for "where are we right now". Update after every work session.
 
-**Last updated**: 2026-05-04 (Feature 01 — items 1–61 done)
+**Last updated**: 2026-05-08 (post-Feature 05 — component restructure + TS fixes)
 
 ---
 
 ## Current Phase
 
-**Feature 01 — Auth + Organizations + Roles** · `docs/features/01-auth-organizations-roles.md`
-Status: 🟨 In progress · 61 / 69 items
+**Next up: Feature 06 — Alerts** · `docs/features/06-alerts.md`
+Status: 🟦 Planned — feature doc exists, not yet detailed for implementation. Read the doc first; if it's a stub, detail it with the user before writing any code.
 
-> First action when resuming: open `docs/features/01-auth-organizations-roles.md`, find the first unchecked item, continue from there.
+**Last completed side-track (2026-05-08): Component folder restructure**
+All `features/*/components/` reorganized so every component lives in its own named subfolder — matching the `shared/components/` pattern. 118 files moved via `git mv`. Semantic group subfolders (`filters/`, `detail/`, `widgets/`, etc.) kept; flat `parts/` at feature-components root dissolved (shared-within-feature components promoted to own folders; single-parent sub-components nested inside parent's `parts/`). All imports updated, TypeScript clean. Rules updated: `PROJECT.md §2.2`, `§3.3`, `§15`. Two pre-existing TS errors also fixed: `e2e/ingest.spec.ts` (`body` → `data` for Playwright), `getOrgBySlug` explicit return type (`Promise<Org | null>`).
 
-**Done (1–61):** full auth, orgs, invitations, member management, roles CRUD, account pages, org settings, full App Shell (Sidebar + TopBar + OrgSwitcher + UserMenu + ThemeSwitcher + Redux hydration), live check passed.
+**Feature 05 — Dashboard** · `docs/features/05-dashboard.md`
+Status: ✅ Done · 24 / 24 items
 
-**Remaining (62–69):**
-- 62 — Unit tests (Vitest): `hasPermission`, `seedSystemRoles`, invite token validation, theme cookie roundtrip. Files: `shared/permissions/check.test.ts`, `features/roles/utils/seed-system-roles.test.ts`, `features/organizations/actions/invite-member.test.ts`, `core/theme/cookie.test.ts`
-- 63 — E2E `e2e/auth-bootstrap.spec.ts`: setup wizard → org creation
-- 64 — E2E `e2e/invite.spec.ts`: create invite → register via link → accept → role applied
-- 65 — E2E `e2e/role-management.spec.ts`: create custom role → assign to user → user sees only those perms
-- 66 — E2E `e2e/theme.spec.ts`: toggle theme → reload → state preserved
-- 67 — Update PROGRESS.md row for feature 01 → ✅ Done
-- 68 — Update Status block in feature doc
-- 69 — End-to-end live check (see "Live check" section in feature doc)
+**Done:** `aggregation-utils.ts` (`pickBucket` + `resolveRange`, pure helpers extracted for testability), `aggregations.service.ts` (5 raw-SQL queries: `eventsPerMinute` w/ `date_trunc` + stacked by level, `levelBreakdown`, `environmentBreakdown` (null→`(unset)`), `topMessages` (200-char truncation), `recentErrors`, `hasAnyEvents`), extended `TimeRangePreset` to include `"30d"` + updated `parse-filters.ts` + `events-query.service.ts` + `TimeRangePicker` (`presets` prop), `dashboard.*` i18n namespace, `use-dashboard-range.ts` hook (URL state, independent from events page per Q-E3), `WidgetCard` + `WidgetEmpty` + SCSS, `EmptyProjectState` (curl example with API key prefix), 5 widget components: `EventsPerMinuteWidget` (stacked AreaChart), `LevelBreakdownWidget` (donut PieChart, click → events), `EnvironmentBreakdownWidget` (horizontal BarChart, click → events), `TopMessagesWidget` (table, click → events), `RecentErrorsWidget` (list, click → events drawer), `DashboardHeader` (project name + TimeRangePicker w/ 30d + AutoRefreshControl), `DashboardPage` (client composition, `useAutoRefresh` wired), `app/[org]/[project]/page.tsx` replaced placeholder with full SSR: guards empty projects, runs 5 queries in `Promise.all`, passes data to `DashboardPage`, 122 total unit tests (14 new), `e2e/dashboard.spec.ts` (8 tests — DB-level assertions + graceful browser skip), build clean, TypeScript clean.
 
-**Test infra note:** Vitest config at `vitest.config.ts`, E2E via Playwright at `e2e/`. Check existing test in `shared/permissions/check.test.ts` (item 11, already written) as a reference for style.
+**Previously done (Feature 04):** `UserPreferences` type + `autoRefresh` field, `user.ts` Redux slice with selectors, `OrgHydrator` updated, `update-preferences.action.ts` widened for autoRefresh, `events.*` i18n namespace, `EventFilters` type + `parse-filters.ts` + `serialize-filters.ts` + `parse-cursor.ts` (20 unit tests), `events-query.service.ts` (listEvents w/ dynamic Drizzle query, cursor pagination, defense-in-depth project soft-delete guard, FTS via websearch_to_tsquery, jsonb attribute filter; getEventById), `app/[org]/[project]/events/page.tsx` (SSR, searchParams → filters → query), `EventsPage.tsx` (client composition), `useEventFilters` hook (URL sync, cursor reset on filter change), `EventsFilterBar` + all filter components (LevelFilter, StringListFilter, CorrelationFilter, AttributeFilter, MessageFilter, TimeRangePicker, AddFilterDropdown, FilterChips), `EventsTable` + `EventTimestamp` (Intl + Tooltip), `PaginationControls` (cursor-based Newer/Older), `EventDrawer` + `EventDetailHeader` + `EventDetailTabs` + `AttributesList` (hover "Filter by") + `ContextTree` (JsonTree) + `StackTraceViewer` + `StackFrame`, `stack-trace-parser.ts` (V8/Python/Java, 6 unit tests), `AutoRefreshControl` + `useAutoRefresh` (visibility-aware, pause on hidden tab), `e2e/events.spec.ts` (7/8 passing — browser test skipped gracefully without active auth session), 108 total unit tests, build clean. DB singleton fix: `core/db/client.ts` now uses global singleton + pool limit (max:10) to prevent connection exhaustion under Next.js hot reload.
+
+**Previously done (Feature 03):** Custom Postgres Docker image with pg_partman 5.4.3, `events` partitioned table (daily, 30d retention, 8 partitions premade), migration 0003 hand-edited for partman setup, Drizzle schema + 5 indexes (composite + GIN), `event-schema.ts` (Zod, single + batch), `sanitize-timestamp.ts`, `enrich-event.ts`, `rate-limit.service.ts` (RollingWindowLimiter, lazy cleanup, configurable via `RATE_LIMIT_PER_MIN`), `api-key-auth.service.ts` (Bearer token, debounced last_used_at), `ingest.service.ts`, route handlers (`POST /api/ingest`, `POST /api/ingest/batch`, OPTIONS CORS), `partman-maintenance.job.ts` (pg-boss hourly schedule, singletonKey), `core/worker/worker.ts`, `instrumentation.ts` (`WORKER_IN_PROCESS=true`), README.md with curl examples + field reference, E2E spec `ingest.spec.ts`, 28 new unit tests (82 total), build clean.
+
+**Previously done (Feature 02):** Drizzle schema (projects, api_keys), slugify utils + key-generator + key-hash (18 unit tests), projects.service + api-keys.service, Redux project slice, 5 server actions, all components, all app routes, E2E specs (projects.spec.ts, api-keys.spec.ts), full live check passed.
+
+**Previously done (Feature 01):** full auth, orgs, invitations, member management, roles CRUD, account pages, org settings, full App Shell, unit tests (36/36), E2E spec files, full 10-step live check passed.
 
 ---
 
@@ -37,11 +37,11 @@ Each feature has its own implementation doc with a status block, decisions, sche
 |---|---|---|---|
 | — | Design System + UI kit (side track) | ✅ Done | [features/design-system.md](features/design-system.md) |
 | 00 | Foundation | ✅ Done | [features/00-foundation.md](features/00-foundation.md) |
-| 01 | Auth + Organizations + Roles | 🟨 In progress | [features/01-auth-organizations-roles.md](features/01-auth-organizations-roles.md) |
-| 02 | Projects + API keys | 🟦 Planned | [features/02-projects-api-keys.md](features/02-projects-api-keys.md) |
-| 03 | Ingest | 🟦 Planned | [features/03-ingest.md](features/03-ingest.md) |
-| 04 | Events list + filters + detail | 🟦 Planned | [features/04-events-list-filters.md](features/04-events-list-filters.md) |
-| 05 | Dashboard | 🟦 Planned | [features/05-dashboard.md](features/05-dashboard.md) |
+| 01 | Auth + Organizations + Roles | ✅ Done | [features/01-auth-organizations-roles.md](features/01-auth-organizations-roles.md) |
+| 02 | Projects + API keys | ✅ Done | [features/02-projects-api-keys.md](features/02-projects-api-keys.md) |
+| 03 | Ingest | ✅ Done | [features/03-ingest.md](features/03-ingest.md) |
+| 04 | Events list + filters + detail | ✅ Done | [features/04-events-list-filters.md](features/04-events-list-filters.md) |
+| 05 | Dashboard | ✅ Done | [features/05-dashboard.md](features/05-dashboard.md) |
 | 06 | Alerts | 🟦 Planned | [features/06-alerts.md](features/06-alerts.md) |
 | 07 | Polish | 🟦 Planned | [features/07-polish.md](features/07-polish.md) |
 | 08 | Docker packaging | 🟦 Planned | [features/08-docker-packaging.md](features/08-docker-packaging.md) |
