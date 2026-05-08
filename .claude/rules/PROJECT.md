@@ -17,13 +17,34 @@
     - `shared/` — shared library of components, hooks, services, and utilities used across features.
     - `features/` — individual features of the application.
       Each feature is composed of:
-        - `components/` — feature-specific components
+        - `components/` — feature-specific components (see §2.2 for folder structure)
         - `services/` — feature-specific API/data services
         - `hooks/` — feature-specific custom hooks
         - `utils/` — feature-specific utility functions
     - Features must NOT import from another feature. If something needs to be shared, move it to `shared/`.
     - Use the `@/` path alias (mapped to project root) for all imports: `@/core/`, `@/shared/`, `@/features/`.
-- 2.2 `app/` is reserved for Next.js App Router only — layouts, pages, and route segments.
+- 2.2 Component folder structure — **every component lives in its own named subfolder**:
+    ```
+    components/
+      ComponentName/
+        ComponentName.tsx
+        ComponentName.module.scss
+        parts/                        ← sub-components used ONLY by this component
+          SubComponent.tsx
+          SubComponent.module.scss
+    ```
+    - Semantic grouping subfolders (`filters/`, `detail/`, `widgets/`, etc.) are allowed inside `components/` when a feature has many thematically related components. Inside each group, the same per-component folder rule applies:
+      ```
+      components/
+        filters/
+          TimeRangePicker/
+            TimeRangePicker.tsx
+            TimeRangePicker.module.scss
+      ```
+    - A `parts/` subfolder at the **feature** `components/` level is NOT allowed. If a component is used by more than one parent, give it its own top-level folder in `components/`. If it is only ever used by one parent, nest it inside that parent's `parts/`.
+    - Do NOT add barrel `index.ts` files per component folder — import using the full explicit path: `import { Foo } from "@/features/f/components/Foo/Foo"`.
+    - `shared/components/` follows the same pattern. Its top-level `index.ts` barrel is the only exception (for convenience imports across all features).
+- 2.3 `app/` is reserved for Next.js App Router only — layouts, pages, and route segments.
     - Do NOT place business logic, components, or services inside `app/`.
     - Pages in `app/` should only compose feature components and handle routing concerns.
 
@@ -47,7 +68,8 @@
     - Avoid inline functions inside JSX when possible.
     - Avoid accepting `setState` functions as props.
     - Extract repeated UI into reusable components.
-        - If a sub-component is used only inside the current component, place it under a `parts/` folder within the same component directory.
+        - If a sub-component is used only inside one parent component, place it as a flat file inside that parent's `parts/` subfolder: `ParentName/parts/SubName.tsx` (+ `.module.scss`). Do NOT put a sub-subfolder inside `parts/`.
+        - If a sub-component is used by two or more components, promote it to its own top-level folder in `components/`.
 - 3.4 Hooks
     - Never call hooks conditionally.
     - Follow the single responsibility principle.
@@ -145,12 +167,12 @@
 - Boolean variables must start with: `is`, `has`, `should`, or `can`.
 
 ## 15. File Naming Conventions
-- Components → `PascalCase`: `UserCard.tsx`
+- Components → own subfolder in `PascalCase`, file matches folder: `UserCard/UserCard.tsx` + `UserCard/UserCard.module.scss`
 - Hooks → `kebab-case`: `use-auth.ts`
 - Utilities & functions → `camelCase`: `formatDate.ts`
 - Services → `camelCase.service.ts`: `user.service.ts`
 - Types/interfaces files → `camelCase.types.ts`: `user.types.ts`
-- Test files → same name as source + `.test`: `UserCard.test.tsx`
+- Test files → same name as source + `.test`, lives in the same component folder: `UserCard/UserCard.test.tsx`
 - E2E files → `kebab-case.spec.ts`: `user-auth.spec.ts`
 
 ## 16. Anti-Patterns to Avoid

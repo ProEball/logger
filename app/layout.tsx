@@ -42,9 +42,12 @@ export default function RootLayout({
             className={`${geistSans.variable} ${geistMono.variable}`}
             suppressHydrationWarning
         >
-            <head>
-                <script dangerouslySetInnerHTML={{ __html: noFlashScript }} />
-            </head>
+            {/* dangerouslySetInnerHTML on <head> prevents React from reconciling
+                its children, so the <script> is never seen as a JSX element —
+                no React 19 "script tag" warning. Next.js metadata API injects
+                its own tags outside this reconciliation path. */}
+            {/* eslint-disable-next-line react/no-danger */}
+            <head dangerouslySetInnerHTML={{ __html: `<script>${noFlashScript}</script>` }} />
             <body>
                 <ReduxProvider>
                     <ThemeProvider>

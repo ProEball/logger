@@ -1,0 +1,109 @@
+.trigger {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-1) var(--space-2);
+    background: transparent;
+    border: none;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    color: var(--text-primary);
+    font: var(--type-body-sm);
+    font-weight: var(--weight-medium);
+    transition: background-color var(--duration-fast) var(--ease-out);
+
+    &:hover {
+        background: var(--surface-hover);
+    }
+
+    &:focus-visible {
+        outline: none;
+        box-shadow: var(--focus-ring);
+    }
+}
+
+.orgDot {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    border-radius: var(--radius-sm);
+    background: var(--accent-subtle);
+    color: var(--accent-text);
+    font-size: 11px;
+    font-weight: var(--weight-semibold);
+    flex-shrink: 0;
+}
+
+.orgName {
+    max-width: 120px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.chevron {
+    color: var(--text-muted);
+    flex-shrink: 0;
+}
+
+// Negate Popover's body padding so items can be full-width
+.list {
+    margin: -10px -12px;
+}
+
+.item {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    width: 100%;
+    padding: var(--space-1-5) var(--space-3);
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    font: var(--type-body-sm);
+    color: var(--text-secondary);
+    text-align: left;
+    transition: background-color var(--duration-fast) var(--ease-out),
+        color var(--duration-fast) var(--ease-out);
+
+    &:hover {
+        background: var(--surface-hover);
+        color: var(--text-primary);
+    }
+
+    &:focus-visible {
+        outline: none;
+        box-shadow: var(--focus-ring);
+    }
+}
+
+.itemActive {
+    color: var(--text-primary);
+}
+
+.itemDot {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    border-radius: var(--radius-sm);
+    background: var(--bg-overlay);
+    font-size: 10px;
+    font-weight: var(--weight-semibold);
+    flex-shrink: 0;
+}
+
+.itemName {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.checkIcon {
+    color: var(--accent);
+    flex-shrink: 0;
+}

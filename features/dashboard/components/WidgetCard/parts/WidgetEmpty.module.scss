@@ -1,0 +1,12 @@
+.empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 120px;
+}
+
+.text {
+    font-size: var(--text-sm);
+    color: var(--text-muted);
+    margin: 0;
+}

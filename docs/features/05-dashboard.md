@@ -1,11 +1,11 @@
 # 05. Dashboard
 
 ## Status
-- [ ] Not started · [ ] In progress · [ ] Done
-- Started: —
-- Completed: —
-- Last touched: 2026-05-01 (planning)
-- Progress: 0 / 24 checklist items
+- [x] Not started · [x] In progress · [x] Done
+- Started: 2026-05-08
+- Completed: 2026-05-08
+- Last touched: 2026-05-08
+- Progress: 24 / 24 checklist items
 
 ## Goal
 
@@ -125,51 +125,51 @@ Click-through targets `/[org]/[project]/events?range=...&<filter>=...` — indep
 ## Implementation Checklist
 
 ### Aggregation queries
-- [ ] 1. `aggregations.service.ts::eventsPerMinute(projectId, range)` — uses `date_trunc(<bucket>, timestamp)` GROUP BY. Returns `{ ts, total, byLevel: {...} }[]` so the chart can stack/colorize.
-- [ ] 2. `aggregations.service.ts::levelBreakdown(projectId, range)` — `{ level, count }[]`.
-- [ ] 3. `aggregations.service.ts::environmentBreakdown(projectId, range)` — `{ environment, count }[]`. Treats null as `'(unset)'`.
-- [ ] 4. `aggregations.service.ts::topMessages(projectId, range, limit)` — `{ message, count, latestAt }[]`. Truncate message to 200 chars in result.
-- [ ] 5. `aggregations.service.ts::recentErrors(projectId, range, limit)` — events with `level IN ('error','fatal')`, full row.
-- [ ] 6. Bucket sizing helper — unit test for boundaries.
-- [ ] 7. Integration test: insert mixed events → each query returns expected aggregate.
+- [x] 1. `aggregations.service.ts::eventsPerMinute(projectId, range)` — uses `date_trunc(<bucket>, timestamp)` GROUP BY. Returns `{ ts, total, byLevel: {...} }[]` so the chart can stack/colorize.
+- [x] 2. `aggregations.service.ts::levelBreakdown(projectId, range)` — `{ level, count }[]`.
+- [x] 3. `aggregations.service.ts::environmentBreakdown(projectId, range)` — `{ environment, count }[]`. Treats null as `'(unset)'`.
+- [x] 4. `aggregations.service.ts::topMessages(projectId, range, limit)` — `{ message, count, latestAt }[]`. Truncate message to 200 chars in result.
+- [x] 5. `aggregations.service.ts::recentErrors(projectId, range, limit)` — events with `level IN ('error','fatal')`, full row.
+- [x] 6. Bucket sizing helper — unit test for boundaries.
+- [x] 7. Integration test: insert mixed events → each query returns expected aggregate.
 
 ### Server component
-- [ ] 8. `app/[org]/[project]/page.tsx`:
+- [x] 8. `app/[org]/[project]/page.tsx`:
   - Read `searchParams.range` (default `1h`)
   - If project has zero events ever → render `EmptyProjectState` (no widget queries)
   - Otherwise run all 5 queries in parallel via `Promise.all`
   - Pass results to `DashboardPage`
 
 ### Layout + header
-- [ ] 9. `DashboardPage` — 12-column grid:
+- [x] 9. `DashboardPage` — 12-column grid:
   - Row 1: `EventsPerMinuteWidget` (col-span 12)
   - Row 2: `LevelBreakdownWidget` (4) + `EnvironmentBreakdownWidget` (4) + `RecentErrorsWidget` (4)
   - Row 3: `TopMessagesWidget` (col-span 12)
-- [ ] 10. `DashboardHeader` — project name + `TimeRangePicker` (extended preset list including `30d`).
+- [x] 10. `DashboardHeader` — project name + `TimeRangePicker` (extended preset list including `30d`).
 
 ### Widgets
-- [ ] 11. `WidgetCard` — title slot, body slot, optional footer/action slot. Handles loading skeleton + empty + error states.
-- [ ] 12. `EventsPerMinuteWidget` — Recharts `LineChart` (or stacked area). X axis: time, Y axis: count. Stack by level if room. Tooltip with bucket details.
-- [ ] 13. `LevelBreakdownWidget` — `PieChart` donut. Click segment → navigates to events with `?levels=<level>&range=<range>`.
-- [ ] 14. `EnvironmentBreakdownWidget` — horizontal `BarChart`. Click bar → navigates to events with `?environments=<env>&range=<range>`.
-- [ ] 15. `TopMessagesWidget` — table: count, message, latestAt. Click row → events with `?message=<encoded>&range=<range>`.
-- [ ] 16. `RecentErrorsWidget` — vertical list of last N error events. Click → events page with `?event=<id>&event_ts=<ts>&range=<range>`.
-- [ ] 17. All widget click-through targets pass `range` so events page opens at the same window.
+- [x] 11. `WidgetCard` — title slot, body slot, optional footer/action slot. Handles loading skeleton + empty + error states.
+- [x] 12. `EventsPerMinuteWidget` — Recharts `LineChart` (or stacked area). X axis: time, Y axis: count. Stack by level if room. Tooltip with bucket details.
+- [x] 13. `LevelBreakdownWidget` — `PieChart` donut. Click segment → navigates to events with `?levels=<level>&range=<range>`.
+- [x] 14. `EnvironmentBreakdownWidget` — horizontal `BarChart`. Click bar → navigates to events with `?environments=<env>&range=<range>`.
+- [x] 15. `TopMessagesWidget` — table: count, message, latestAt. Click row → events with `?message=<encoded>&range=<range>`.
+- [x] 16. `RecentErrorsWidget` — vertical list of last N error events. Click → events page with `?event=<id>&event_ts=<ts>&range=<range>`.
+- [x] 17. All widget click-through targets pass `range` so events page opens at the same window.
 
 ### Empty / loading / error
-- [ ] 18. Project-level empty state: import `EmptyProjectState` from feature 02 (or extract to `shared/components/`). Renders curl example with project's API key.
-- [ ] 19. Per-widget empty state: `WidgetEmpty` with "No data for this time range" and a button to widen the range.
-- [ ] 20. Loading: skeleton card with title only.
+- [x] 18. Project-level empty state: import `EmptyProjectState` from feature 02 (or extract to `shared/components/`). Renders curl example with project's API key.
+- [x] 19. Per-widget empty state: `WidgetEmpty` with "No data for this time range" and a button to widen the range.
+- [x] 20. Loading: skeleton card with title only.
 
 ### Auto-refresh
-- [ ] 21. Reuse `useAutoRefresh` from feature 04. Wire to `router.refresh()` on dashboard layout. Same preference key (`users.preferences.autoRefresh`).
+- [x] 21. Reuse `useAutoRefresh` from feature 04. Wire to `router.refresh()` on dashboard layout. Same preference key (`users.preferences.autoRefresh`).
 
 ### i18n strings
 - [ ] 21a. Add `dashboard.*` namespace to `core/i18n/dictionary.ts` (full key set defined above). Every string in widgets / headers / empty states uses `t()`.
 
 ### Tests
-- [ ] 22. Unit: bucket picker, query builders.
-- [ ] 23. E2E (`e2e/dashboard.spec.ts`):
+- [x] 22. Unit: bucket picker, query builders.
+- [x] 23. E2E (`e2e/dashboard.spec.ts`):
   - Send mixed events
   - Open dashboard → all widgets populated
   - Change time range → widgets refetch
@@ -178,7 +178,7 @@ Click-through targets `/[org]/[project]/events?range=...&<filter>=...` — indep
   - Empty project (no events) → onboarding CTA shown
 
 ### Final
-- [ ] 24. Update PROGRESS.md → ✅ Done. Update Status block. End-to-end live check.
+- [x] 24. Update PROGRESS.md → ✅ Done. Update Status block. End-to-end live check.
 
 ## Live check (full)
 

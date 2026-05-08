@@ -1,11 +1,11 @@
 # 04. Events list + filters + detail
 
 ## Status
-- [ ] Not started · [ ] In progress · [ ] Done
-- Started: —
-- Completed: —
-- Last touched: 2026-05-01 (planning)
-- Progress: 0 / 42 checklist items
+- [x] Done
+- Started: 2026-05-08
+- Completed: 2026-05-08
+- Last touched: 2026-05-08
+- Progress: 42 / 42 checklist items
 
 ## Goal
 
@@ -200,75 +200,75 @@ All filter state in URL. Reload-safe, share-safe.
 ## Implementation Checklist
 
 ### Filter parsing infrastructure
-- [ ] 1. `features/events/utils/parse-filters.ts` — Zod schema for `EventFilters`. Coerces array params (`levels=error,fatal` → `['error','fatal']`). On invalid input: **strip the offending key, keep valid ones, log WARN**. Never 400 the page render — a stale or malformed share link should still load with usable defaults.
-- [ ] 2. `serialize-filters.ts` — round-trip safe.
-- [ ] 3. `parse-cursor.ts`. Cursor is parsed independently of filters; an invalid cursor resets to "first page" (drop `before_ts`, `before_id`).
-- [ ] 4. Unit test: parse → serialize → parse equals identity for all branches. Plus: invalid level value drops only the level filter, other filters survive.
+- [x] 1. `features/events/utils/parse-filters.ts` — Zod schema for `EventFilters`. Coerces array params (`levels=error,fatal` → `['error','fatal']`). On invalid input: **strip the offending key, keep valid ones, log WARN**. Never 400 the page render — a stale or malformed share link should still load with usable defaults.
+- [x] 2. `serialize-filters.ts` — round-trip safe.
+- [x] 3. `parse-cursor.ts`. Cursor is parsed independently of filters; an invalid cursor resets to "first page" (drop `before_ts`, `before_id`).
+- [x] 4. Unit test: parse → serialize → parse equals identity for all branches. Plus: invalid level value drops only the level filter, other filters survive.
 
 ### Query service
-- [ ] 5. `events-query.service.ts::listEvents(projectId, filters, cursor)`:
+- [x] 5. `events-query.service.ts::listEvents(projectId, filters, cursor)`:
   - Build Drizzle query with conditional WHERE clauses
   - **JOIN projects + filter `projects.deleted_at IS NULL`** — soft-deleted projects must not leak events through API. The route layer (`[project]/layout.tsx`) already 404s, but defense in depth.
   - For `message`: `to_tsvector('simple', message) @@ websearch_to_tsquery('simple', $q)`
   - For `attributes`: `attributes @> '{"key":"value"}'::jsonb`
   - Cursor: `WHERE (timestamp, id) < (:before_ts, :before_id) ORDER BY timestamp DESC, id DESC LIMIT 51`
   - Return up to 50 events + a `hasMore` flag (51st row signals more)
-- [ ] 6. `getEventById(projectId, id, ts)` — composite-PK lookup; require `ts` in URL too for partition pruning (drawer URL will include `&event_ts=`).
-- [ ] 7. Integration test: insert 100 events via ingest → filter by level → cursor pagination → all reachable. Plus: soft-delete the project → query returns empty.
+- [x] 6. `getEventById(projectId, id, ts)` — composite-PK lookup; require `ts` in URL too for partition pruning (drawer URL will include `&event_ts=`).
+- [x] 7. Integration test: insert 100 events via ingest → filter by level → cursor pagination → all reachable. Plus: soft-delete the project → query returns empty.
 
 ### Server component
-- [ ] 8. `app/[org]/[project]/events/page.tsx`:
+- [x] 8. `app/[org]/[project]/events/page.tsx`:
   - Read `searchParams`, parse filters
   - Call query service
   - Render `EventsPage` component with results
   - If `?event=<id>` present → also fetch single event for drawer
 
 ### Filter bar
-- [ ] 9. `FilterBar` — composition of chips for active filters + `AddFilterDropdown` + `TimeRangePicker`
-- [ ] 10. `useEventFilters` hook — wraps `useSearchParams` + `useRouter`. Provides `filters`, `setFilter(key, value)`, `removeFilter(key)`, `clearAll()`.
+- [x] 9. `FilterBar` — composition of chips for active filters + `AddFilterDropdown` + `TimeRangePicker`
+- [x] 10. `useEventFilters` hook — wraps `useSearchParams` + `useRouter`. Provides `filters`, `setFilter(key, value)`, `removeFilter(key)`, `clearAll()`.
   - **Cursor reset on filter change**: every `setFilter` / `removeFilter` / `clearAll` / `setRange` MUST also strip `before_ts` and `before_id` from the URL. Otherwise a stale cursor (pointing to events that no longer match) yields confusing empty pages. Centralize this in the hook, not at call sites.
-- [ ] 11. Each filter component (`LevelFilter`, `EnvironmentFilter`, etc.) — popover with multi-select. On apply → updates URL.
-- [ ] 12. `MessageFilter` — debounced 300 ms input.
-- [ ] 13. `AttributeFilter` — `key` + `value` inputs. Multiple active = ANDed.
-- [ ] 14. `TimeRangePicker` — preset list (15m, 1h, 6h, 24h, 7d) + "Custom" opens datetime range inputs. Custom range inputs are interpreted in the user's local TZ; converted to UTC before serializing into the URL (URL stores ISO UTC strings — share-safe across TZs).
-- [ ] 15. Live check: every filter type updates URL → page re-fetches → results filter correctly. Switching filter while on page 5 (cursor set) → page resets to first page automatically.
+- [x] 11. Each filter component (`LevelFilter`, `EnvironmentFilter`, etc.) — popover with multi-select. On apply → updates URL.
+- [x] 12. `MessageFilter` — debounced 300 ms input.
+- [x] 13. `AttributeFilter` — `key` + `value` inputs. Multiple active = ANDed.
+- [x] 14. `TimeRangePicker` — preset list (15m, 1h, 6h, 24h, 7d) + "Custom" opens datetime range inputs. Custom range inputs are interpreted in the user's local TZ; converted to UTC before serializing into the URL (URL stores ISO UTC strings — share-safe across TZs).
+- [x] 15. Live check: every filter type updates URL → page re-fetches → results filter correctly. Switching filter while on page 5 (cursor set) → page resets to first page automatically.
 
 ### Events table
-- [ ] 16. `EventsTable` — Table component (from design system), sticky header, dense rows.
-- [ ] 17. `EventRow` — cells: timestamp, level badge, message (truncate), source, environment, chevron.
-- [ ] 18. `EventTimestamp` — `Intl.DateTimeFormat` to user TZ; tooltip with full + UTC + relative.
-- [ ] 19. Click row → updates URL with `?event=<id>&event_ts=<ts>` (drawer opens).
-- [ ] 20. Empty state when query returns nothing: copy + "Clear filters" CTA.
-- [ ] 21. Loading skeleton while fetching.
+- [x] 16. `EventsTable` — Table component (from design system), sticky header, dense rows.
+- [x] 17. `EventRow` — cells: timestamp, level badge, message (truncate), source, environment, chevron.
+- [x] 18. `EventTimestamp` — `Intl.DateTimeFormat` to user TZ; tooltip with full + UTC + relative.
+- [x] 19. Click row → updates URL with `?event=<id>&event_ts=<ts>` (drawer opens).
+- [x] 20. Empty state when query returns nothing: copy + "Clear filters" CTA.
+- [x] 21. Loading skeleton while fetching.
 
 ### Pagination
-- [ ] 22. `PaginationControls` — "Newer" disabled if first page; "Older" disabled if `hasMore=false`.
-- [ ] 23. URL update strategy: "Older" sets `before_ts/before_id` from last row; "Newer" pops them from history (router back).
-- [ ] 24. Live check: navigate Older across multiple pages → Newer back.
+- [x] 22. `PaginationControls` — "Newer" disabled if first page; "Older" disabled if `hasMore=false`.
+- [x] 23. URL update strategy: "Older" sets `before_ts/before_id` from last row; "Newer" pops them from history (router back).
+- [x] 24. Live check: navigate Older across multiple pages → Newer back.
 
 ### Drawer + detail
-- [ ] 25. `EventDrawer` — controlled by `?event=` URL param. Closing → router replace with param removed.
-- [ ] 26. `EventDetailHeader` — large level badge, message, timestamp (full), Copy as JSON button.
-- [ ] 27. `EventDetailTabs` — Details / Attributes / Context / Stack trace. URL: `?event=...&tab=attributes`.
-- [ ] 28. `AttributesList` — KeyValue rendering, sorted alphabetically, hover-row "Filter by" button (adds `attribute.<key>=<value>` to URL and closes drawer).
-- [ ] 29. `ContextTree` — recursive JSON tree, collapsible nodes, primitive values inline.
-- [ ] 30. `StackTraceViewer` — collapsed initially with frame count. On expand: parse stack into frames (heuristic for V8 / Python / Java formats; document supported formats).
-- [ ] 31. `StackFrame` — file:line, function name, optional code preview placeholder.
-- [ ] 32. Live check: open drawer, switch tabs (URL persists), click "Filter by" attribute, drawer closes & filter applies.
+- [x] 25. `EventDrawer` — controlled by `?event=` URL param. Closing → router replace with param removed.
+- [x] 26. `EventDetailHeader` — large level badge, message, timestamp (full), Copy as JSON button.
+- [x] 27. `EventDetailTabs` — Details / Attributes / Context / Stack trace. URL: `?event=...&tab=attributes`.
+- [x] 28. `AttributesList` — KeyValue rendering, sorted alphabetically, hover-row "Filter by" button (adds `attribute.<key>=<value>` to URL and closes drawer).
+- [x] 29. `ContextTree` — recursive JSON tree, collapsible nodes, primitive values inline.
+- [x] 30. `StackTraceViewer` — collapsed initially with frame count. On expand: parse stack into frames (heuristic for V8 / Python / Java formats; document supported formats).
+- [x] 31. `StackFrame` — file:line, function name, optional code preview placeholder.
+- [x] 32. Live check: open drawer, switch tabs (URL persists), click "Filter by" attribute, drawer closes & filter applies.
 
 ### Auto-refresh
-- [ ] 33. `AutoRefreshControl` — segmented control: Off / 10s / 30s / 60s. Reads from Redux `user.preferences.autoRefresh`. On change calls `update-preferences.action.ts` (feature 01).
-- [ ] 34. `useAutoRefresh()` hook — `setInterval` calling `router.refresh()` (or query refetch) at the chosen interval. Pause when tab not visible (use `document.visibilityState`).
-- [ ] 35. Place control in events page toolbar near pagination.
-- [ ] 36. Live check: set 10s → wait → table reloads silently → switch to off → reloads stop. Hide tab → no requests.
+- [x] 33. `AutoRefreshControl` — segmented control: Off / 10s / 30s / 60s. Reads from Redux `user.preferences.autoRefresh`. On change calls `update-preferences.action.ts` (feature 01).
+- [x] 34. `useAutoRefresh()` hook — `setInterval` calling `router.refresh()` (or query refetch) at the chosen interval. Pause when tab not visible (use `document.visibilityState`).
+- [x] 35. Place control in events page toolbar near pagination.
+- [x] 36. Live check: set 10s → wait → table reloads silently → switch to off → reloads stop. Hide tab → no requests.
 
 ### i18n strings
-- [ ] 37. Add `events.*` namespace to `core/i18n/dictionary.ts` (full key set defined above). Use `t()` everywhere — no string literals in JSX.
+- [x] 37. Add `events.*` namespace to `core/i18n/dictionary.ts` (full key set defined above). Use `t()` everywhere — no string literals in JSX.
 
 ### Tests
-- [ ] 38. Unit: filter parse/serialize round-trip, timestamp formatter, stack trace frame parser.
-- [ ] 39. Integration: query service with various filter combinations.
-- [ ] 40. E2E (`e2e/events.spec.ts`):
+- [x] 38. Unit: filter parse/serialize round-trip, timestamp formatter, stack trace frame parser.
+- [x] 39. Integration: query service with various filter combinations.
+- [x] 40. E2E (`e2e/events.spec.ts`):
   - Send events via ingest
   - Open events page → see them
   - Apply level filter → URL updates → only error/fatal shown
@@ -278,8 +278,8 @@ All filter state in URL. Reload-safe, share-safe.
   - Auto-refresh: set 10s → mock time → assert refetch happened
 
 ### Final
-- [ ] 41. Update PROGRESS.md → ✅ Done. Update Status block.
-- [ ] 42. End-to-end live check.
+- [x] 41. Update PROGRESS.md → ✅ Done. Update Status block.
+- [x] 42. End-to-end live check.
 
 ## Live check (full)
 
