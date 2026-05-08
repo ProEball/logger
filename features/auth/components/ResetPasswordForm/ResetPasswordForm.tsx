@@ -3,7 +3,7 @@ import { useRef, useEffect, useId, useState, useTransition } from "react";
 import { GForm, GInput, GValidator } from "gform-react";
 import type { GValidators } from "gform-react";
 import { Button, FormField, Input } from "@/shared/components";
-import type { resetPasswordAction } from "../actions/reset-password.action";
+import type { resetPasswordAction } from "../../actions/reset-password.action";
 import styles from "./ResetPasswordForm.module.scss";
 
 type ResetForm = { password: string; confirmPassword: string };

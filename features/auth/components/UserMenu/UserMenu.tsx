@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { Avatar, Popover } from "@/shared/components";
 import { ThemeSwitcher } from "@/shared/components/AppShell/parts/ThemeSwitcher";
-import { logoutAction } from "../actions/logout.action";
+import { logoutAction } from "../../actions/logout.action";
 import styles from "./UserMenu.module.scss";
 
 interface UserMenuProps {

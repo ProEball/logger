@@ -10,7 +10,7 @@ import { createRoleAction } from '@/features/roles/actions/create-role.action';
 import { updateRoleAction } from '@/features/roles/actions/update-role.action';
 import type { OrgRole } from '@/features/roles/services/roles.service';
 import type { Permission } from '@/shared/permissions/registry';
-import { PermissionMatrix } from './PermissionMatrix';
+import { PermissionMatrix } from '../PermissionMatrix/PermissionMatrix';
 import styles from './RoleEditor.module.scss';
 
 interface RoleEditorProps {

@@ -1,8 +1,8 @@
 "use client";
 import { useState } from "react";
 import { Button } from "@/shared/components";
-import { InviteMemberDialog, type RoleOption } from "./InviteMemberDialog";
-import { InvitationCreatedDialog } from "./InvitationCreatedDialog";
+import { InviteMemberDialog, type RoleOption } from "../InviteMemberDialog/InviteMemberDialog";
+import { InvitationCreatedDialog } from "../InvitationCreatedDialog/InvitationCreatedDialog";
 import styles from "./InviteSection.module.scss";
 
 interface InviteSectionProps {

@@ -8,7 +8,7 @@ import { changeMemberRoleAction } from '@/features/organizations/actions/change-
 import { removeMemberAction } from '@/features/organizations/actions/remove-member.action';
 import { transferOwnershipAction } from '@/features/organizations/actions/transfer-ownership.action';
 import type { OrgMember } from '@/features/organizations/services/organizations.service';
-import { MemberRow, type MemberActionType } from './MemberRow';
+import { MemberRow, type MemberActionType } from '../MemberRow/MemberRow';
 import styles from './MembersList.module.scss';
 
 type Role = { id: string; name: string };

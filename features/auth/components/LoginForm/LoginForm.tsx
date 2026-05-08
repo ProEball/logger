@@ -3,7 +3,7 @@ import { useRef, useEffect, useId, useState, useTransition } from "react";
 import { GForm, GInput, GValidator } from "gform-react";
 import type { GValidators } from "gform-react";
 import { Button, FormField, Input } from "@/shared/components";
-import type { loginAction } from "../actions/login.action";
+import type { loginAction } from "../../actions/login.action";
 import styles from "./LoginForm.module.scss";
 
 type LoginForm = { email: string; password: string };

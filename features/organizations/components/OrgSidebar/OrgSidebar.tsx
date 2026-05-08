@@ -35,6 +35,16 @@ export function OrgSidebar({ orgSlug, orgName: _orgName }: OrgSidebarProps) {
                     }
                 />
                 <SidebarItem
+                    label="Projects"
+                    href={`/${orgSlug}/projects`}
+                    active={startsWith("/projects")}
+                    icon={
+                        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                            <path d="M2 4a1 1 0 0 1 1-1h3l1.5 2H13a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V4z" stroke="currentColor" strokeWidth="1.25" strokeLinejoin="round" />
+                        </svg>
+                    }
+                />
+                <SidebarItem
                     label="Team"
                     href={`/${orgSlug}/team`}
                     active={startsWith("/team")}

@@ -3,7 +3,7 @@ import { useRef, useEffect, useId, useState, useTransition } from "react";
 import { GForm, GInput, GValidator } from "gform-react";
 import type { GValidators } from "gform-react";
 import { Button, FormField, Input } from "@/shared/components";
-import type { setupAction } from "../actions/setup.action";
+import type { setupAction } from "../../actions/setup.action";
 import styles from "./SetupWizard.module.scss";
 
 type SetupForm = {

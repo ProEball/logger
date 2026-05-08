@@ -1,8 +1,8 @@
 "use client";
 
 import { Topbar } from "@/shared/components";
-import { UserMenu } from "@/features/auth/components/UserMenu";
-import { OrgSwitcher } from "./OrgSwitcher";
+import { UserMenu } from "@/features/auth/components/UserMenu/UserMenu";
+import { OrgSwitcher } from "../OrgSwitcher/OrgSwitcher";
 import type { OrgSummary } from "@/features/organizations/services/organizations.service";
 
 interface OrgTopBarProps {
