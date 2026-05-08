@@ -1,0 +1,39 @@
+.root {
+    padding: var(--space-8);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-6);
+    max-width: 900px;
+}
+
+.header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-4);
+}
+
+.title {
+    font: var(--type-h2);
+    color: var(--text-primary);
+}
+
+// Primary-button styled link (avoids <a> inside <button>)
+.newBtn {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-4);
+    font: var(--type-label-sm);
+    font-weight: 600;
+    color: var(--btn-primary-text);
+    background: var(--btn-primary-bg);
+    border-radius: 6px;
+    text-decoration: none;
+    white-space: nowrap;
+    transition: background 0.15s;
+
+    &:hover {
+        background: var(--btn-primary-bg-hover);
+    }
+}

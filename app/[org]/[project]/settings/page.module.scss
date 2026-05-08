@@ -1,0 +1,77 @@
+.page {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-6);
+    padding: var(--space-6);
+    max-width: 640px;
+}
+
+.section {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-5);
+}
+
+.sectionTitle {
+    font-size: var(--text-sm);
+    font-weight: 500;
+    color: var(--text-primary);
+    margin: 0;
+}
+
+.divider {
+    border: none;
+    border-top: 1px solid var(--border-subtle);
+    margin: 0;
+}
+
+.dangerSection {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+    padding: var(--space-4);
+    border: 1px solid var(--status-error);
+    border-radius: var(--radius-md);
+    background: var(--bg-raised);
+}
+
+.dangerRow {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-4);
+}
+
+.dangerInfo {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+}
+
+.dangerLabel {
+    font-size: var(--text-sm);
+    color: var(--text-primary);
+}
+
+.dangerDesc {
+    font-size: var(--text-xs);
+    color: var(--text-secondary);
+    margin: 0;
+    max-width: 360px;
+}
+
+.dangerLink {
+    font-size: var(--text-sm);
+    color: var(--status-error);
+    text-decoration: none;
+    border: 1px solid var(--status-error);
+    border-radius: var(--radius-sm);
+    padding: var(--space-1) var(--space-3);
+    white-space: nowrap;
+    transition: var(--transition-colors);
+    flex-shrink: 0;
+
+    &:hover {
+        background: color-mix(in srgb, var(--status-error) 10%, transparent);
+    }
+}

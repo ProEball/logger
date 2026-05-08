@@ -1,0 +1,1 @@
+ALTER TABLE "api_keys" ALTER COLUMN "created_by" SET DATA TYPE text;

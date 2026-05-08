@@ -1,0 +1,121 @@
+.trigger {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-1) var(--space-2);
+    background: transparent;
+    border: none;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    color: var(--text-primary);
+    transition: background-color var(--duration-fast) var(--ease-out);
+
+    &:hover {
+        background: var(--surface-hover);
+    }
+
+    &:focus-visible {
+        outline: none;
+        box-shadow: var(--focus-ring);
+    }
+}
+
+.triggerName {
+    font: var(--type-body-sm);
+    font-weight: var(--weight-medium);
+    max-width: 100px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.chevron {
+    color: var(--text-muted);
+    flex-shrink: 0;
+}
+
+// Negate Popover's body padding — items manage their own spacing
+.menu {
+    margin: -10px -12px;
+}
+
+.identity {
+    padding: var(--space-2-5, var(--space-2)) var(--space-3);
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.identityName {
+    font-size: var(--text-sm);
+    font-weight: var(--weight-medium);
+    color: var(--text-primary);
+}
+
+.identityEmail {
+    font-size: var(--text-xs);
+    color: var(--text-secondary);
+}
+
+.divider {
+    border: none;
+    border-top: 1px solid var(--border-subtle);
+    margin: 0;
+}
+
+.menuItem {
+    display: block;
+    padding: var(--space-1-5) var(--space-3);
+    font-size: var(--text-sm);
+    color: var(--text-secondary);
+    text-decoration: none;
+    transition: background-color var(--duration-fast) var(--ease-out),
+        color var(--duration-fast) var(--ease-out);
+
+    &:hover {
+        background: var(--surface-hover);
+        color: var(--text-primary);
+    }
+}
+
+.themeRow {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--space-2) var(--space-3);
+    gap: var(--space-2);
+}
+
+.themeLabel {
+    font-size: var(--text-xs);
+    color: var(--text-muted);
+    flex-shrink: 0;
+}
+
+.signOutForm {
+    display: contents;
+}
+
+.signOutBtn {
+    display: block;
+    width: 100%;
+    padding: var(--space-1-5) var(--space-3);
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    font: var(--type-body-sm);
+    color: var(--text-secondary);
+    text-align: left;
+    transition: background-color var(--duration-fast) var(--ease-out),
+        color var(--duration-fast) var(--ease-out);
+
+    &:hover {
+        background: var(--surface-hover);
+        color: var(--text-primary);
+    }
+
+    &:focus-visible {
+        outline: none;
+        box-shadow: var(--focus-ring);
+    }
+}

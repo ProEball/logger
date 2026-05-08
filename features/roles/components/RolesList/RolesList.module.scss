@@ -1,0 +1,92 @@
+.section {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+}
+
+.tableWrap {
+    overflow-x: auto;
+    border: 1px solid var(--border-subtle);
+    border-radius: 8px;
+}
+
+.table {
+    width: 100%;
+    border-collapse: collapse;
+    font: var(--type-body-sm);
+
+    th {
+        padding: var(--space-3) var(--space-4);
+        text-align: left;
+        font: var(--type-label-sm);
+        color: var(--text-secondary);
+        border-bottom: 1px solid var(--border-subtle);
+        background: var(--bg-base);
+    }
+
+    td {
+        padding: var(--space-3) var(--space-4);
+        color: var(--text-primary);
+        border-bottom: 1px solid var(--border-subtle);
+        vertical-align: middle;
+    }
+
+    tr:last-child td {
+        border-bottom: none;
+    }
+}
+
+.roleName {
+    font-weight: 500;
+    margin-right: var(--space-2);
+}
+
+.systemBadge,
+.customBadge,
+.defaultBadge {
+    display: inline-block;
+    font: var(--type-label-sm);
+    border-radius: 4px;
+    padding: 1px var(--space-2);
+    margin-right: var(--space-1);
+}
+
+.systemBadge {
+    color: var(--text-secondary);
+    background: var(--bg-subtle);
+}
+
+.customBadge {
+    color: var(--accent-primary);
+    background: color-mix(in srgb, var(--accent-primary) 12%, transparent);
+}
+
+.defaultBadge {
+    color: var(--status-success);
+    background: color-mix(in srgb, var(--status-success) 12%, transparent);
+}
+
+.muted {
+    color: var(--text-secondary);
+}
+
+.actionsCell {
+    text-align: right;
+    white-space: nowrap;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--space-2);
+}
+
+.editLink {
+    font: var(--type-body-sm);
+    color: var(--accent-primary);
+    text-decoration: none;
+    padding: var(--space-1) var(--space-2);
+    border-radius: 4px;
+
+    &:hover {
+        background: color-mix(in srgb, var(--accent-primary) 10%, transparent);
+    }
+}

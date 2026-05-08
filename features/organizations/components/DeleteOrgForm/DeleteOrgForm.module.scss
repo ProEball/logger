@@ -1,0 +1,23 @@
+.form {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-5);
+    max-width: 440px;
+}
+
+.warning {
+    font: var(--type-body-sm);
+    color: var(--text-primary);
+    margin: 0;
+    padding: var(--space-3) var(--space-4);
+    background: color-mix(in srgb, var(--status-error) 6%, transparent);
+    border: 1px solid color-mix(in srgb, var(--status-error) 20%, transparent);
+    border-radius: 6px;
+    line-height: 1.6;
+}
+
+.error {
+    font: var(--type-body-sm);
+    color: var(--status-error);
+    margin: 0;
+}

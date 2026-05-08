@@ -1,0 +1,45 @@
+.page {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-6);
+    padding: var(--space-6);
+    max-width: 640px;
+}
+
+.title {
+    font: var(--type-h2);
+    color: var(--text-primary);
+    margin: 0;
+}
+
+.dangerCard {
+    padding: var(--space-4);
+    border: 1px solid var(--status-error);
+    border-radius: var(--radius-md);
+    background: var(--bg-raised);
+}
+
+.row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-4);
+}
+
+.info {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+}
+
+.label {
+    font-size: var(--text-sm);
+    color: var(--text-primary);
+}
+
+.desc {
+    font-size: var(--text-xs);
+    color: var(--text-secondary);
+    margin: 0;
+    max-width: 360px;
+}

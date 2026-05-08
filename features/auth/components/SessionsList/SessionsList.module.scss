@@ -1,0 +1,66 @@
+.wrap {
+    overflow-x: auto;
+    border: 1px solid var(--border-subtle);
+    border-radius: 8px;
+}
+
+.table {
+    width: 100%;
+    border-collapse: collapse;
+    font: var(--type-body-sm);
+
+    th {
+        padding: var(--space-3) var(--space-4);
+        text-align: left;
+        font: var(--type-label-sm);
+        color: var(--text-secondary);
+        border-bottom: 1px solid var(--border-subtle);
+        background: var(--bg-base);
+    }
+
+    td {
+        padding: var(--space-3) var(--space-4);
+        color: var(--text-primary);
+        border-bottom: 1px solid var(--border-subtle);
+        vertical-align: middle;
+    }
+
+    tr:last-child td {
+        border-bottom: none;
+    }
+}
+
+.currentRow td {
+    background: color-mix(in srgb, var(--accent-primary) 4%, transparent);
+}
+
+.device {
+    display: block;
+    font-weight: 500;
+}
+
+.currentBadge {
+    display: inline-block;
+    font: var(--type-label-sm);
+    color: var(--accent-primary);
+    background: color-mix(in srgb, var(--accent-primary) 12%, transparent);
+    border-radius: 4px;
+    padding: 1px var(--space-2);
+    margin-top: var(--space-1);
+}
+
+.rowError {
+    display: block;
+    font: var(--type-body-sm);
+    color: var(--status-error);
+    margin-top: var(--space-1);
+}
+
+.muted {
+    color: var(--text-secondary);
+}
+
+.actionsCell {
+    text-align: right;
+    white-space: nowrap;
+}

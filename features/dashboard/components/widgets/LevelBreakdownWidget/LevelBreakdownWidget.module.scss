@@ -1,0 +1,48 @@
+.inner {
+    display: flex;
+    align-items: center;
+    gap: var(--space-4);
+}
+
+.legend {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    flex: 0 0 auto;
+    min-width: 120px;
+}
+
+.legendItem {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    cursor: pointer;
+    border-radius: var(--radius-sm);
+    padding: var(--space-0-5) var(--space-1);
+    transition: var(--transition-colors);
+
+    &:hover {
+        background: var(--surface-hover);
+    }
+}
+
+.dot {
+    width: 8px;
+    height: 8px;
+    border-radius: var(--radius-full);
+    flex: 0 0 auto;
+}
+
+.levelName {
+    font-size: var(--text-sm);
+    color: var(--text-secondary);
+    flex: 1;
+    text-transform: capitalize;
+}
+
+.levelCount {
+    font-size: var(--text-sm);
+    color: var(--text-primary);
+    font-variant-numeric: tabular-nums;
+}

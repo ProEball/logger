@@ -1,0 +1,47 @@
+.revoked {
+    td {
+        color: var(--text-muted);
+    }
+}
+
+.name {
+    font-size: var(--text-sm);
+    color: var(--text-primary);
+
+    .revoked & {
+        color: var(--text-muted);
+    }
+}
+
+.key {
+    width: 180px;
+}
+
+.keyMono {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    color: var(--text-secondary);
+}
+
+.lastUsed {
+    width: 120px;
+    font-size: var(--text-sm);
+    color: var(--text-secondary);
+}
+
+.status {
+    width: 80px;
+}
+
+.actions {
+    width: 80px;
+    text-align: right;
+}
+
+.revokeBtn {
+    color: var(--status-error);
+
+    &:hover {
+        background: color-mix(in srgb, var(--status-error) 8%, transparent);
+    }
+}
