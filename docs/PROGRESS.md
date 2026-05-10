@@ -2,14 +2,20 @@
 
 > Single source of truth for "where are we right now". Update after every work session.
 
-**Last updated**: 2026-05-08 (post-Feature 05 — component restructure + TS fixes)
+**Last updated**: 2026-05-09 (post-Feature 07 — Polish)
 
 ---
 
 ## Current Phase
 
-**Next up: Feature 06 — Alerts** · `docs/features/06-alerts.md`
-Status: 🟦 Planned — feature doc exists, not yet detailed for implementation. Read the doc first; if it's a stub, detail it with the user before writing any code.
+**Next up: Feature 08 — Docker packaging** · `docs/features/08-docker-packaging.md`
+Status: 🟦 Planned
+
+**Last completed: Feature 07 — Polish (2026-05-09)**
+Toast system (central `ToastProvider` + `useToast` hook, Redux-free reducer, ARIA live region `role="region" aria-live="polite"`, per-toast `role="alert"/"status"`); migrated all inline `alert()` / `saved` state to `toast.push()`; 5 skeleton components (`TableSkeleton`, `WidgetSkeleton`, `CardSkeleton`, `ListSkeleton`, `PageSkeleton`) with design-system tokens; `dynamic()` lazy-loading for recharts widgets (EventsPerMinute, LevelBreakdown, EnvironmentBreakdown) and EventDrawer; error boundary components (`GlobalErrorPage`, `NotFoundPage`, `ForbiddenPage`); 12 `error.tsx` / `not-found.tsx` / `loading.tsx` boundary files across all route segments; session revocation on password change (`revokeOtherSessions: true`); E2E test for session revocation (`e2e/auth.spec.ts`); `/api/version` and extended `/api/health/ready` (db, pgboss, ingest, migrations checks); `core/logger.ts` (pino singleton); `slow-query-logger.ts` wraps postgres.js client, WARN at ≥500 ms; `partman-maintenance.job.ts` wrapped in try/catch with ERROR logging; ForbiddenPage wiring — `revokeInvitationAction` returns `{ error? }`, `InvitationsList` converted to client component, `alerts/new/page.tsx` renders `ForbiddenPage` instead of redirect; `EmptyMembers` component for team page; README monitoring endpoints + self-monitoring alert guide; Decision log (10 entries). Manual items deferred: keyboard nav (27), contrast audit (28), EXPLAIN ANALYZE (32). TypeScript clean.
+
+**Last completed: Feature 06 — Alerts (2026-05-09)**
+Schema (`alert_rules` + `alert_notifications`, migration 0004), Zod schemas (`shared/utils/event-filters.schema.ts` + `features/alerts/utils/alert-schemas.ts`), `alert-rules.service.ts` (CRUD + `listEnabled` + `listAlertHistory`), `alert-evaluator.service.ts` (evaluateOne with optimistic concurrency on `version`, evaluateAllEnabled with cap-10 concurrency), `build-payload.ts` (webhook JSON with sample events + events_url), `alert-dispatcher.service.ts` (HTTP POST, 2xx/4xx/5xx classification), `alert-evaluation.job.ts` (pg-boss cron `* * * * *`, singletonKey), `alert-delivery.job.ts` (retry options on `send()`), 5 server actions, `alerts.*` i18n namespace, 14 components (`AlertStateBadge`, `AlertRow`, `AlertsList`, `AlertRuleEditor`, `AlertRuleEditorTabs`, `FilterBuilder`, `ConditionEditor`, `WebhookChannelForm`, `ChannelsEditor`, `NotificationOptions`, `SaveBar`, `AlertHistoryTable`, `AlertNotificationRow`, `DeliveryStatusBadge`), 3 routes (`/alerts`, `/alerts/new`, `/alerts/[id]`), 25 unit tests (evaluator state machine, dispatcher HTTP classification, payload builder), 5 DB-level E2E tests (insert, cascade delete, version increment, optimistic concurrency, disabled filter). `serializeFilters` moved to `shared/utils/`. Build clean, TypeScript clean, 147 unit tests.
 
 **Last completed side-track (2026-05-08): Component folder restructure**
 All `features/*/components/` reorganized so every component lives in its own named subfolder — matching the `shared/components/` pattern. 118 files moved via `git mv`. Semantic group subfolders (`filters/`, `detail/`, `widgets/`, etc.) kept; flat `parts/` at feature-components root dissolved (shared-within-feature components promoted to own folders; single-parent sub-components nested inside parent's `parts/`). All imports updated, TypeScript clean. Rules updated: `PROJECT.md §2.2`, `§3.3`, `§15`. Two pre-existing TS errors also fixed: `e2e/ingest.spec.ts` (`body` → `data` for Playwright), `getOrgBySlug` explicit return type (`Promise<Org | null>`).
@@ -42,8 +48,8 @@ Each feature has its own implementation doc with a status block, decisions, sche
 | 03 | Ingest | ✅ Done | [features/03-ingest.md](features/03-ingest.md) |
 | 04 | Events list + filters + detail | ✅ Done | [features/04-events-list-filters.md](features/04-events-list-filters.md) |
 | 05 | Dashboard | ✅ Done | [features/05-dashboard.md](features/05-dashboard.md) |
-| 06 | Alerts | 🟦 Planned | [features/06-alerts.md](features/06-alerts.md) |
-| 07 | Polish | 🟦 Planned | [features/07-polish.md](features/07-polish.md) |
+| 06 | Alerts | ✅ Done | [features/06-alerts.md](features/06-alerts.md) |
+| 07 | Polish | ✅ Done | [features/07-polish.md](features/07-polish.md) |
 | 08 | Docker packaging | 🟦 Planned | [features/08-docker-packaging.md](features/08-docker-packaging.md) |
 
 Status legend:

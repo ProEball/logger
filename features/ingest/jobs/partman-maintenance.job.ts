@@ -1,6 +1,7 @@
 import type { PgBoss } from "pg-boss";
 import { db } from "@/core/db/client";
 import { sql } from "drizzle-orm";
+import { logger } from "@/core/logger";
 
 export const PARTMAN_JOB_NAME = "partman-maintenance";
 
@@ -20,6 +21,18 @@ export async function registerPartmanMaintenanceJob(boss: PgBoss): Promise<void>
     );
 
     await boss.work(PARTMAN_JOB_NAME, async () => {
-        await db.execute(sql`SELECT public.run_maintenance(p_analyze := false)`);
+        try {
+            await db.execute(sql`SELECT public.run_maintenance(p_analyze := false)`);
+            logger.info("partman maintenance completed successfully");
+        } catch (err) {
+            logger.error(
+                {
+                    err,
+                    job: PARTMAN_JOB_NAME,
+                    hint: "Check pg_partman extension health and partition table status",
+                },
+                "partman maintenance failed — partitions may stop being created",
+            );
+        }
     });
 }

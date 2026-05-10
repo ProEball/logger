@@ -4,6 +4,7 @@ import { useState, useTransition, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { Button, FormField, Input } from "@/shared/components";
 import { SlugInput } from "../SlugInput/SlugInput";
+import { useToast } from "@/shared/components/Toast/ToastProvider";
 import { updateProjectAction } from "@/features/projects/actions/update-project.action";
 import styles from "./ProjectSettingsForm.module.scss";
 
@@ -15,26 +16,24 @@ interface ProjectSettingsFormProps {
 
 export function ProjectSettingsForm({ orgSlug, projectSlug, projectName }: ProjectSettingsFormProps) {
     const router = useRouter();
+    const toast = useToast();
     const [isPending, startTransition] = useTransition();
 
     const [name, setName] = useState(projectName);
     const [slug, setSlug] = useState(projectSlug);
     const [error, setError] = useState<string | null>(null);
     const [slugError, setSlugError] = useState<string | null>(null);
-    const [saved, setSaved] = useState(false);
 
     const isDirty = name !== projectName || slug !== projectSlug;
 
     const handleSlugChange = useCallback((value: string) => {
         setSlug(value);
         setSlugError(null);
-        setSaved(false);
     }, []);
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         setError(null);
-        setSaved(false);
 
         const slugPattern = /^[a-z0-9-]+$/;
         if (!slugPattern.test(slug)) {
@@ -61,7 +60,7 @@ export function ProjectSettingsForm({ orgSlug, projectSlug, projectName }: Proje
                 router.replace(`/${orgSlug}/${result.newSlug}/settings`);
                 return;
             }
-            setSaved(true);
+            toast.push({ variant: 'success', title: 'Project settings saved' });
         });
     };
 
@@ -70,7 +69,7 @@ export function ProjectSettingsForm({ orgSlug, projectSlug, projectName }: Proje
             <FormField label="Project name" required>
                 <Input
                     value={name}
-                    onChange={(e) => { setName(e.target.value); setSaved(false); }}
+                    onChange={(e) => setName(e.target.value)}
                     placeholder="My API Server"
                     disabled={isPending}
                     maxLength={80}
@@ -90,7 +89,6 @@ export function ProjectSettingsForm({ orgSlug, projectSlug, projectName }: Proje
             </FormField>
 
             {error ? <p className={styles.error} role="alert">{error}</p> : null}
-            {saved ? <p className={styles.success} role="status">Saved.</p> : null}
 
             <div className={styles.actions}>
                 <Button variant="primary" type="submit" disabled={isPending || !isDirty}>

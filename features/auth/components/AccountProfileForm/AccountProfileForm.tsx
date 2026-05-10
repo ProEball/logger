@@ -4,6 +4,7 @@ import { useState, useTransition } from 'react';
 import { Button } from '@/shared/components/Button/Button';
 import { FormField } from '@/shared/components/FormField/FormField';
 import { Input } from '@/shared/components/Input/Input';
+import { useToast } from '@/shared/components/Toast/ToastProvider';
 import { updateAccountAction } from '@/features/auth/actions/update-account.action';
 import styles from './AccountProfileForm.module.scss';
 
@@ -13,22 +14,21 @@ interface AccountProfileFormProps {
 }
 
 export function AccountProfileForm({ initialName, email }: AccountProfileFormProps) {
+    const toast = useToast();
     const [name, setName] = useState(initialName);
     const [error, setError] = useState<string | null>(null);
-    const [saved, setSaved] = useState(false);
     const [isPending, startTransition] = useTransition();
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         setError(null);
-        setSaved(false);
         startTransition(async () => {
             const result = await updateAccountAction({ name });
             if (result.error) {
                 setError(result.error);
                 return;
             }
-            setSaved(true);
+            toast.push({ variant: 'success', title: 'Profile saved' });
         });
     };
 
@@ -41,7 +41,7 @@ export function AccountProfileForm({ initialName, email }: AccountProfileFormPro
             <FormField label="Display name" required>
                 <Input
                     value={name}
-                    onChange={(e) => { setName(e.target.value); setSaved(false); }}
+                    onChange={(e) => setName(e.target.value)}
                     placeholder="Your name"
                     disabled={isPending}
                     required
@@ -49,7 +49,6 @@ export function AccountProfileForm({ initialName, email }: AccountProfileFormPro
             </FormField>
 
             {error ? <p className={styles.error} role="alert">{error}</p> : null}
-            {saved ? <p className={styles.success} role="status">Saved.</p> : null}
 
             <div className={styles.actions}>
                 <Button variant="primary" type="submit" disabled={isPending}>

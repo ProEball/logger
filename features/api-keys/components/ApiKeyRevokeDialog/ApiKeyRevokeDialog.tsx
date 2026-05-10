@@ -2,6 +2,7 @@
 
 import { useTransition, useState } from "react";
 import { Button, Modal } from "@/shared/components";
+import { useToast } from "@/shared/components/Toast/ToastProvider";
 import { revokeApiKeyAction } from "@/features/api-keys/actions/revoke-api-key.action";
 import styles from "./ApiKeyRevokeDialog.module.scss";
 
@@ -24,6 +25,7 @@ export function ApiKeyRevokeDialog({
     orgSlug,
     projectSlug,
 }: ApiKeyRevokeDialogProps) {
+    const toast = useToast();
     const [isPending, startTransition] = useTransition();
     const [error, setError] = useState<string | null>(null);
 
@@ -41,6 +43,7 @@ export function ApiKeyRevokeDialog({
                 setError(result.error);
                 return;
             }
+            toast.push({ variant: 'success', title: 'API key revoked', body: `"${keyName}" has been revoked.` });
             onClose();
         });
     };

@@ -13,18 +13,18 @@ import {
 export async function revokeInvitationAction(
     invitationId: string,
     orgSlug: string,
-): Promise<void> {
+): Promise<{ error?: string }> {
     const user = await getCurrentUser();
-    if (!user) return;
+    if (!user) return { error: "Not authenticated." };
 
     const org = await getOrgBySlug(orgSlug);
-    if (!org) return;
+    if (!org) return { error: "Organization not found." };
 
     const membership = await getMembership(user.id, org.id);
     try {
         assertPermission(membership, "members.invite");
     } catch {
-        return;
+        return { error: "You don't have permission to revoke invitations." };
     }
 
     await db
@@ -37,4 +37,5 @@ export async function revokeInvitationAction(
         );
 
     revalidatePath(`/${orgSlug}/team`);
+    return {};
 }

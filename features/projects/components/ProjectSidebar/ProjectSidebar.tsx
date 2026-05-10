@@ -44,6 +44,7 @@ export function ProjectSidebar({ orgSlug, projectSlug, projectName: _projectName
                 />
                 <SidebarItem
                     label="Alerts"
+                    href={`${base}/alerts`}
                     active={startsWith("/alerts")}
                     icon={
                         <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">

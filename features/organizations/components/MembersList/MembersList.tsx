@@ -4,11 +4,13 @@ import { useId, useState, useTransition } from 'react';
 import { Button } from '@/shared/components/Button/Button';
 import { ConfirmDialog } from '@/shared/components/ConfirmDialog/ConfirmDialog';
 import { Modal } from '@/shared/components/Modal/Modal';
+import { useToast } from '@/shared/components/Toast/ToastProvider';
 import { changeMemberRoleAction } from '@/features/organizations/actions/change-member-role.action';
 import { removeMemberAction } from '@/features/organizations/actions/remove-member.action';
 import { transferOwnershipAction } from '@/features/organizations/actions/transfer-ownership.action';
 import type { OrgMember } from '@/features/organizations/services/organizations.service';
 import { MemberRow, type MemberActionType } from '../MemberRow/MemberRow';
+import { EmptyMembers } from './parts/EmptyMembers';
 import styles from './MembersList.module.scss';
 
 type Role = { id: string; name: string };
@@ -31,6 +33,7 @@ export function MembersList({
     actorCanRemove,
     isActorOwner,
 }: MembersListProps) {
+    const toast = useToast();
     const roleSelectId = useId();
     const [dialog, setDialog] = useState<DialogType>('none');
     const [activeMemberId, setActiveMemberId] = useState<string | null>(null);
@@ -65,6 +68,7 @@ export function MembersList({
                 newRoleId: selectedRoleId,
             });
             if (result?.error) { setError(result.error); return; }
+            toast.push({ variant: 'success', title: 'Role updated' });
             setDialog('none');
             setActiveMemberId(null);
         });
@@ -76,6 +80,7 @@ export function MembersList({
         startTransition(async () => {
             const result = await removeMemberAction({ orgSlug, targetUserId: activeMemberId });
             if (result?.error) { setError(result.error); return; }
+            toast.push({ variant: 'success', title: 'Member removed' });
             setDialog('none');
             setActiveMemberId(null);
         });
@@ -87,10 +92,20 @@ export function MembersList({
         startTransition(async () => {
             const result = await transferOwnershipAction({ orgSlug, targetUserId: activeMemberId });
             if (result?.error) { setError(result.error); return; }
+            toast.push({ variant: 'success', title: 'Ownership transferred' });
             setDialog('none');
             setActiveMemberId(null);
         });
     };
+
+    if (members.length === 0) {
+        return (
+            <section className={styles.section}>
+                <h2 className={styles.heading}>Members (0)</h2>
+                <EmptyMembers />
+            </section>
+        );
+    }
 
     return (
         <section className={styles.section}>

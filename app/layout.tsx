@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import Script from "next/script";
 import { ToastProvider } from "@/shared/components";
 import ReduxProvider from "@/core/store/Provider";
 import ThemeProvider from "@/core/theme/ThemeProvider";
@@ -42,13 +43,8 @@ export default function RootLayout({
             className={`${geistSans.variable} ${geistMono.variable}`}
             suppressHydrationWarning
         >
-            {/* dangerouslySetInnerHTML on <head> prevents React from reconciling
-                its children, so the <script> is never seen as a JSX element —
-                no React 19 "script tag" warning. Next.js metadata API injects
-                its own tags outside this reconciliation path. */}
-            {/* eslint-disable-next-line react/no-danger */}
-            <head dangerouslySetInnerHTML={{ __html: `<script>${noFlashScript}</script>` }} />
             <body>
+                <Script id="theme-init" strategy="beforeInteractive" dangerouslySetInnerHTML={{ __html: noFlashScript }} />
                 <ReduxProvider>
                     <ThemeProvider>
                         <ToastProvider>{children}</ToastProvider>

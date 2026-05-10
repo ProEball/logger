@@ -1,0 +1,33 @@
+.bar {
+    position: sticky;
+    bottom: 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 24px;
+    background: var(--bg);
+    border-top: 1px solid var(--border);
+    z-index: 10;
+}
+
+.left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.cancelLink {
+    font-size: 14px;
+    color: var(--text-secondary);
+    text-decoration: none;
+
+    &:hover {
+        color: var(--text-primary);
+    }
+}

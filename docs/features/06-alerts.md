@@ -1,11 +1,11 @@
 # 06. Alerts
 
 ## Status
-- [ ] Not started · [ ] In progress · [ ] Done
-- Started: —
-- Completed: —
-- Last touched: 2026-05-01 (planning)
-- Progress: 0 / 38 checklist items
+- [x] Not started · [x] In progress · [x] Done
+- Started: 2026-05-09
+- Completed: 2026-05-09
+- Last touched: 2026-05-09
+- Progress: 38 / 38 checklist items
 
 ## Goal
 
@@ -241,17 +241,17 @@ alerts: {
 ## Implementation Checklist
 
 ### Schema
-- [ ] 1. Drizzle schema: `alert_rules`, `alert_notifications`. Generate migration 0008.
-- [ ] 2. Apply migration. Verify in `db:studio`.
+- [x] 1. Drizzle schema: `alert_rules`, `alert_notifications`. Generate migration 0008.
+- [x] 2. Apply migration. Verify in `db:studio`.
 
 ### Filter / condition reuse
-- [ ] 3. Extract `EventFilters` Zod schema from feature 04 to a shared spot (`features/events/utils/event-schema.ts` or `shared/`). Both ingest filter validation and alert rules import.
-- [ ] 4. `condition` Zod schema: `z.object({ type: z.literal('threshold'), count: z.number().int().positive(), windowMinutes: z.number().int().min(1).max(1440) })`.
-- [ ] 5. `channels` Zod: array of webhook variants, `min(1)`.
+- [x] 3. Extract `EventFilters` Zod schema from feature 04 to a shared spot (`features/events/utils/event-schema.ts` or `shared/`). Both ingest filter validation and alert rules import.
+- [x] 4. `condition` Zod schema: `z.object({ type: z.literal('threshold'), count: z.number().int().positive(), windowMinutes: z.number().int().min(1).max(1440) })`.
+- [x] 5. `channels` Zod: array of webhook variants, `min(1)`.
 
 ### Services
-- [ ] 6. `alert-rules.service.ts`: CRUD with project scoping; `listEnabled()` returns rules where `enabled=true` AND project's `deleted_at IS NULL` (JOIN). Every UPDATE bumps `version` (`SET version = version + 1`).
-- [ ] 7. `alert-evaluator.service.ts::evaluateOne(rule)`:
+- [x] 6. `alert-rules.service.ts`: CRUD with project scoping; `listEnabled()` returns rules where `enabled=true` AND project's `deleted_at IS NULL` (JOIN). Every UPDATE bumps `version` (`SET version = version + 1`).
+- [x] 7. `alert-evaluator.service.ts::evaluateOne(rule)`:
   - Capture `rule.version` at read time.
   - Compute window: `[now - windowMinutes, now]`
   - Run count query: `SELECT COUNT(*) FROM events WHERE project_id=? AND timestamp >= ? AND timestamp < ? AND <filter clauses>`
@@ -260,62 +260,62 @@ alerts: {
     - no transition → update `last_evaluated_at`, `last_match_count` with `WHERE id=? AND version=?`
     - transition → update state + `state_changed_at` + enqueue notification job(s) (skip resolved if `notify_on_resolve = false`), all with `WHERE id=? AND version=?`
   - **Optimistic concurrency**: if `UPDATE ... WHERE id=? AND version=?` reports 0 rows changed, the user edited the rule mid-evaluation. Skip — next tick will pick up the new version. Don't enqueue notifications based on stale filter/condition.
-- [ ] 8. `alert-evaluator.service.ts::evaluateAllEnabled()`:
+- [x] 8. `alert-evaluator.service.ts::evaluateAllEnabled()`:
   - Fetch all enabled rules (already filtered for live projects by step 6)
   - Process in parallel with concurrency cap (e.g. 10)
   - Catch per-rule errors so one bad rule doesn't kill the tick
-- [ ] 9. `build-payload.ts`: assemble payload shape (see above). Fetch 3 sample events using same query as evaluator. Build `events_url` from filter + project context.
-- [ ] 10. `alert-dispatcher.service.ts::deliver(notification)`:
+- [x] 9. `build-payload.ts`: assemble payload shape (see above). Fetch 3 sample events using same query as evaluator. Build `events_url` from filter + project context.
+- [x] 10. `alert-dispatcher.service.ts::deliver(notification)`:
   - POST to URL with custom headers, JSON body, 5s timeout
   - Classify response: 2xx → delivered; 4xx → failed (no retry); 5xx / timeout / network → retry
   - Update `alert_notifications` row accordingly
   - On retry → throw, pg-boss handles backoff
-- [ ] 11. Unit tests:
+- [x] 11. Unit tests:
   - Evaluator: state transitions, no transition, threshold edge cases, disabled rule skipped
   - Dispatcher: 2xx/4xx/5xx classification, header injection, timeout
   - Payload builder: shape, sample events count, URL assembly
 
 ### Background jobs
-- [ ] 12. `alert-evaluation.job.ts`: pg-boss schedule cron `* * * * *`. Worker invokes `evaluateAllEnabled()`.
+- [x] 12. `alert-evaluation.job.ts`: pg-boss schedule cron `* * * * *`. Worker invokes `evaluateAllEnabled()`.
   - **Singleton execution**: register with `singletonKey: 'alert-evaluation'` (or wrap handler with `pg_advisory_xact_lock(<fixed-int>)`). Two worker replicas during a rolling restart must NOT both evaluate — duplicate notifications would result. Feature 08 also enforces `replicas: 1` on the worker service as a backstop.
-- [ ] 13. `alert-delivery.job.ts`: handler invokes dispatcher; pg-boss config: `retryLimit: 3`, `retryDelay: 30` (we'll use `retryBackoff: true` if explicit pattern unavailable, otherwise enqueue with explicit `startAfter` per attempt). Delivery jobs do NOT need singleton — pg-boss already guarantees a single job is consumed once across workers.
-- [ ] 14. Wire jobs into worker startup (worker container in feature 08; for dev — same Next.js process behind `WORKER_IN_PROCESS=true` env flag, shared with feature 03's partman job).
-- [ ] 15. Integration test: insert rule with low threshold → ingest events → wait one tick (or trigger evaluator manually) → assert notification row + outbound HTTP call (mock). Plus: edit rule mid-tick (simulate by bumping `version` between evaluator's read and write) → assert no notification enqueued.
+- [x] 13. `alert-delivery.job.ts`: handler invokes dispatcher; pg-boss config: `retryLimit: 3`, `retryDelay: 30` (we'll use `retryBackoff: true` if explicit pattern unavailable, otherwise enqueue with explicit `startAfter` per attempt). Delivery jobs do NOT need singleton — pg-boss already guarantees a single job is consumed once across workers.
+- [x] 14. Wire jobs into worker startup (worker container in feature 08; for dev — same Next.js process behind `WORKER_IN_PROCESS=true` env flag, shared with feature 03's partman job).
+- [x] 15. Integration test: insert rule with low threshold → ingest events → wait one tick (or trigger evaluator manually) → assert notification row + outbound HTTP call (mock). Plus: edit rule mid-tick (simulate by bumping `version` between evaluator's read and write) → assert no notification enqueued.
 
 ### Server actions
-- [ ] 16. `create-alert-rule.action.ts` — Zod validate, `assertPermission('alerts.manage')`, insert with `version=1`.
-- [ ] 17. `update-alert-rule.action.ts` — same. On condition/filter change, reset state to `ok` (so a stale `firing` doesn't auto-resolve before next eval). Always bumps `version`.
-- [ ] 18. `delete-alert-rule.action.ts` — relies on `ON DELETE CASCADE` to clean up `alert_notifications` (FK declared in schema).
-- [ ] 19. `toggle-alert-rule.action.ts` — flips `enabled`. When disabling a `firing` rule, also reset state to `ok` (so re-enabling later doesn't fire spurious resolve). Bumps `version`.
-- [ ] 20. `test-alert-rule.action.ts` — builds payload with `test: true`, calls dispatcher synchronously, returns `{ ok, status, error? }`. Does NOT write `alert_notifications`. Does NOT bump `version`.
+- [x] 16. `create-alert-rule.action.ts` — Zod validate, `assertPermission('alerts.manage')`, insert with `version=1`.
+- [x] 17. `update-alert-rule.action.ts` — same. On condition/filter change, reset state to `ok` (so a stale `firing` doesn't auto-resolve before next eval). Always bumps `version`.
+- [x] 18. `delete-alert-rule.action.ts` — relies on `ON DELETE CASCADE` to clean up `alert_notifications` (FK declared in schema).
+- [x] 19. `toggle-alert-rule.action.ts` — flips `enabled`. When disabling a `firing` rule, also reset state to `ok` (so re-enabling later doesn't fire spurious resolve). Bumps `version`.
+- [x] 20. `test-alert-rule.action.ts` — builds payload with `test: true`, calls dispatcher synchronously, returns `{ ok, status, error? }`. Does NOT write `alert_notifications`. Does NOT bump `version`.
 
 ### Alerts list
-- [ ] 21. `app/[org]/[project]/alerts/page.tsx` — server component. List enabled by default; URL `?showDisabled=1` includes disabled.
-- [ ] 22. `AlertRow` columns: name, state badge, last triggered, channels summary, enable toggle, kebab menu (Edit / Delete / Test fire).
-- [ ] 23. Empty state with "Create alert" CTA (hidden if no `alerts.manage`).
+- [x] 21. `app/[org]/[project]/alerts/page.tsx` — server component. List enabled by default; URL `?showDisabled=1` includes disabled.
+- [x] 22. `AlertRow` columns: name, state badge, last triggered, channels summary, enable toggle, kebab menu (Edit / Delete / Test fire).
+- [x] 23. Empty state with "Create alert" CTA (hidden if no `alerts.manage`).
 
 ### Rule editor
-- [ ] 24. `app/[org]/[project]/alerts/new/page.tsx` and `app/[org]/[project]/alerts/[id]/page.tsx` — render `AlertRuleEditor`.
-- [ ] 25. `AlertRuleEditor`:
+- [x] 24. `app/[org]/[project]/alerts/new/page.tsx` and `app/[org]/[project]/alerts/[id]/page.tsx` — render `AlertRuleEditor`.
+- [x] 25. `AlertRuleEditor`:
   - Tabs Configuration / History (only on edit mode; new alerts have no history)
   - Sticky `SaveBar` with Save + Cancel + (on edit) Test fire + Enable toggle
-- [ ] 26. `FilterBuilder` — wraps event filter primitives from feature 04 into a controlled form. Output: `EventFilters` JSON.
-- [ ] 27. `ConditionEditor` — number input for count, number input for windowMinutes (range 1–1440 = 24h max).
-- [ ] 28. `ChannelsEditor` — list with add/remove. Each channel = `WebhookChannelForm`.
-- [ ] 29. `WebhookChannelForm` — URL input (Zod URL validation), headers as key/value pair list (add/remove).
-- [ ] 30. `NotificationOptions` — checkbox `notify_on_resolve`.
-- [ ] 31. `TestFireButton` — calls action, shows toast `"Test sent — got 200 OK"` or error.
-- [ ] 32. Form validation prevents save if any field invalid (gform-react validators).
+- [x] 26. `FilterBuilder` — wraps event filter primitives from feature 04 into a controlled form. Output: `EventFilters` JSON.
+- [x] 27. `ConditionEditor` — number input for count, number input for windowMinutes (range 1–1440 = 24h max).
+- [x] 28. `ChannelsEditor` — list with add/remove. Each channel = `WebhookChannelForm`.
+- [x] 29. `WebhookChannelForm` — URL input (Zod URL validation), headers as key/value pair list (add/remove).
+- [x] 30. `NotificationOptions` — checkbox `notify_on_resolve`.
+- [x] 31. `TestFireButton` — calls action, shows toast `"Test sent — got 200 OK"` or error.
+- [x] 32. Form validation prevents save if any field invalid (gform-react validators).
 
 ### History tab
-- [ ] 33. `AlertHistoryTable` — paginated (offset for simplicity here; not high volume).
-- [ ] 34. `AlertNotificationRow` — timestamp (relative + absolute), state badge (firing/resolved), delivery badge (pending/delivered/failed/retrying), attempts count, expandable error detail on failed rows.
+- [x] 33. `AlertHistoryTable` — paginated (offset for simplicity here; not high volume).
+- [x] 34. `AlertNotificationRow` — timestamp (relative + absolute), state badge (firing/resolved), delivery badge (pending/delivered/failed/retrying), attempts count, expandable error detail on failed rows.
 
 ### i18n strings
-- [ ] 34a. Add `alerts.*` namespace to `core/i18n/dictionary.ts` (full key set defined above). Use `t()` everywhere — including delivery status badges, validation messages, confirm dialogs.
+- [x] 34a. Add `alerts.*` namespace to `core/i18n/dictionary.ts` (full key set defined above). Use `t()` everywhere — including delivery status badges, validation messages, confirm dialogs.
 
 ### Tests
-- [ ] 35. E2E (`e2e/alerts.spec.ts`):
+- [x] 35. E2E (`e2e/alerts.spec.ts`):
   - Create rule with low threshold (`count >= 1 within 5m`) on `level=error`
   - Test fire → mock webhook receives test payload with `test: true`
   - Ingest one error event → wait/trigger evaluator → mock webhook receives firing payload with `test: false`
@@ -324,9 +324,9 @@ alerts: {
   - History tab shows all three rows (test fire NOT shown — it doesn't write history)
 
 ### Final
-- [ ] 36. Update PROGRESS.md → ✅ Done.
-- [ ] 37. Update Status block.
-- [ ] 38. End-to-end live check.
+- [x] 36. Update PROGRESS.md → ✅ Done.
+- [x] 37. Update Status block.
+- [x] 38. End-to-end live check.
 
 ## Live check (full)
 

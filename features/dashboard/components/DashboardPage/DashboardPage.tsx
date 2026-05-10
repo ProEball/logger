@@ -1,14 +1,33 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { useSelector } from "react-redux";
 import { selectAutoRefresh } from "@/core/store/slices/user";
 import { useAutoRefresh } from "@/features/events/hooks/use-auto-refresh";
 import { DashboardHeader } from "../DashboardHeader/DashboardHeader";
-import { EventsPerMinuteWidget } from "../widgets/EventsPerMinuteWidget/EventsPerMinuteWidget";
-import { LevelBreakdownWidget } from "../widgets/LevelBreakdownWidget/LevelBreakdownWidget";
-import { EnvironmentBreakdownWidget } from "../widgets/EnvironmentBreakdownWidget/EnvironmentBreakdownWidget";
 import { TopMessagesWidget } from "../widgets/TopMessagesWidget/TopMessagesWidget";
 import { RecentErrorsWidget } from "../widgets/RecentErrorsWidget/RecentErrorsWidget";
+import { WidgetSkeleton } from "@/shared/components";
+
+// Recharts is ~150 kB — split into a separate chunk and hydrate after the
+// static shell so it doesn't block the initial page render.
+const EventsPerMinuteWidget = dynamic(
+    () => import("../widgets/EventsPerMinuteWidget/EventsPerMinuteWidget")
+        .then((m) => ({ default: m.EventsPerMinuteWidget })),
+    { loading: () => <WidgetSkeleton /> },
+);
+
+const LevelBreakdownWidget = dynamic(
+    () => import("../widgets/LevelBreakdownWidget/LevelBreakdownWidget")
+        .then((m) => ({ default: m.LevelBreakdownWidget })),
+    { loading: () => <WidgetSkeleton /> },
+);
+
+const EnvironmentBreakdownWidget = dynamic(
+    () => import("../widgets/EnvironmentBreakdownWidget/EnvironmentBreakdownWidget")
+        .then((m) => ({ default: m.EnvironmentBreakdownWidget })),
+    { loading: () => <WidgetSkeleton /> },
+);
 import type { BucketRow, LevelCount, EnvCount, TopMessage } from "@/features/dashboard/services/aggregations.service";
 import type { Event } from "@/core/db/schema";
 import type { TimeRange } from "@/features/events/utils/event-filters.types";

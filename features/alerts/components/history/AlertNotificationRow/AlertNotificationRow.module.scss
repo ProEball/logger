@@ -1,0 +1,42 @@
+.row {
+    td {
+        padding: 10px 16px;
+        border-bottom: 1px solid var(--border);
+        vertical-align: middle;
+    }
+
+    &:hover {
+        background: var(--surface-hover);
+    }
+}
+
+.ts {
+    font-size: 13px;
+    color: var(--text-secondary);
+    white-space: nowrap;
+}
+
+.attempts {
+    text-align: center;
+    color: var(--text-secondary);
+    font-size: 13px;
+}
+
+.errorToggle {
+    font-size: 12px;
+    color: var(--text-secondary);
+    cursor: pointer;
+
+    &:hover {
+        color: var(--danger);
+    }
+}
+
+.errorText {
+    display: block;
+    margin-top: 4px;
+    font-size: 11px;
+    color: var(--danger);
+    white-space: pre-wrap;
+    word-break: break-all;
+}

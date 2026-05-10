@@ -6,8 +6,16 @@ import { useEventFilters } from "@/features/events/hooks/use-event-filters";
 import { EventsFilterBar } from "../filters/EventsFilterBar/EventsFilterBar";
 import { EventsTable } from "../EventsTable/EventsTable";
 import { PaginationControls } from "../pagination/PaginationControls/PaginationControls";
-import { EventDrawer } from "../detail/EventDrawer/EventDrawer";
+// EventDrawer is only needed after the user selects an event — keep it out of
+// the initial bundle so it doesn't delay the table render.
+import dynamic from "next/dynamic";
+
+const EventDrawer = dynamic(
+    () => import("../detail/EventDrawer/EventDrawer")
+        .then((m) => ({ default: m.EventDrawer })),
+);
 import { AutoRefreshControl } from "../auto-refresh/AutoRefreshControl/AutoRefreshControl";
+import { TableSkeleton } from "@/shared/components/Skeletons/TableSkeleton";
 import type { Event } from "@/core/db/schema";
 import type { EventFilters, Cursor } from "@/features/events/utils/event-filters.types";
 import styles from "./EventsPage.module.scss";
@@ -71,7 +79,7 @@ export function EventsPage({
                 />
             </Suspense>
 
-            <Suspense>
+            <Suspense fallback={<TableSkeleton />}>
                 <div className={styles.tableWrap}>
                     <EventsTable
                         events={events}

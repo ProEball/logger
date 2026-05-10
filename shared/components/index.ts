@@ -69,6 +69,12 @@ export { SidebarDivider } from './Sidebar/parts/SidebarDivider';
 export { Skeleton } from './Skeleton/Skeleton';
 export type { SkeletonProps } from './Skeleton/Skeleton';
 
+export { TableSkeleton } from './Skeletons/TableSkeleton';
+export { WidgetSkeleton } from './Skeletons/WidgetSkeleton';
+export { CardSkeleton } from './Skeletons/CardSkeleton';
+export { ListSkeleton } from './Skeletons/ListSkeleton';
+export { PageSkeleton } from './Skeletons/PageSkeleton';
+
 export { StatusBadge } from './StatusBadge/StatusBadge';
 export type { Status, StatusBadgeProps } from './StatusBadge/StatusBadge';
 

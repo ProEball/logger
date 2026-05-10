@@ -4,21 +4,21 @@ import { useState, useTransition } from 'react';
 import { Button } from '@/shared/components/Button/Button';
 import { FormField } from '@/shared/components/FormField/FormField';
 import { Input } from '@/shared/components/Input/Input';
+import { useToast } from '@/shared/components/Toast/ToastProvider';
 import { changePasswordAction } from '@/features/auth/actions/change-password.action';
 import styles from './ChangePasswordForm.module.scss';
 
 export function ChangePasswordForm() {
+    const toast = useToast();
     const [currentPassword, setCurrentPassword] = useState('');
     const [newPassword, setNewPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
     const [error, setError] = useState<string | null>(null);
-    const [saved, setSaved] = useState(false);
     const [isPending, startTransition] = useTransition();
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         setError(null);
-        setSaved(false);
         startTransition(async () => {
             const result = await changePasswordAction({
                 currentPassword,
@@ -29,7 +29,7 @@ export function ChangePasswordForm() {
                 setError(result.error);
                 return;
             }
-            setSaved(true);
+            toast.push({ variant: 'success', title: 'Password changed', body: 'Other sessions have been signed out.' });
             setCurrentPassword('');
             setNewPassword('');
             setConfirmPassword('');
@@ -72,7 +72,6 @@ export function ChangePasswordForm() {
             </FormField>
 
             {error ? <p className={styles.error} role="alert">{error}</p> : null}
-            {saved ? <p className={styles.success} role="status">Password changed.</p> : null}
 
             <div className={styles.actions}>
                 <Button variant="primary" type="submit" disabled={isPending}>
