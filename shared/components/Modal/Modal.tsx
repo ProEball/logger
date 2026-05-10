@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useRef, type MouseEvent, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { cx } from '@/shared/utils/cx';
 import styles from './Modal.module.scss';
 
@@ -33,6 +34,11 @@ export function Modal({
     // must be ignored, otherwise callers whose onClose resets state would
     // overwrite any concurrent state transitions (e.g. "invite" → "created").
     const isProgrammaticClose = useRef(false);
+    const [mounted, setMounted] = useState(false);
+
+    useEffect(() => {
+        setMounted(true);
+    }, []);
 
     useEffect(() => {
         const node = dialogRef.current;
@@ -58,7 +64,9 @@ export function Modal({
         if (event.target === dialogRef.current) onClose();
     };
 
-    return (
+    if (!mounted) return null;
+
+    return createPortal(
         <dialog
             ref={dialogRef}
             className={cx(styles.dialog, styles[size], className)}
@@ -87,6 +95,7 @@ export function Modal({
                     <footer className={styles.footer}>{footer}</footer>
                 ) : null}
             </div>
-        </dialog>
+        </dialog>,
+        document.body,
     );
 }

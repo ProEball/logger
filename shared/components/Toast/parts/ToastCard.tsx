@@ -41,8 +41,9 @@ const ICONS: Record<ToastVariant, ReactElement | null> = {
 
 export function ToastCard({ toast, onDismiss }: ToastCardProps) {
     const icon = ICONS[toast.variant];
+    const role = toast.variant === 'danger' || toast.variant === 'warning' ? 'alert' : 'status';
     return (
-        <div className={cx(styles.toast, styles[toast.variant])}>
+        <div className={cx(styles.toast, styles[toast.variant])} role={role}>
             {icon ? <span className={styles.icon}>{icon}</span> : null}
             <div className={styles.content}>
                 {toast.title !== undefined ? (

@@ -1,0 +1,83 @@
+.table {
+    display: flex;
+    flex-direction: column;
+}
+
+.tableRow {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border-subtle);
+}
+
+.tableColFill {
+    flex: 1;
+    min-width: 0;
+}
+
+.widget {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 20px;
+    background: var(--bg-raised);
+    border: 1px solid var(--border-subtle);
+    border-radius: 8px;
+}
+
+.card {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 16px;
+    background: var(--bg-raised);
+    border: 1px solid var(--border-subtle);
+    border-radius: 8px;
+}
+
+.cardContent {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    flex: 1;
+}
+
+.list {
+    display: flex;
+    flex-direction: column;
+}
+
+.listRow {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 0;
+    border-bottom: 1px solid var(--border-subtle);
+}
+
+.listContent {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    flex: 1;
+}
+
+.page {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+    padding: 32px 24px;
+}
+
+.pageHeading {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.pageSection {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}

@@ -1,7 +1,13 @@
 import { PgBoss } from "pg-boss";
 import { registerPartmanMaintenanceJob } from "@/features/ingest/jobs/partman-maintenance.job";
+import { registerAlertEvaluationJob } from "@/features/alerts/jobs/alert-evaluation.job";
+import { registerAlertDeliveryJob } from "@/features/alerts/jobs/alert-delivery.job";
 
 let boss: PgBoss | null = null;
+
+export function getBoss(): PgBoss | null {
+    return boss;
+}
 
 /**
  * Starts pg-boss and registers all background jobs.
@@ -20,6 +26,8 @@ export async function startWorker(): Promise<void> {
 
     await boss.start();
     await registerPartmanMaintenanceJob(boss);
+    await registerAlertEvaluationJob(boss);
+    await registerAlertDeliveryJob(boss);
 
     console.log("[worker] pg-boss started, jobs registered.");
 }

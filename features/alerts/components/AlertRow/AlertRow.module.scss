@@ -1,0 +1,65 @@
+.row {
+    &:hover {
+        background: var(--surface-hover);
+    }
+
+    td {
+        padding: 12px 16px;
+        vertical-align: middle;
+        border-bottom: 1px solid var(--border);
+    }
+}
+
+.name {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.nameLink {
+    font-weight: 500;
+    color: var(--text-primary);
+    text-decoration: none;
+
+    &:hover {
+        color: var(--accent);
+    }
+}
+
+.description {
+    font-size: 12px;
+    color: var(--text-secondary);
+}
+
+.meta {
+    color: var(--text-secondary);
+    font-size: 13px;
+    white-space: nowrap;
+}
+
+.actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    white-space: nowrap;
+}
+
+.actionBtn {
+    font-size: 13px;
+    color: var(--text-secondary);
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: 4px;
+    text-decoration: none;
+
+    &:hover {
+        background: var(--surface-hover);
+        color: var(--text-primary);
+    }
+
+    &.danger:hover {
+        color: var(--danger);
+    }
+}

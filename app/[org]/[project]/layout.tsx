@@ -4,6 +4,7 @@ import { getMembership, getOrgBySlug } from "@/features/organizations/services/o
 import { getProjectBySlug } from "@/features/projects/services/projects.service";
 import { ProjectHydrator } from "@/core/store/ProjectHydrator";
 import { ProjectSidebar } from "@/features/projects/components/ProjectSidebar/ProjectSidebar";
+import { OrgSidebar } from "@/features/organizations/components/OrgSidebar/OrgSidebar";
 import { AppShell } from "@/shared/components";
 import { OrgHydrator } from "@/core/store/OrgHydrator";
 import { OrgTopBar } from "@/features/organizations/components/OrgTopBar/OrgTopBar";
@@ -55,11 +56,14 @@ export default async function ProjectLayout({ children, params }: ProjectLayoutP
             />
             <AppShell
                 sidebar={
-                    <ProjectSidebar
-                        orgSlug={orgSlug}
-                        projectSlug={projectSlug}
-                        projectName={project.name}
-                    />
+                    <>
+                        <OrgSidebar orgSlug={orgSlug} orgName={org.name} />
+                        <ProjectSidebar
+                            orgSlug={orgSlug}
+                            projectSlug={projectSlug}
+                            projectName={project.name}
+                        />
+                    </>
                 }
                 topbar={
                     <OrgTopBar

@@ -6,6 +6,7 @@ import { Button } from '@/shared/components/Button/Button';
 import { ConfirmDialog } from '@/shared/components/ConfirmDialog/ConfirmDialog';
 import { FormField } from '@/shared/components/FormField/FormField';
 import { Input } from '@/shared/components/Input/Input';
+import { useToast } from '@/shared/components/Toast/ToastProvider';
 import { updateOrgAction } from '@/features/organizations/actions/update-org.action';
 import styles from './OrgSettingsForm.module.scss';
 
@@ -17,19 +18,18 @@ interface OrgSettingsFormProps {
 
 export function OrgSettingsForm({ orgSlug, orgName, isOwner }: OrgSettingsFormProps) {
     const router = useRouter();
+    const toast = useToast();
     const [isPending, startTransition] = useTransition();
 
     const [name, setName] = useState(orgName);
     const [slug, setSlug] = useState(orgSlug);
     const [error, setError] = useState<string | null>(null);
-    const [saved, setSaved] = useState(false);
     const [showSlugConfirm, setShowSlugConfirm] = useState(false);
 
     const slugChanged = slug !== orgSlug;
 
     const submit = () => {
         setError(null);
-        setSaved(false);
         startTransition(async () => {
             const result = await updateOrgAction({ orgSlug, name, newSlug: slug });
             if (result.error) {
@@ -40,7 +40,7 @@ export function OrgSettingsForm({ orgSlug, orgName, isOwner }: OrgSettingsFormPr
                 router.replace(`/${result.newSlug}/settings`);
                 return;
             }
-            setSaved(true);
+            toast.push({ variant: 'success', title: 'Settings saved' });
         });
     };
 
@@ -59,7 +59,7 @@ export function OrgSettingsForm({ orgSlug, orgName, isOwner }: OrgSettingsFormPr
                 <FormField label="Organization name" required>
                     <Input
                         value={name}
-                        onChange={(e) => { setName(e.target.value); setSaved(false); }}
+                        onChange={(e) => setName(e.target.value)}
                         placeholder="Acme Inc."
                         disabled={isPending}
                         required
@@ -77,7 +77,7 @@ export function OrgSettingsForm({ orgSlug, orgName, isOwner }: OrgSettingsFormPr
                 >
                     <Input
                         value={slug}
-                        onChange={(e) => { setSlug(e.target.value.toLowerCase()); setSaved(false); }}
+                        onChange={(e) => setSlug(e.target.value.toLowerCase())}
                         placeholder="acme-inc"
                         disabled={isPending || !isOwner}
                         required
@@ -85,7 +85,6 @@ export function OrgSettingsForm({ orgSlug, orgName, isOwner }: OrgSettingsFormPr
                 </FormField>
 
                 {error ? <p className={styles.error} role="alert">{error}</p> : null}
-                {saved ? <p className={styles.success} role="status">Saved.</p> : null}
 
                 <div className={styles.actions}>
                     <Button variant="primary" type="submit" disabled={isPending}>

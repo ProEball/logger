@@ -83,3 +83,70 @@ Server fills: `id`, `user_agent`, `ip`, `project_id`.
 | 413 | Payload too large (single: 64 KB, batch: 5 MB / 500 events) |
 | 429 | Rate limit exceeded |
 | 500 | Internal server error |
+
+## Monitoring Endpoints
+
+### Version
+
+```
+GET /api/version
+```
+
+Returns build metadata. Useful for CI/CD verification and support diagnostics.
+
+```json
+{
+  "sha": "abc1234",
+  "builtAt": "2026-05-09T12:00:00.000Z",
+  "nodeVersion": "v22.0.0",
+  "nextVersion": "16.2.4"
+}
+```
+
+Set `NEXT_PUBLIC_BUILD_SHA` and `NEXT_PUBLIC_BUILD_TIME` at build time (e.g. in CI):
+
+```bash
+NEXT_PUBLIC_BUILD_SHA=$(git rev-parse --short HEAD) \
+NEXT_PUBLIC_BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ) \
+npm run build
+```
+
+### Health
+
+```
+GET /api/health/ready
+```
+
+Returns `200` when all critical checks pass, `503` otherwise.
+
+```json
+{
+  "status": "ok",
+  "checks": {
+    "db": "ok",
+    "pgboss": "ok",
+    "ingest": "ok",
+    "migrations": "ok"
+  }
+}
+```
+
+| Check | Failure condition |
+|---|---|
+| `db` | Cannot reach PostgreSQL |
+| `pgboss` | pg-boss schema unreachable (only when `WORKER_IN_PROCESS=true`) |
+| `ingest` | No events received in the last hour — warning only (`X-Health-Warn` header), does not cause 503 |
+| `migrations` | Applied migration count < expected — likely a failed deploy |
+
+Use `/api/health/ready` as your container liveness/readiness probe.
+
+## Self-monitoring Alert (pg_partman Watchdog)
+
+The partition maintenance job logs at `ERROR` if `run_maintenance()` fails. To get notified via the alert system, create a rule in any project that monitors a dedicated log stream from your app server:
+
+1. Open a project → **Alerts** → **New rule**
+2. **Condition**: `source` equals `partman-watchdog`, threshold `≥ 1` in `1h`
+3. **Channel**: your webhook endpoint
+4. **Name**: "Partition maintenance failure"
+
+> Requires your app to emit a log event with `source=partman-watchdog` when maintenance fails. This is an optional enhancement — the ERROR-level pino log is always written regardless.

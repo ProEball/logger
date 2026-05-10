@@ -1,0 +1,64 @@
+.page {
+    display: flex;
+    flex-direction: column;
+    min-height: 100%;
+}
+
+.header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 20px 24px 0;
+    gap: 16px;
+    flex-wrap: wrap;
+}
+
+.title {
+    font-size: 20px;
+    font-weight: 600;
+    margin: 0;
+    color: var(--text-primary);
+}
+
+.form {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    flex: 1;
+}
+
+.section {
+    padding: 24px;
+    border-bottom: 1px solid var(--border);
+}
+
+.field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-width: 480px;
+
+    & + .field {
+        margin-top: 16px;
+    }
+}
+
+.fieldLabel {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-secondary);
+}
+
+.input {
+    padding: 8px 10px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    font-size: 14px;
+    background: var(--bg);
+    color: var(--text-primary);
+
+    &:focus {
+        outline: none;
+        border-color: var(--accent);
+    }
+}

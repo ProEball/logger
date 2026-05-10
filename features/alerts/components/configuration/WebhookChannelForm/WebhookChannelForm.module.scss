@@ -1,0 +1,76 @@
+.card {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 16px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface);
+}
+
+.cardHeader {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.cardTitle {
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text-primary);
+}
+
+.field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.fieldLabel {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-secondary);
+}
+
+.input {
+    padding: 8px 10px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    font-size: 14px;
+    background: var(--bg);
+    color: var(--text-primary);
+    width: 100%;
+
+    &:focus {
+        outline: none;
+        border-color: var(--accent);
+    }
+}
+
+.headers {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.headerRow {
+    display: grid;
+    grid-template-columns: 1fr 1fr auto;
+    gap: 8px;
+    align-items: center;
+}
+
+.removeBtn {
+    font-size: 12px;
+    color: var(--text-secondary);
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 4px;
+    border-radius: 4px;
+    white-space: nowrap;
+
+    &:hover {
+        color: var(--danger);
+    }
+}
