@@ -8,13 +8,15 @@ interface WidgetCardProps {
     isEmpty?: boolean;
     isLoading?: boolean;
     footer?: React.ReactNode;
+    actions?: React.ReactNode;
 }
 
-export function WidgetCard({ title, children, isEmpty, isLoading, footer }: WidgetCardProps) {
+export function WidgetCard({ title, children, isEmpty, isLoading, footer, actions }: WidgetCardProps) {
     return (
         <div className={styles.card}>
             <div className={styles.header}>
                 <h2 className={styles.title}>{title}</h2>
+                {actions && <div className={styles.actions}>{actions}</div>}
             </div>
             <div className={styles.body}>
                 {isLoading ? (

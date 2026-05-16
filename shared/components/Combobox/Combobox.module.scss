@@ -1,0 +1,128 @@
+.root {
+    width: 280px;
+    background: var(--bg-raised);
+    border: 1px solid var(--border-1);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-2);
+    overflow: hidden;
+}
+
+// ── Search row ────────────────────────────────────────────────────────
+.searchRow {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border-1);
+}
+
+.searchIcon {
+    color: var(--fg-4);
+    flex-shrink: 0;
+}
+
+.searchInput {
+    flex: 1;
+    background: transparent;
+    border: none;
+    outline: none;
+    font-size: 12.5px;
+    color: var(--fg);
+    font-family: var(--font-sans);
+
+    &::placeholder {
+        color: var(--fg-4);
+    }
+}
+
+.kbdHint {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--fg-4);
+    background: var(--bg-active);
+    border: 1px solid var(--border-1);
+    border-radius: var(--radius-sm);
+    padding: 2px 5px;
+    flex-shrink: 0;
+}
+
+// ── Option list ───────────────────────────────────────────────────────
+.list {
+    max-height: 280px;
+    overflow-y: auto;
+    padding: 4px 0;
+}
+
+.group {
+    & + & {
+        border-top: 1px solid var(--border-1);
+        margin-top: 4px;
+        padding-top: 4px;
+    }
+}
+
+.groupLabel {
+    padding: 6px 12px 4px;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--fg-4);
+    font-weight: var(--weight-semibold);
+}
+
+.option {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 8px 12px;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    text-align: left;
+    transition: background-color var(--duration-fast) var(--ease-out);
+
+    &:hover {
+        background: var(--bg-hover);
+    }
+}
+
+.optionSelected {
+    background: var(--purple-soft);
+
+    &:hover {
+        background: var(--purple-soft);
+    }
+}
+
+.dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.optionLabel {
+    flex: 1;
+    font-size: 12.5px;
+    color: var(--fg-2);
+}
+
+.optionMeta {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--fg-3);
+    margin-left: auto;
+}
+
+.check {
+    color: var(--purple);
+    flex-shrink: 0;
+}
+
+.empty {
+    padding: 16px 12px;
+    font-size: 12.5px;
+    color: var(--fg-4);
+    text-align: center;
+}

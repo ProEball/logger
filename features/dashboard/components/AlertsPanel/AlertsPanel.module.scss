@@ -1,0 +1,48 @@
+.panel {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+}
+
+.head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 0 10px;
+    border-bottom: 1px solid var(--border-1);
+    margin-bottom: 10px;
+}
+
+.headTitle {
+    font-size: 10px;
+    font-weight: var(--weight-semibold);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--fg-4);
+}
+
+.viewAll {
+    font-size: 11.5px;
+    color: var(--purple);
+    text-decoration: none;
+
+    &:hover {
+        text-decoration: underline;
+    }
+}
+
+.list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    overflow-y: auto;
+    flex: 1;
+}
+
+.empty {
+    font-size: 12.5px;
+    color: var(--fg-4);
+    text-align: center;
+    padding: 24px 0;
+    margin: 0;
+}

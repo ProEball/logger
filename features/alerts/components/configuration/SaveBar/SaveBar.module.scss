@@ -1,33 +1,66 @@
 .bar {
     position: sticky;
     bottom: 0;
+    height: 52px;
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 12px 24px;
-    background: var(--bg);
-    border-top: 1px solid var(--border);
+    padding: 0 24px;
+    background: var(--bg-sidebar);
+    border-top: 1px solid var(--border-1);
     z-index: 10;
+    flex-shrink: 0;
 }
 
-.left {
-    display: flex;
-    align-items: center;
-    gap: 12px;
+.cancelLink {
+    font-size: 13px;
+    color: var(--fg-4);
+    text-decoration: none;
+    transition: color var(--duration-fast) var(--ease-out);
+
+    &:hover { color: var(--fg-2); }
 }
 
-.right {
+.actions {
     display: flex;
     align-items: center;
     gap: 8px;
 }
 
-.cancelLink {
-    font-size: 14px;
-    color: var(--text-secondary);
-    text-decoration: none;
+.testBtn {
+    height: 32px;
+    padding: 0 12px;
+    background: var(--bg-raised);
+    border: 1px solid var(--border-1);
+    color: var(--fg-2);
+    font-size: 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-family: inherit;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    transition: background var(--duration-fast) var(--ease-out),
+        border-color var(--duration-fast) var(--ease-out),
+        color var(--duration-fast) var(--ease-out);
 
-    &:hover {
-        color: var(--text-primary);
-    }
+    &:hover:not(:disabled) { background: var(--bg-hover); border-color: var(--border-2); color: var(--fg); }
+    &:disabled { opacity: 0.5; cursor: not-allowed; }
+}
+
+.saveBtn {
+    height: 32px;
+    padding: 0 16px;
+    background: var(--purple);
+    border: none;
+    color: var(--on-accent);
+    font-size: 13px;
+    font-weight: 500;
+    border-radius: 6px;
+    cursor: pointer;
+    font-family: inherit;
+    transition: opacity var(--duration-fast) var(--ease-out);
+
+    &:hover:not(:disabled) { opacity: 0.88; }
+    &:disabled { opacity: 0.5; cursor: not-allowed; }
 }

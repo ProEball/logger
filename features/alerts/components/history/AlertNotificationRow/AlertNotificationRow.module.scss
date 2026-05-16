@@ -1,42 +1,48 @@
 .row {
-    td {
-        padding: 10px 16px;
-        border-bottom: 1px solid var(--border);
-        vertical-align: middle;
-    }
-
-    &:hover {
-        background: var(--surface-hover);
-    }
+    &:hover td { background: var(--bg-hover); }
 }
 
-.ts {
-    font-size: 13px;
-    color: var(--text-secondary);
+.td {
+    padding: 0 16px;
+    height: 40px;
+    border-bottom: 1px solid var(--border-1);
+    vertical-align: middle;
     white-space: nowrap;
 }
 
-.attempts {
-    text-align: center;
-    color: var(--text-secondary);
-    font-size: 13px;
-}
+.center { text-align: center; }
 
-.errorToggle {
+.ts {
+    font-family: var(--font-mono);
     font-size: 12px;
-    color: var(--text-secondary);
-    cursor: pointer;
-
-    &:hover {
-        color: var(--danger);
-    }
 }
 
-.errorText {
-    display: block;
-    margin-top: 4px;
+.tsDate {
+    color: var(--fg-3);
+}
+
+.tsTime {
+    color: var(--fg-2);
+}
+
+.tsMs {
+    color: var(--fg-4);
+}
+
+.attempts {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--fg-3);
+}
+
+.error {
+    font-family: var(--font-mono);
     font-size: 11px;
-    color: var(--danger);
-    white-space: pre-wrap;
-    word-break: break-all;
+    color: var(--red);
+    cursor: default;
+}
+
+.noError {
+    color: var(--fg-4);
+    font-size: 13px;
 }

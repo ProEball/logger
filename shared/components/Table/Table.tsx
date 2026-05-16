@@ -14,6 +14,8 @@ export interface TableColumn<T> {
     header: ReactNode;
     width?: number | string;
     align?: 'left' | 'right' | 'center';
+    numeric?: boolean;
+    dim?: boolean;
     sortable?: boolean;
     render: (row: T) => ReactNode;
 }
@@ -113,7 +115,11 @@ export function Table<T extends TableRowMeta>({
                             {columns.map((col) => (
                                 <td
                                     key={col.key}
-                                    className={cx(alignClass(col.align))}
+                                    className={cx(
+                                        alignClass(col.align),
+                                        col.numeric && styles.numeric,
+                                        col.dim && styles.dim,
+                                    )}
                                 >
                                     {col.render(row)}
                                 </td>

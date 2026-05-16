@@ -3,7 +3,7 @@ import { cx } from '@/shared/utils/cx';
 import styles from './Button.module.scss';
 
 export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'link';
-export type ButtonSize = 'sm' | 'md';
+export type ButtonSize = 'sm' | 'md' | 'lg';
 
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
     variant?: ButtonVariant;

@@ -5,17 +5,17 @@
     align-items: center;
     justify-content: center;
     background: transparent;
-    border: 1px solid var(--border-default);
+    border: 1px solid transparent;
     border-radius: var(--radius-sm);
-    color: var(--text-muted);
+    color: var(--fg-3);
     cursor: pointer;
     transition: var(--transition-colors);
 
     @include focus-ring;
 
     &:not(:disabled):hover {
-        background: var(--surface-hover);
-        color: var(--text-primary);
+        background: var(--bg-hover);
+        color: var(--fg);
     }
 
     &:disabled {
@@ -25,22 +25,31 @@
 }
 
 .sm {
-    width: var(--input-height-sm);
-    height: var(--input-height-sm);
+    width: 24px;
+    height: 24px;
 }
 
 .md {
-    width: var(--input-height-md);
-    height: var(--input-height-md);
+    width: 30px;
+    height: 30px;
+}
+
+.framed {
+    background: var(--bg-raised);
+    border-color: var(--border-1);
+
+    &:not(:disabled):hover {
+        border-color: var(--border-2);
+    }
 }
 
 .active {
-    background: var(--accent-subtle);
-    border-color: var(--accent-border);
-    color: var(--accent-text);
+    background: var(--purple-soft);
+    border-color: rgba(189, 147, 249, .4);
+    color: var(--purple);
 
     &:not(:disabled):hover {
-        background: var(--accent-subtle);
-        color: var(--accent-text);
+        background: var(--purple-soft);
+        color: var(--purple);
     }
 }

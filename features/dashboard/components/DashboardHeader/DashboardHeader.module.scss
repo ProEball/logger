@@ -2,25 +2,122 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: var(--space-4) var(--space-6);
+    padding: var(--space-3) var(--space-6);
     flex: 0 0 auto;
-    border-bottom: 1px solid var(--border-subtle);
+    border-bottom: 1px solid var(--border-1);
+    position: sticky;
+    top: var(--topbar-height);
+    z-index: 9;
+    background: var(--bg-base);
+    gap: var(--space-4);
+}
+
+// ── Left: title + subtitle ─────────────────────────────────────────────
+.left {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.titleRow {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+}
+
+.liveDot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--green);
+    box-shadow: 0 0 6px var(--green);
+    flex-shrink: 0;
+    animation: livePulse 2s ease-in-out infinite;
+}
+
+@keyframes livePulse {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: 0.5; }
 }
 
 .title {
-    font-size: var(--text-lg);
+    font-size: var(--text-base);
     font-weight: var(--weight-semibold);
-    color: var(--text-primary);
+    color: var(--fg);
     margin: 0;
 }
 
+.subtitle {
+    font-size: 11px;
+    font-family: var(--font-mono);
+    color: var(--fg-4);
+    padding-left: 16px;
+}
+
+// ── Right: controls ────────────────────────────────────────────────────
 .controls {
     display: flex;
     align-items: center;
     gap: var(--space-2);
 }
 
-.placeholder {
-    font-size: var(--text-sm);
-    color: var(--text-secondary);
+// ── Segmented preset control ───────────────────────────────────────────
+.segment {
+    display: flex;
+    background: var(--bg-inset);
+    border: 1px solid var(--border-1);
+    border-radius: var(--radius-md);
+    padding: 2px;
+    gap: 2px;
+}
+
+.segBtn {
+    padding: 4px 10px;
+    font-size: 12px;
+    font-family: var(--font-mono);
+    font-weight: var(--weight-medium);
+    color: var(--fg-3);
+    background: transparent;
+    border: none;
+    border-radius: calc(var(--radius-md) - 2px);
+    cursor: pointer;
+    transition: background-color var(--duration-fast) var(--ease-out),
+                color var(--duration-fast) var(--ease-out);
+    white-space: nowrap;
+
+    &:hover {
+        background: var(--bg-hover);
+        color: var(--fg);
+    }
+}
+
+.segBtnActive {
+    background: var(--purple);
+    color: var(--fg);
+
+    &:hover {
+        background: var(--purple);
+    }
+}
+
+// ── New alert button ───────────────────────────────────────────────────
+.newAlertBtn {
+    display: inline-flex;
+    align-items: center;
+    padding: 5px 12px;
+    font-size: 12px;
+    font-weight: var(--weight-medium);
+    color: var(--fg);
+    background: var(--bg-raised);
+    border: 1px solid var(--border-1);
+    border-radius: var(--radius-md);
+    text-decoration: none;
+    white-space: nowrap;
+    transition: background-color var(--duration-fast) var(--ease-out),
+                border-color var(--duration-fast) var(--ease-out);
+
+    &:hover {
+        background: var(--bg-hover);
+        border-color: var(--purple);
+    }
 }

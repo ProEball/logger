@@ -1,12 +1,29 @@
 .wrapper {
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: 10px;
 }
 
-.label {
+.addBtn {
+    height: 34px;
+    border: 1px dashed var(--border-2);
+    background: transparent;
+    border-radius: 6px;
+    color: var(--fg-4);
     font-size: 13px;
-    font-weight: 500;
-    color: var(--text-secondary);
-    margin: 0;
+    width: 100%;
+    cursor: pointer;
+    font-family: inherit;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    transition: border-color var(--duration-fast) var(--ease-out),
+        color var(--duration-fast) var(--ease-out);
+
+    &:hover {
+        border-style: solid;
+        border-color: var(--fg-3);
+        color: var(--fg-2);
+    }
 }

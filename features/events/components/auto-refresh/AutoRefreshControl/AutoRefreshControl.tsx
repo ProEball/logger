@@ -38,6 +38,9 @@ export function AutoRefreshControl() {
                         onClick={() => handleChange(opt)}
                         aria-pressed={current === opt}
                     >
+                        {opt !== "off" && current === opt && (
+                            <span className={styles.pulseDot} aria-hidden />
+                        )}
                         {getLabel(opt)}
                     </button>
                 ))}

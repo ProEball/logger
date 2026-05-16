@@ -14,6 +14,7 @@ export interface DrawerProps {
     side?: DrawerSide;
     width?: number | string;
     closeOnBackdropClick?: boolean;
+    noPadding?: boolean;
     children?: ReactNode;
     className?: string;
     ariaLabel?: string;
@@ -27,6 +28,7 @@ export function Drawer({
     side = 'right',
     width = 520,
     closeOnBackdropClick = true,
+    noPadding = false,
     children,
     className,
     ariaLabel,
@@ -83,7 +85,7 @@ export function Drawer({
                         </button>
                     </header>
                 ) : null}
-                <div className={styles.body}>{children}</div>
+                <div className={noPadding ? undefined : styles.body}>{children}</div>
                 {footer !== undefined ? (
                     <footer className={styles.footer}>{footer}</footer>
                 ) : null}

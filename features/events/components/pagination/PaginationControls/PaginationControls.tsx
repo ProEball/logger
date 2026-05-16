@@ -14,6 +14,8 @@ interface PaginationControlsProps {
     cursor: Cursor | undefined;
 }
 
+const PAGE_SIZE = 50;
+
 export function PaginationControls({ events, hasMore, cursor }: PaginationControlsProps) {
     const router = useRouter();
     const pathname = usePathname();
@@ -32,31 +34,55 @@ export function PaginationControls({ events, hasMore, cursor }: PaginationContro
         const cursorParams = serializeCursor(nextCursor);
         params.set("before_ts", cursorParams.before_ts);
         params.set("before_id", cursorParams.before_id);
-        // Remove event drawer on page change
         params.delete("event");
         params.delete("event_ts");
         params.delete("tab");
         router.push(`${pathname}?${params.toString()}`);
     };
 
+    const refresh = () => {
+        router.refresh();
+    };
+
+    const total = hasMore ? `${events.length}+` : String(events.length);
+
     return (
-        <div className={styles.controls}>
+        <footer className={styles.footer}>
+            <span className={styles.info}>
+                Showing <b>{events.length}</b> of <b>{total}</b> events
+            </span>
+            <div className={styles.spacer} />
+            <Button variant="ghost" size="sm" onClick={refresh}>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                    <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" />
+                    <path d="M21 3v5h-5" />
+                    <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" />
+                    <path d="M3 21v-5h5" />
+                </svg>
+                Refresh
+            </Button>
             <Button
-                variant="ghost"
+                variant="secondary"
                 size="sm"
                 onClick={goNewer}
                 disabled={!cursor}
             >
-                ← {t("events.pagination.newer")}
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden>
+                    <path d="m15 18-6-6 6-6" />
+                </svg>
+                {t("events.pagination.newer")}
             </Button>
             <Button
-                variant="ghost"
+                variant="secondary"
                 size="sm"
                 onClick={goOlder}
                 disabled={!hasMore}
             >
-                {t("events.pagination.older")} →
+                {t("events.pagination.older")}
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden>
+                    <path d="m9 18 6-6-6-6" />
+                </svg>
             </Button>
-        </div>
+        </footer>
     );
 }

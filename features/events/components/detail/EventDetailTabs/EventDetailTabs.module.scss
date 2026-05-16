@@ -3,39 +3,66 @@
     flex-direction: column;
     flex: 1;
     overflow: hidden;
+    min-height: 0;
 }
 
 .tabNav {
     display: flex;
-    border-bottom: 1px solid var(--color-border);
     gap: 0;
-    padding: 0 4px;
+    border-top: 1px solid var(--border-1);
+    border-bottom: 1px solid var(--border-1);
+    padding: 0 16px;
+    flex-shrink: 0;
 }
 
 .tab {
-    padding: 10px 14px;
+    padding: 10px 14px 11px;
     background: none;
     border: none;
     border-bottom: 2px solid transparent;
     cursor: pointer;
-    font-size: 13px;
-    color: var(--color-text-secondary);
-    transition: color 0.1s, border-color 0.1s;
+    font-size: 12px;
+    color: var(--fg-3);
     margin-bottom: -1px;
+    transition: color var(--duration-fast) var(--ease-out),
+        border-color var(--duration-fast) var(--ease-out);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-family: inherit;
+    user-select: none;
 
-    &:hover {
-        color: var(--color-text-primary);
-    }
+    &:hover { color: var(--fg); }
 
     &.tabActive {
-        color: var(--color-text-primary);
-        border-bottom-color: var(--color-accent);
+        color: var(--fg);
+        border-bottom-color: var(--purple);
         font-weight: 500;
     }
+}
+
+.countPill {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 6px;
+    border-radius: 999px;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    background: var(--bg-active);
+    color: var(--fg-2);
+    font-weight: 500;
+}
+
+.countPillError {
+    background: var(--red-soft);
+    color: var(--red);
 }
 
 .content {
     flex: 1;
     overflow-y: auto;
-    padding: 16px 0;
+    padding: 16px;
 }

@@ -27,9 +27,10 @@ body {
 body {
     min-height: 100%;
     background: var(--bg-base);
-    color: var(--text-primary);
-    font: var(--type-body-sm);
+    color: var(--fg);
     font-family: var(--font-sans);
+    font-size: 13.5px;
+    line-height: 1.55;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
 }
@@ -46,10 +47,16 @@ samp {
     font-family: var(--font-mono);
 }
 
-// ── Custom scrollbars (matches dump's Components.jsx) ───────────────
+// ── Text selection ──────────────────────────────────────────────────
+::selection {
+    background: var(--purple-soft);
+    color: var(--fg);
+}
+
+// ── Custom scrollbars ───────────────────────────────────────────────
 ::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
+    width: 10px;
+    height: 10px;
 }
 
 ::-webkit-scrollbar-track {
@@ -57,12 +64,16 @@ samp {
 }
 
 ::-webkit-scrollbar-thumb {
-    background: var(--border-subtle);
-    border-radius: 3px;
+    background: var(--border-2);
+    border-radius: 6px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-    background: var(--border-strong);
+    background: var(--fg-4);
+    background-clip: padding-box;
+    border: 2px solid transparent;
 }
 
 // ── Skeleton shimmer keyframe (used by shared Skeleton component) ───

@@ -1,9 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { FilterBar } from "@/shared/components/FilterBar/FilterBar";
 import { FilterChip } from "@/shared/components/FilterBar/FilterChip";
-import { Button } from "@/shared/components/Button/Button";
 import { t } from "@/core/i18n/t";
 import { LevelFilter } from "../LevelFilter/LevelFilter";
 import { StringListFilter } from "../StringListFilter/StringListFilter";
@@ -32,6 +30,8 @@ interface EventsFilterBarProps {
     onRemoveAttribute: (key: string) => void;
     onRemoveFilter: (key: keyof EventFilters) => void;
     onClearAll: () => void;
+    eventCount?: number;
+    hasMore?: boolean;
 }
 
 export function EventsFilterBar({
@@ -48,11 +48,47 @@ export function EventsFilterBar({
     onRemoveAttribute,
     onRemoveFilter,
     onClearAll,
+    eventCount,
+    hasMore,
 }: EventsFilterBarProps) {
     const [openFilters, setOpenFilters] = useState<Set<ActiveFilter>>(new Set());
 
     const showFilter = (type: ActiveFilter) => {
         setOpenFilters((prev) => new Set([...prev, type]));
+    };
+
+    const hideFilter = (type: ActiveFilter) => {
+        setOpenFilters((prev) => { const next = new Set(prev); next.delete(type); return next; });
+    };
+
+    const KEY_TO_ACTIVE: Partial<Record<keyof EventFilters, ActiveFilter>> = {
+        levels: "level",
+        environments: "environment",
+        sources: "source",
+        releases: "release",
+        errorTypes: "errorType",
+        message: "message",
+        attributes: "attribute",
+        userId: "correlation",
+        sessionId: "correlation",
+        requestId: "correlation",
+        traceId: "correlation",
+    };
+
+    const handleRemoveFilter = (key: keyof EventFilters) => {
+        const active = KEY_TO_ACTIVE[key];
+        if (active) hideFilter(active);
+        onRemoveFilter(key);
+    };
+
+    const handleClearAll = () => {
+        setOpenFilters(new Set());
+        onClearAll();
+    };
+
+    const handleCorrelation = (key: "userId" | "sessionId" | "requestId" | "traceId", value: string | undefined) => {
+        if (!value) hideFilter("correlation");
+        onSetCorrelation(key, value);
     };
 
     const hasAnyActiveFilter = !!(
@@ -84,13 +120,17 @@ export function EventsFilterBar({
     };
 
     return (
-        <FilterBar className={styles.bar}>
+        <div role="toolbar" aria-label="Filters" className={styles.bar}>
+            {/* Time range — always first */}
+            <TimeRangePicker value={filters.range} onChange={onSetTimeRange} />
+
             {/* Active filter chips */}
             {filters.levels?.length ? (
                 <FilterChip
                     filterKey={t("events.filters.level")}
                     value={filters.levels.join(", ")}
-                    onRemove={() => onRemoveFilter("levels")}
+                    variant="red"
+                    onRemove={() => handleRemoveFilter("levels")}
                 />
             ) : null}
 
@@ -98,7 +138,8 @@ export function EventsFilterBar({
                 <FilterChip
                     filterKey={t("events.filters.environment")}
                     value={filters.environments.join(", ")}
-                    onRemove={() => onRemoveFilter("environments")}
+                    variant="green"
+                    onRemove={() => handleRemoveFilter("environments")}
                 />
             ) : null}
 
@@ -106,7 +147,8 @@ export function EventsFilterBar({
                 <FilterChip
                     filterKey={t("events.filters.source")}
                     value={filters.sources.join(", ")}
-                    onRemove={() => onRemoveFilter("sources")}
+                    variant="cyan"
+                    onRemove={() => handleRemoveFilter("sources")}
                 />
             ) : null}
 
@@ -114,7 +156,8 @@ export function EventsFilterBar({
                 <FilterChip
                     filterKey={t("events.filters.release")}
                     value={filters.releases.join(", ")}
-                    onRemove={() => onRemoveFilter("releases")}
+                    variant="purple"
+                    onRemove={() => handleRemoveFilter("releases")}
                 />
             ) : null}
 
@@ -122,7 +165,8 @@ export function EventsFilterBar({
                 <FilterChip
                     filterKey={t("events.filters.errorType")}
                     value={filters.errorTypes.join(", ")}
-                    onRemove={() => onRemoveFilter("errorTypes")}
+                    variant="orange"
+                    onRemove={() => handleRemoveFilter("errorTypes")}
                 />
             ) : null}
 
@@ -130,7 +174,8 @@ export function EventsFilterBar({
                 <FilterChip
                     filterKey={t("events.filters.userId")}
                     value={filters.userId}
-                    onRemove={() => onSetCorrelation("userId", undefined)}
+                    variant="cyan"
+                    onRemove={() => handleCorrelation("userId", undefined)}
                 />
             ) : null}
 
@@ -138,7 +183,8 @@ export function EventsFilterBar({
                 <FilterChip
                     filterKey={t("events.filters.sessionId")}
                     value={filters.sessionId}
-                    onRemove={() => onSetCorrelation("sessionId", undefined)}
+                    variant="cyan"
+                    onRemove={() => handleCorrelation("sessionId", undefined)}
                 />
             ) : null}
 
@@ -146,7 +192,8 @@ export function EventsFilterBar({
                 <FilterChip
                     filterKey={t("events.filters.requestId")}
                     value={filters.requestId}
-                    onRemove={() => onSetCorrelation("requestId", undefined)}
+                    variant="cyan"
+                    onRemove={() => handleCorrelation("requestId", undefined)}
                 />
             ) : null}
 
@@ -154,7 +201,8 @@ export function EventsFilterBar({
                 <FilterChip
                     filterKey={t("events.filters.traceId")}
                     value={filters.traceId}
-                    onRemove={() => onSetCorrelation("traceId", undefined)}
+                    variant="cyan"
+                    onRemove={() => handleCorrelation("traceId", undefined)}
                 />
             ) : null}
 
@@ -162,7 +210,7 @@ export function EventsFilterBar({
                 <FilterChip
                     filterKey={t("events.filters.message")}
                     value={filters.message}
-                    onRemove={() => onSetMessage(undefined)}
+                    onRemove={() => { hideFilter("message"); onSetMessage(undefined); }}
                 />
             ) : null}
 
@@ -171,11 +219,12 @@ export function EventsFilterBar({
                     key={attr.key}
                     filterKey={`attribute.${attr.key}`}
                     value={attr.value}
+                    variant="purple"
                     onRemove={() => onRemoveAttribute(attr.key)}
                 />
             ))}
 
-            {/* Inline filter editors — show when opened via AddFilterDropdown */}
+            {/* Inline filter editors */}
             {shouldShow("level") && !filters.levels?.length ? (
                 <LevelFilter value={filters.levels ?? []} onChange={onSetLevels} />
             ) : null}
@@ -218,7 +267,7 @@ export function EventsFilterBar({
                     sessionId={filters.sessionId}
                     requestId={filters.requestId}
                     traceId={filters.traceId}
-                    onChange={onSetCorrelation}
+                    onChange={handleCorrelation}
                 />
             ) : null}
 
@@ -230,17 +279,22 @@ export function EventsFilterBar({
                 <MessageFilter value={filters.message} onChange={onSetMessage} />
             ) : null}
 
-            {/* Add filter button */}
+            {/* Add filter — dashed pill */}
             <AddFilterDropdown activeFilters={filters} onSelect={showFilter} />
 
-            <div className={styles.right}>
-                <TimeRangePicker value={filters.range} onChange={onSetTimeRange} />
-                {hasAnyActiveFilter ? (
-                    <Button variant="ghost" size="sm" onClick={onClearAll}>
-                        {t("events.clearFilters")}
-                    </Button>
-                ) : null}
-            </div>
-        </FilterBar>
+            {hasAnyActiveFilter ? (
+                <button type="button" className={styles.clearAll} onClick={handleClearAll}>
+                    Clear all
+                </button>
+            ) : null}
+
+            <div className={styles.spacer} />
+
+            {eventCount !== undefined ? (
+                <span className={styles.resultCount}>
+                    <b>{eventCount}</b>{hasMore ? "+" : ""} events
+                </span>
+            ) : null}
+        </div>
     );
 }

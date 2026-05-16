@@ -1,6 +1,18 @@
 export { AppShell } from './AppShell/AppShell';
 export type { AppShellProps } from './AppShell/AppShell';
 
+export { CommandPalette } from './CommandPalette/CommandPalette';
+export type { CommandGroup, CommandItem, CommandPaletteProps } from './CommandPalette/CommandPalette';
+
+export { Combobox } from './Combobox/Combobox';
+export type { ComboboxGroup, ComboboxOption, ComboboxProps } from './Combobox/Combobox';
+
+export { CountPill } from './CountPill/CountPill';
+export type { CountPillProps } from './CountPill/CountPill';
+
+export { EmptyState } from './EmptyState/EmptyState';
+export type { EmptyStateProps } from './EmptyState/EmptyState';
+
 export { Avatar } from './Avatar/Avatar';
 export type { AvatarProps } from './Avatar/Avatar';
 
@@ -46,7 +58,13 @@ export type { KeyValueProps, KeyValueRowItem, KeyValueVariant } from './KeyValue
 export { LevelBadge } from './LevelBadge/LevelBadge';
 export type { LevelBadgeProps, LevelBadgeSize, LogLevel } from './LevelBadge/LevelBadge';
 
+export { LogRow } from './LogRow/LogRow';
+export type { LogRowProps, LogRowVariant } from './LogRow/LogRow';
+
 export { Modal } from './Modal/Modal';
+
+export { OrgRail } from './OrgRail/OrgRail';
+export type { OrgRailOrg, OrgRailProps } from './OrgRail/OrgRail';
 export type { ModalProps, ModalSize } from './Modal/Modal';
 
 export { Popover } from './Popover/Popover';
@@ -89,6 +107,9 @@ export type { TabItem, TabsProps } from './Tabs/Tabs';
 
 export { Textarea } from './Textarea/Textarea';
 export type { TextareaProps } from './Textarea/Textarea';
+
+export { Timeline } from './Timeline/Timeline';
+export type { TimelineItem, TimelineProps } from './Timeline/Timeline';
 
 export { Tooltip } from './Tooltip/Tooltip';
 export type { TooltipProps } from './Tooltip/Tooltip';

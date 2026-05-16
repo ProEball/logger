@@ -20,6 +20,7 @@ interface MembersListProps {
     members: OrgMember[];
     roles: Role[];
     orgSlug: string;
+    currentUserId: string;
     actorCanChangeRole: boolean;
     actorCanRemove: boolean;
     isActorOwner: boolean;
@@ -29,6 +30,7 @@ export function MembersList({
     members,
     roles,
     orgSlug,
+    currentUserId,
     actorCanChangeRole,
     actorCanRemove,
     isActorOwner,
@@ -101,7 +103,10 @@ export function MembersList({
     if (members.length === 0) {
         return (
             <section className={styles.section}>
-                <h2 className={styles.heading}>Members (0)</h2>
+                <div className={styles.sectionHead}>
+                    <h3 className={styles.heading}>Members</h3>
+                    <span className={styles.count}>(0)</span>
+                </div>
                 <EmptyMembers />
             </section>
         );
@@ -109,7 +114,10 @@ export function MembersList({
 
     return (
         <section className={styles.section}>
-            <h2 className={styles.heading}>Members ({members.length})</h2>
+            <div className={styles.sectionHead}>
+                <h3 className={styles.heading}>Members</h3>
+                <span className={styles.count}>({members.length})</span>
+            </div>
             <div className={styles.tableWrap}>
                 <table className={styles.table}>
                     <thead>
@@ -126,6 +134,7 @@ export function MembersList({
                             <MemberRow
                                 key={m.userId}
                                 member={m}
+                                currentUserId={currentUserId}
                                 actorCanChangeRole={actorCanChangeRole}
                                 actorCanRemove={actorCanRemove}
                                 isActorOwner={isActorOwner}
@@ -148,7 +157,7 @@ export function MembersList({
                             Cancel
                         </Button>
                         <Button variant="primary" onClick={handleChangeRole} disabled={isPending}>
-                            {isPending ? 'Saving…' : 'Save'}
+                            {isPending ? 'Saving…' : 'Save changes'}
                         </Button>
                     </div>
                 }

@@ -48,10 +48,17 @@ export default async function TeamPage({ params }: TeamPageProps) {
     const canChangeRole = hasPermission(membership, "members.role.assign");
     const canRemove = hasPermission(membership, "members.remove");
 
+    const subtitle = [
+        `${members.length} member${members.length !== 1 ? 's' : ''}`,
+        pendingInvites.length > 0 ? `${pendingInvites.length} pending` : null,
+    ].filter(Boolean).join(' · ');
+
     return (
         <main className={styles.root}>
             <div className={styles.header}>
                 <h1 className={styles.title}>Team</h1>
+                <span className={styles.subtitle}>{subtitle}</span>
+                <div className={styles.spacer} />
                 {canInvite ? <InviteSection orgSlug={slug} roles={orgRoles} /> : null}
             </div>
 
@@ -60,6 +67,7 @@ export default async function TeamPage({ params }: TeamPageProps) {
                     members={members}
                     roles={orgRoles}
                     orgSlug={slug}
+                    currentUserId={user.id}
                     actorCanChangeRole={canChangeRole}
                     actorCanRemove={canRemove}
                     isActorOwner={membership.isOwner}

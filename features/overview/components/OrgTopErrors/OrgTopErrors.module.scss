@@ -1,0 +1,114 @@
+.card {
+    background: var(--bg-raised);
+    border: 1px solid var(--border-1);
+    border-radius: 8px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+.cardHead {
+    padding: 13px 16px;
+    border-bottom: 1px solid var(--border-1);
+    flex-shrink: 0;
+}
+
+.cardTitle {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--fg);
+}
+
+.empty {
+    padding: 40px 16px;
+    text-align: center;
+    color: var(--fg-4);
+    font-size: 12px;
+}
+
+.list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    flex: 1;
+}
+
+.item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--border-1);
+    transition: background var(--duration-fast) var(--ease-out);
+
+    &:last-child {
+        border-bottom: none;
+    }
+
+    &:hover {
+        background: var(--bg-hover);
+    }
+}
+
+.itemMain {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+}
+
+.msgRow {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+}
+
+.lvlDot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.msg {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--fg-2);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.itemMeta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding-left: 12px;
+}
+
+.projectTag {
+    font-size: 11px;
+    color: var(--fg-4);
+    background: var(--bg-hover);
+    border: 1px solid var(--border-1);
+    padding: 1px 6px;
+    border-radius: 3px;
+}
+
+.timeAgo {
+    font-size: 11px;
+    color: var(--fg-4);
+}
+
+.count {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--fg-3);
+    flex-shrink: 0;
+    background: var(--bg-hover);
+    border: 1px solid var(--border-1);
+    padding: 2px 8px;
+    border-radius: 4px;
+}

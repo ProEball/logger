@@ -1,50 +1,140 @@
+// ── Section ───────────────────────────────────────────────────────────
 .section {
     display: flex;
     flex-direction: column;
     gap: var(--space-3);
 }
 
-.heading {
-    font: var(--type-label-lg);
-    color: var(--text-primary);
+.sectionHead {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    padding: 0 2px;
 }
 
+.heading {
+    font: var(--type-h3);
+    color: var(--fg-2);
+    margin: 0;
+}
+
+.count {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--fg-4);
+    font-weight: 400;
+}
+
+// ── Table ─────────────────────────────────────────────────────────────
 .tableWrap {
     overflow-x: auto;
-    border: 1px solid var(--border-subtle);
+    border: 1px solid var(--border-1);
     border-radius: 8px;
+    background: var(--bg-sidebar);
 }
 
 .table {
     width: 100%;
     border-collapse: collapse;
-    font: var(--type-body-sm);
+    font-size: 13px;
 
     th {
-        padding: var(--space-3) var(--space-4);
+        padding: 0 var(--space-4);
+        height: 36px;
         text-align: left;
-        font: var(--type-label-sm);
-        color: var(--text-secondary);
-        border-bottom: 1px solid var(--border-subtle);
+        font-size: 10.5px;
+        font-weight: 600;
+        color: var(--fg-4);
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        border-bottom: 1px solid var(--border-1);
         background: var(--bg-base);
     }
 
     td {
-        padding: var(--space-3) var(--space-4);
-        color: var(--text-primary);
-        border-bottom: 1px solid var(--border-subtle);
+        padding: var(--space-2) var(--space-4);
+        height: 48px;
+        color: var(--fg);
+        border-bottom: 1px solid var(--border-1);
+        vertical-align: middle;
     }
 
     tr:last-child td {
         border-bottom: none;
     }
+
+    tbody tr {
+        transition: background var(--t-fast);
+
+        &:hover {
+            background: rgba(255, 255, 255, 0.025);
+
+            .revokeBtn {
+                opacity: 1;
+            }
+        }
+    }
+}
+
+// ── Email cell ────────────────────────────────────────────────────────
+.emailCell {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.emailAvatar {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg-active);
+    color: var(--fg-3);
+}
+
+.mono {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--fg-2);
 }
 
 .muted {
-    color: var(--text-secondary);
+    color: var(--fg-3);
+    font-size: 13px;
 }
 
+// ── Actions ───────────────────────────────────────────────────────────
 .actions {
     text-align: right;
-    padding-right: var(--space-3);
+    padding-right: var(--space-3) !important;
+}
+
+.revokeBtn {
+    height: 26px;
+    padding: 0 10px;
+    font-size: 11.5px;
+    font-weight: 500;
+    font-family: inherit;
+    color: var(--fg-3);
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 3px;
+    cursor: pointer;
+    opacity: 0.6;
+    transition: all var(--t-fast);
+
+    &:hover {
+        opacity: 1;
+        color: var(--red);
+        border-color: rgba(255, 85, 85, .3);
+        background: rgba(255, 85, 85, .06);
+    }
+
+    &:disabled {
+        pointer-events: none;
+        opacity: 0.3;
+    }
 }

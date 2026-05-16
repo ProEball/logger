@@ -6,17 +6,18 @@ import { EventDetailFields } from "../EventDetailFields/EventDetailFields";
 import { AttributesList } from "../AttributesList/AttributesList";
 import { ContextTree } from "../ContextTree/ContextTree";
 import { StackTraceViewer } from "../StackTraceViewer/StackTraceViewer";
+import { parseStackTrace } from "@/features/events/utils/stack-trace-parser";
 import type { Event } from "@/core/db/schema";
 import styles from "./EventDetailTabs.module.scss";
 
 type TabId = "details" | "attributes" | "context" | "stackTrace";
 
-const TABS: TabId[] = ["details", "attributes", "context", "stackTrace"];
+const ALL_TABS: TabId[] = ["details", "attributes", "context", "stackTrace"];
 
 const TAB_LABELS: Record<TabId, () => string> = {
-    details: () => t("events.detail.details"),
+    details:    () => t("events.detail.details"),
     attributes: () => t("events.detail.attributes"),
-    context: () => t("events.detail.context"),
+    context:    () => t("events.detail.context"),
     stackTrace: () => t("events.detail.stackTrace"),
 };
 
@@ -30,13 +31,21 @@ export function EventDetailTabs({ event, activeTab }: EventDetailTabsProps) {
     const pathname = usePathname();
     const searchParams = useSearchParams();
 
-    const currentTab: TabId = TABS.includes(activeTab as TabId) ? (activeTab as TabId) : "details";
+    const hasStack = !!(event.errorType || event.stackTrace);
+    const visibleTabs = ALL_TABS.filter((id) => id !== "stackTrace" || hasStack);
+
+    const currentTab: TabId = visibleTabs.includes(activeTab as TabId)
+        ? (activeTab as TabId)
+        : "details";
 
     const setTab = (tab: TabId) => {
         const params = new URLSearchParams(searchParams.toString());
         params.set("tab", tab);
         router.replace(`${pathname}?${params.toString()}`);
     };
+
+    const attrCount = Object.keys((event.attributes as Record<string, unknown>) ?? {}).length;
+    const stackFrameCount = event.stackTrace ? parseStackTrace(event.stackTrace).length : 0;
 
     const renderContent = () => {
         switch (currentTab) {
@@ -54,7 +63,7 @@ export function EventDetailTabs({ event, activeTab }: EventDetailTabsProps) {
     return (
         <div className={styles.container}>
             <div role="tablist" className={styles.tabNav}>
-                {TABS.map((id) => (
+                {visibleTabs.map((id) => (
                     <button
                         key={id}
                         type="button"
@@ -64,6 +73,14 @@ export function EventDetailTabs({ event, activeTab }: EventDetailTabsProps) {
                         onClick={() => setTab(id)}
                     >
                         {TAB_LABELS[id]()}
+                        {id === "attributes" && attrCount > 0 && (
+                            <span className={styles.countPill}>{attrCount}</span>
+                        )}
+                        {id === "stackTrace" && stackFrameCount > 0 && (
+                            <span className={`${styles.countPill} ${styles.countPillError}`}>
+                                {stackFrameCount}
+                            </span>
+                        )}
                     </button>
                 ))}
             </div>

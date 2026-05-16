@@ -1,0 +1,96 @@
+.card {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    padding: 16px 18px;
+    background: var(--bg-raised);
+    border: 1px solid var(--border-1);
+    border-radius: var(--radius-md);
+}
+
+.critical {
+    background: var(--red-soft);
+    border-color: rgba(255, 85, 85, 0.3);
+}
+
+// ── Top row: label + sparkline ─────────────────────────────────────────
+.topRow {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--space-2);
+    margin-bottom: 4px;
+}
+
+.label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--fg-3);
+    font-weight: var(--weight-semibold);
+    padding-top: 2px;
+}
+
+.sparkline {
+    flex-shrink: 0;
+    display: block;
+}
+
+// ── Value row ─────────────────────────────────────────────────────────
+.valueRow {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+}
+
+.value {
+    font-size: 28px;
+    font-family: var(--font-mono);
+    font-weight: var(--weight-semibold);
+    color: var(--fg);
+    line-height: 1;
+}
+
+.unit {
+    font-size: 13px;
+    font-family: var(--font-mono);
+    color: var(--fg-3);
+}
+
+.delta {
+    font-size: 12px;
+    font-family: var(--font-mono);
+    font-weight: var(--weight-medium);
+    padding: 2px 6px;
+    border-radius: var(--radius-sm);
+}
+
+.delta_up {
+    color: var(--red);
+    background: var(--red-soft);
+}
+
+.delta_dn {
+    color: var(--green);
+    background: var(--green-soft);
+}
+
+.delta_flat {
+    color: var(--fg-3);
+    background: var(--bg-hover);
+}
+
+// ── Footer ─────────────────────────────────────────────────────────────
+.footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 4px;
+}
+
+.footerLeft,
+.footerRight {
+    font-size: 11px;
+    font-family: var(--font-mono);
+    color: var(--fg-4);
+}

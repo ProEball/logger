@@ -1,0 +1,103 @@
+.rail {
+    width: var(--rail-width);
+    background: var(--bg-rail);
+    border-right: 1px solid var(--border-1);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 10px 0;
+    gap: 4px;
+    height: 100%;
+    flex-shrink: 0;
+}
+
+.logo {
+    width: 34px;
+    height: 34px;
+    border-radius: 8px;
+    background: linear-gradient(135deg, var(--purple) 0%, var(--pink) 100%);
+    flex-shrink: 0;
+    margin-bottom: 2px;
+}
+
+.divider {
+    width: 24px;
+    height: 1px;
+    background: var(--border-2);
+    flex-shrink: 0;
+    margin: 2px 0;
+}
+
+.pills {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    width: 100%;
+}
+
+// 36×36 org avatar pill
+.pill {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border-radius: 9px;
+    background: var(--bg-sidebar);
+    color: var(--fg-3);
+    font-size: 14px;
+    font-weight: var(--weight-semibold);
+    text-decoration: none;
+    border: 1px solid transparent;
+    transition: background-color var(--duration-fast) var(--ease-out),
+        color var(--duration-fast) var(--ease-out),
+        border-color var(--duration-fast) var(--ease-out);
+
+    &:hover {
+        background: var(--bg-hover);
+        color: var(--fg);
+    }
+
+    &:focus-visible {
+        outline: 2px solid var(--border-focus);
+        outline-offset: 1px;
+    }
+}
+
+// Active: purple tint + left indicator bar
+.pillActive {
+    background: var(--purple-soft);
+    border-color: rgba(189, 147, 249, .4);
+    color: var(--purple);
+
+    &:hover {
+        background: var(--purple-soft);
+        color: var(--purple);
+    }
+
+    // 3px indicator bar flush with the rail's left edge
+    // Rail is 56px, pill is 36px → pill left edge is 10px from rail left
+    // ::before at left:-10px sits at rail left edge (0px)
+    &::before {
+        content: '';
+        position: absolute;
+        left: -10px;
+        top: 50%;
+        transform: translateY(-50%);
+        width: 3px;
+        height: 20px;
+        background: var(--purple);
+        border-radius: 0 2px 2px 0;
+    }
+}
+
+.bottom {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    margin-top: auto;
+    width: 100%;
+}

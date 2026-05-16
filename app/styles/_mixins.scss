@@ -4,37 +4,36 @@
 // ── Focus ring ──────────────────────────────────────────────────────
 // Applied via :focus-visible to avoid showing on mouse click.
 @mixin focus-ring {
-    outline: none;
-
     &:focus-visible {
-        box-shadow: var(--focus-ring);
+        outline: 2px solid var(--border-focus);
+        outline-offset: 1px;
     }
 }
 
 // ── Surfaces ────────────────────────────────────────────────────────
 @mixin surface-base {
     background: var(--bg-base);
-    color: var(--text-primary);
+    color: var(--fg);
 }
 
 @mixin surface-raised {
     background: var(--bg-raised);
-    border: 1px solid var(--border-subtle);
+    border: 1px solid var(--border-1);
     border-radius: var(--radius-md);
 }
 
 @mixin surface-overlay {
-    background: var(--bg-overlay);
-    border: 1px solid var(--border-default);
+    background: var(--bg-raised);
+    border: 1px solid var(--border-2);
     border-radius: var(--radius-lg);
 }
 
 // ── Log level coloring (badge / chip) ───────────────────────────────
 // Usage: @include level-colors('debug');
 @mixin level-colors($level) {
-    background: var(--level-#{$level}-bg);
-    border-color: var(--level-#{$level}-border);
-    color: var(--level-#{$level}-text);
+    background: var(--lvl-#{$level}-bg);
+    border-color: var(--lvl-#{$level}-border);
+    color: var(--lvl-#{$level}-text);
 }
 
 // ── Status coloring ─────────────────────────────────────────────────

@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Geist, JetBrains_Mono } from "next/font/google";
 import Script from "next/script";
 import { ToastProvider } from "@/shared/components";
 import ReduxProvider from "@/core/store/Provider";
@@ -11,8 +11,8 @@ const geistSans = Geist({
     subsets: ["latin"],
 });
 
-const geistMono = Geist_Mono({
-    variable: "--font-geist-mono",
+const jetbrainsMono = JetBrains_Mono({
+    variable: "--font-jetbrains-mono",
     subsets: ["latin"],
 });
 
@@ -40,7 +40,7 @@ export default function RootLayout({
     return (
         <html
             lang="en"
-            className={`${geistSans.variable} ${geistMono.variable}`}
+            className={`${geistSans.variable} ${jetbrainsMono.variable}`}
             suppressHydrationWarning
         >
             <body>

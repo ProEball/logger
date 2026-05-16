@@ -8,11 +8,11 @@
     overflow: visible;
 
     &::backdrop {
-        background: rgba(0, 0, 0, 0.5);
+        background: radial-gradient(ellipse at top, var(--purple-soft), transparent),
+                    rgba(0, 0, 0, 0.55);
         backdrop-filter: blur(2px);
     }
 
-    // Reset dialog default centering — keep CSS in surface
     &[open] {
         display: block;
     }
@@ -25,11 +25,11 @@
 .surface {
     display: flex;
     flex-direction: column;
-    background: var(--bg-overlay);
-    border: 1px solid var(--border-default);
+    background: var(--bg-raised);
+    border: 1px solid var(--border-1);
     border-radius: var(--radius-lg);
     box-shadow: var(--shadow-3);
-    color: var(--text-primary);
+    color: var(--fg);
     max-height: 86vh;
     overflow: hidden;
 }
@@ -39,13 +39,13 @@
     align-items: center;
     justify-content: space-between;
     gap: var(--space-3);
-    padding: var(--space-3) var(--space-4);
-    border-bottom: 1px solid var(--border-subtle);
+    padding: 16px 18px 4px;
 }
 
 .title {
-    font: var(--type-h3);
-    color: var(--text-primary);
+    font-size: 15px;
+    font-weight: var(--weight-semibold);
+    color: var(--fg);
     margin: 0;
 }
 
@@ -58,25 +58,25 @@
     background: transparent;
     border: none;
     border-radius: var(--radius-sm);
-    color: var(--text-muted);
+    color: var(--fg-3);
     cursor: pointer;
     transition: var(--transition-colors);
 
     &:hover {
-        background: var(--surface-hover);
-        color: var(--text-primary);
+        background: var(--bg-hover);
+        color: var(--fg);
     }
 
     &:focus-visible {
-        outline: none;
-        box-shadow: var(--focus-ring);
+        outline: 2px solid var(--border-focus);
+        outline-offset: 1px;
     }
 }
 
 .body {
-    padding: var(--space-4);
-    font-size: var(--text-sm);
-    color: var(--text-secondary);
+    padding: 0 18px 14px;
+    font-size: 12.5px;
+    color: var(--fg-2);
     line-height: var(--leading-normal);
     overflow-y: auto;
 }
@@ -85,7 +85,7 @@
     display: flex;
     justify-content: flex-end;
     gap: var(--space-2);
-    padding: var(--space-3) var(--space-4);
-    border-top: 1px solid var(--border-subtle);
-    background: var(--bg-raised);
+    padding: 12px 18px;
+    border-top: 1px solid var(--border-1);
+    background: var(--bg-sidebar);
 }

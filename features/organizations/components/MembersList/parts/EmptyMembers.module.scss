@@ -6,24 +6,24 @@
     gap: var(--space-3);
     padding: var(--space-10) var(--space-4);
     text-align: center;
-    border: 1px solid var(--border-subtle);
+    border: 1px solid var(--border-1);
     border-radius: 8px;
 }
 
 .icon {
-    color: var(--text-muted);
+    color: var(--fg-4);
 }
 
 .heading {
     font-size: var(--text-sm);
     font-weight: 500;
-    color: var(--text-primary);
+    color: var(--fg);
     margin: 0;
 }
 
 .body {
     font-size: var(--text-sm);
-    color: var(--text-secondary);
+    color: var(--fg-3);
     margin: 0;
     max-width: 320px;
 }

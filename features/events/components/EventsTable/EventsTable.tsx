@@ -1,23 +1,36 @@
 "use client";
 
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
-import { Table } from "@/shared/components/Table/Table";
 import { LevelBadge } from "@/shared/components/LevelBadge/LevelBadge";
-import { Button } from "@/shared/components/Button/Button";
 import { t } from "@/core/i18n/t";
-import { EventTimestamp } from "../EventTimestamp/EventTimestamp";
 import type { Event } from "@/core/db/schema";
 import type { LogLevel } from "@/shared/components/LevelBadge/LevelBadge";
-import type { TableColumn } from "@/shared/components/Table/Table";
 import styles from "./EventsTable.module.scss";
-
-interface EventRow extends Event {
-    id: string;
-}
 
 interface EventsTableProps {
     events: Event[];
     selectedEventId?: string;
+}
+
+function splitTimestamp(ts: Date): { date: string; time: string; ms: string } {
+    const iso = ts.toISOString();
+    const [date, rest] = iso.split("T");
+    const [hms, msPart] = rest.split(".");
+    return { date, time: hms, ms: msPart?.replace("Z", "").slice(0, 3) ?? "000" };
+}
+
+function getRowClass(level: string): string {
+    if (level === "error") return styles.rowError;
+    if (level === "fatal") return styles.rowFatal;
+    if (level === "warn")  return styles.rowWarn;
+    return "";
+}
+
+function getEnvDotClass(env: string | null | undefined): string {
+    if (!env) return "";
+    if (env === "staging") return styles.envDotStaging;
+    if (env === "development" || env === "dev") return styles.envDotDev;
+    return "";
 }
 
 export function EventsTable({ events, selectedEventId }: EventsTableProps) {
@@ -33,65 +46,71 @@ export function EventsTable({ events, selectedEventId }: EventsTableProps) {
         router.replace(`${pathname}?${params.toString()}`);
     };
 
-    const columns: TableColumn<EventRow>[] = [
-        {
-            key: "timestamp",
-            header: t("events.table.timestamp"),
-            width: 200,
-            render: (row) => (
-                <EventTimestamp
-                    timestamp={row.timestamp instanceof Date ? row.timestamp : new Date(row.timestamp)}
-                    className={styles.timestamp}
-                />
-            ),
-        },
-        {
-            key: "level",
-            header: t("events.table.level"),
-            width: 80,
-            render: (row) => <LevelBadge level={row.level as LogLevel} size="sm" />,
-        },
-        {
-            key: "message",
-            header: t("events.table.message"),
-            render: (row) => <span className={styles.message}>{row.message}</span>,
-        },
-        {
-            key: "source",
-            header: t("events.table.source"),
-            width: 120,
-            render: (row) => <span className={styles.meta}>{row.source ?? "—"}</span>,
-        },
-        {
-            key: "environment",
-            header: t("events.table.environment"),
-            width: 110,
-            render: (row) => <span className={styles.meta}>{row.environment ?? "—"}</span>,
-        },
-    ];
-
-    const rows: EventRow[] = events.map((e) => ({
-        ...e,
-        variant: e.level === "error" ? "error" : e.level === "fatal" ? "fatal" : "default",
-        selected: e.id === selectedEventId,
-    }));
-
     if (events.length === 0) {
         return (
             <div className={styles.empty}>
+                <div className={styles.emptyIcon}>
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                        <polyline points="22 12 16 12 14 15 10 15 8 12 2 12" />
+                        <path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11Z" />
+                    </svg>
+                </div>
+                <p className={styles.emptyTitle}>No events match your filters</p>
                 <p className={styles.emptyText}>{t("events.empty")}</p>
             </div>
         );
     }
 
     return (
-        <Table
-            columns={columns}
-            rows={rows}
-            onRowClick={openDrawer}
-            stickyHeader
-            ariaLabel={t("events.title")}
-            className={styles.table}
-        />
+        <table className={styles.table} aria-label={t("events.title")}>
+            <thead>
+                <tr>
+                    <th style={{ width: 200 }}>{t("events.table.timestamp")}</th>
+                    <th style={{ width: 80 }}>{t("events.table.level")}</th>
+                    <th>{t("events.table.message")}</th>
+                    <th style={{ width: 120 }}>{t("events.table.source")}</th>
+                    <th style={{ width: 110 }}>{t("events.table.environment")}</th>
+                </tr>
+            </thead>
+            <tbody>
+                {events.map((event) => {
+                    const ts = event.timestamp instanceof Date ? event.timestamp : new Date(event.timestamp);
+                    const { date, time, ms } = splitTimestamp(ts);
+                    const isSelected = event.id === selectedEventId;
+                    const rowClass = [
+                        getRowClass(event.level),
+                        isSelected ? styles.selected : "",
+                    ].filter(Boolean).join(" ");
+
+                    return (
+                        <tr
+                            key={event.id}
+                            className={rowClass || undefined}
+                            onClick={() => openDrawer(event)}
+                            aria-selected={isSelected}
+                        >
+                            <td className={styles.colTime}>
+                                {date}&nbsp;&nbsp;{time}<span className={styles.tsMs}>.{ms}</span>
+                            </td>
+                            <td className={styles.colLevel}>
+                                <LevelBadge level={event.level as LogLevel} size="sm" />
+                            </td>
+                            <td className={styles.colMsg} title={event.message}>
+                                {event.message}
+                            </td>
+                            <td className={styles.colSource}>
+                                {event.source ?? "—"}
+                            </td>
+                            <td className={styles.colEnv}>
+                                <div className={styles.envCell}>
+                                    <span className={`${styles.envDot} ${getEnvDotClass(event.environment)}`} aria-hidden />
+                                    {event.environment ?? "—"}
+                                </div>
+                            </td>
+                        </tr>
+                    );
+                })}
+            </tbody>
+        </table>
     );
 }

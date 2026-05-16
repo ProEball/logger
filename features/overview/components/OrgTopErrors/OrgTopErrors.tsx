@@ -1,0 +1,68 @@
+import type { OrgTopError } from "@/features/overview/services/overview.service";
+import styles from "./OrgTopErrors.module.scss";
+
+interface Project {
+    id: string;
+    name: string;
+    slug: string;
+}
+
+interface OrgTopErrorsProps {
+    errors: OrgTopError[];
+    projects: Project[];
+}
+
+function timeAgo(date: Date): string {
+    const secs = Math.floor((Date.now() - date.getTime()) / 1000);
+    if (secs < 60) return `${secs}s ago`;
+    const mins = Math.floor(secs / 60);
+    if (mins < 60) return `${mins}m ago`;
+    const hours = Math.floor(mins / 60);
+    if (hours < 24) return `${hours}h ago`;
+    return `${Math.floor(hours / 24)}d ago`;
+}
+
+export function OrgTopErrors({ errors, projects }: OrgTopErrorsProps) {
+    const projectMap = new Map(projects.map((p) => [p.id, p]));
+
+    return (
+        <div className={styles.card}>
+            <div className={styles.cardHead}>
+                <span className={styles.cardTitle}>Top errors across org</span>
+            </div>
+            {errors.length === 0 ? (
+                <div className={styles.empty}>No errors in this range</div>
+            ) : (
+                <ul className={styles.list}>
+                    {errors.map((err, i) => {
+                        const project = projectMap.get(err.projectId);
+                        return (
+                            <li key={i} className={styles.item}>
+                                <div className={styles.itemMain}>
+                                    <div className={styles.msgRow}>
+                                        <span
+                                            className={styles.lvlDot}
+                                            style={{ background: `var(--lvl-${err.dominantLevel})` }}
+                                        />
+                                        <span className={styles.msg} title={err.message}>
+                                            {err.message.length > 72
+                                                ? err.message.slice(0, 72) + "…"
+                                                : err.message}
+                                        </span>
+                                    </div>
+                                    <div className={styles.itemMeta}>
+                                        {project && (
+                                            <span className={styles.projectTag}>{project.name}</span>
+                                        )}
+                                        <span className={styles.timeAgo}>{timeAgo(err.latestAt)}</span>
+                                    </div>
+                                </div>
+                                <span className={styles.count}>{err.count.toLocaleString()}</span>
+                            </li>
+                        );
+                    })}
+                </ul>
+            )}
+        </div>
+    );
+}

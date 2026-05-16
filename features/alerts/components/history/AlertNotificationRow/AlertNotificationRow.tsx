@@ -8,38 +8,49 @@ interface AlertNotificationRowProps {
     notification: AlertNotification;
 }
 
-function formatTimestamp(date: Date | string): string {
+function SplitTimestamp({ date }: { date: Date | string }) {
     const d = typeof date === "string" ? new Date(date) : date;
-    return new Intl.DateTimeFormat("en", {
-        month: "short",
-        day: "numeric",
-        hour: "2-digit",
-        minute: "2-digit",
-        second: "2-digit",
-    }).format(d);
+    const datePart = new Intl.DateTimeFormat("en", { month: "short", day: "numeric" }).format(d);
+    const timePart = new Intl.DateTimeFormat("en", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false }).format(d);
+    const ms = String(d.getMilliseconds()).padStart(3, "0");
+
+    return (
+        <span className={styles.ts}>
+            <span className={styles.tsDate}>{datePart}</span>
+            {" "}
+            <span className={styles.tsTime}>{timePart}</span>
+            <span className={styles.tsMs}>.{ms}</span>
+        </span>
+    );
 }
 
 export function AlertNotificationRow({ notification }: AlertNotificationRowProps) {
     const state = notification.state as AlertState;
-    const hasError = !!notification.deliveryLastError;
+    const error = notification.deliveryLastError;
 
     return (
-        <>
-            <tr className={styles.row}>
-                <td className={styles.ts}>{formatTimestamp(notification.triggeredAt)}</td>
-                <td><AlertStateBadge state={state} /></td>
-                <td><DeliveryStatusBadge status={notification.deliveryStatus} /></td>
-                <td className={styles.attempts}>{notification.deliveryAttempts}</td>
-                {hasError && (
-                    <td>
-                        <details>
-                            <summary className={styles.errorToggle}>Show error</summary>
-                            <code className={styles.errorText}>{notification.deliveryLastError}</code>
-                        </details>
-                    </td>
+        <tr className={styles.row}>
+            <td className={styles.td}>
+                <SplitTimestamp date={notification.triggeredAt} />
+            </td>
+            <td className={styles.td}>
+                <AlertStateBadge state={state} />
+            </td>
+            <td className={styles.td}>
+                <DeliveryStatusBadge status={notification.deliveryStatus} />
+            </td>
+            <td className={`${styles.td} ${styles.center}`}>
+                <span className={styles.attempts}>{notification.deliveryAttempts}</span>
+            </td>
+            <td className={styles.td}>
+                {error ? (
+                    <span className={styles.error} title={error}>
+                        {error.length > 60 ? error.slice(0, 60) + "…" : error}
+                    </span>
+                ) : (
+                    <span className={styles.noError}>—</span>
                 )}
-                {!hasError && <td />}
-            </tr>
-        </>
+            </td>
+        </tr>
     );
 }

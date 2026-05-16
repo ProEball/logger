@@ -2,14 +2,17 @@
 
 > Single source of truth for "where are we right now". Update after every work session.
 
-**Last updated**: 2026-05-09 (post-Feature 07 — Polish)
+**Last updated**: 2026-05-11 (DS v0.3 update started)
 
 ---
 
 ## Current Phase
 
-**Next up: Feature 08 — Docker packaging** · `docs/features/08-docker-packaging.md`
-Status: 🟦 Planned
+**Now: Design System v0.3.0 Update (side track)** · `docs/features/ds-v03-update.md`
+Status: 🟨 In progress — Phase 1 (Tokens + Fonts) started
+
+**Paused: Feature 08 — Docker packaging** · `docs/features/08-docker-packaging.md`
+Status: 🟦 Planned (resumes after DS update)
 
 **Last completed: Feature 07 — Polish (2026-05-09)**
 Toast system (central `ToastProvider` + `useToast` hook, Redux-free reducer, ARIA live region `role="region" aria-live="polite"`, per-toast `role="alert"/"status"`); migrated all inline `alert()` / `saved` state to `toast.push()`; 5 skeleton components (`TableSkeleton`, `WidgetSkeleton`, `CardSkeleton`, `ListSkeleton`, `PageSkeleton`) with design-system tokens; `dynamic()` lazy-loading for recharts widgets (EventsPerMinute, LevelBreakdown, EnvironmentBreakdown) and EventDrawer; error boundary components (`GlobalErrorPage`, `NotFoundPage`, `ForbiddenPage`); 12 `error.tsx` / `not-found.tsx` / `loading.tsx` boundary files across all route segments; session revocation on password change (`revokeOtherSessions: true`); E2E test for session revocation (`e2e/auth.spec.ts`); `/api/version` and extended `/api/health/ready` (db, pgboss, ingest, migrations checks); `core/logger.ts` (pino singleton); `slow-query-logger.ts` wraps postgres.js client, WARN at ≥500 ms; `partman-maintenance.job.ts` wrapped in try/catch with ERROR logging; ForbiddenPage wiring — `revokeInvitationAction` returns `{ error? }`, `InvitationsList` converted to client component, `alerts/new/page.tsx` renders `ForbiddenPage` instead of redirect; `EmptyMembers` component for team page; README monitoring endpoints + self-monitoring alert guide; Decision log (10 entries). Manual items deferred: keyboard nav (27), contrast audit (28), EXPLAIN ANALYZE (32). TypeScript clean.
@@ -41,7 +44,8 @@ Each feature has its own implementation doc with a status block, decisions, sche
 
 | # | Feature | Status | Doc |
 |---|---|---|---|
-| — | Design System + UI kit (side track) | ✅ Done | [features/design-system.md](features/design-system.md) |
+| — | Design System + UI kit v0.1 (side track) | ✅ Done | [features/design-system.md](features/design-system.md) |
+| — | Design System v0.3.0 Update (side track) | 🟨 In progress | [features/ds-v03-update.md](features/ds-v03-update.md) |
 | 00 | Foundation | ✅ Done | [features/00-foundation.md](features/00-foundation.md) |
 | 01 | Auth + Organizations + Roles | ✅ Done | [features/01-auth-organizations-roles.md](features/01-auth-organizations-roles.md) |
 | 02 | Projects + API keys | ✅ Done | [features/02-projects-api-keys.md](features/02-projects-api-keys.md) |
