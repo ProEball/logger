@@ -1,7 +1,5 @@
 "use client";
 import Link from "next/link";
-import { Button } from "@/shared/components/Button/Button";
-import { t } from "@/core/i18n/t";
 import styles from "./SaveBar.module.scss";
 
 interface SaveBarProps {
@@ -9,23 +7,34 @@ interface SaveBarProps {
     projectSlug: string;
     isPending: boolean;
     isEdit: boolean;
+    onTestFire?: () => void;
 }
 
-export function SaveBar({ orgSlug, projectSlug, isPending, isEdit }: SaveBarProps) {
+function SendIcon() {
+    return (
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+            <line x1="22" y1="2" x2="11" y2="13"/>
+            <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+        </svg>
+    );
+}
+
+export function SaveBar({ orgSlug, projectSlug, isPending, isEdit, onTestFire }: SaveBarProps) {
     return (
         <div className={styles.bar}>
-            <div className={styles.left}>
-                <Link
-                    href={`/${orgSlug}/${projectSlug}/alerts`}
-                    className={styles.cancelLink}
-                >
-                    {t("common.cancel")}
-                </Link>
-            </div>
-            <div className={styles.right}>
-                <Button type="submit" disabled={isPending}>
-                    {isPending ? "Saving..." : t("common.save")}
-                </Button>
+            <Link href={`/${orgSlug}/${projectSlug}/alerts`} className={styles.cancelLink}>
+                Cancel
+            </Link>
+
+            <div className={styles.actions}>
+                {isEdit && onTestFire && (
+                    <button type="button" className={styles.testBtn} onClick={onTestFire} disabled={isPending}>
+                        <SendIcon />Send test
+                    </button>
+                )}
+                <button type="submit" className={styles.saveBtn} disabled={isPending}>
+                    {isPending ? "Saving…" : "Save rule"}
+                </button>
             </div>
         </div>
     );

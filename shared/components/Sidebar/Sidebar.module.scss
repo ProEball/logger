@@ -1,10 +1,11 @@
 .sidebar {
     width: var(--sidebar-w);
     flex-shrink: 0;
-    background: var(--bg-surface);
-    border-right: 1px solid var(--border-subtle);
+    background: var(--bg-sidebar);
+    border-right: 1px solid var(--border-1);
     display: flex;
     flex-direction: column;
+    height: 100%;
     transition: width var(--duration-base) var(--ease-out);
 
     &[data-collapsed] {
@@ -13,9 +14,9 @@
 }
 
 .top {
-    padding: var(--space-2) var(--space-2-5, var(--space-2));
+    padding: var(--space-2) var(--space-3);
     padding-top: var(--space-3);
-    border-bottom: 1px solid var(--border-subtle);
+    border-bottom: 1px solid var(--border-1);
     flex-shrink: 0;
 
     .sidebar[data-collapsed] & {
@@ -36,10 +37,11 @@
 
 .bottom {
     padding: var(--space-2) 0;
-    border-top: 1px solid var(--border-subtle);
+    border-top: 1px solid var(--border-1);
     flex-shrink: 0;
 }
 
+// ── Sections ─────────────────────────────────────────────────────────
 .section {
     & + & {
         margin-top: var(--space-2);
@@ -47,15 +49,49 @@
 }
 
 .sectionLabel {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
     font-size: 10px;
     font-weight: var(--weight-semibold);
-    color: var(--text-muted);
-    letter-spacing: 0.07em;
+    color: var(--fg-4);
+    letter-spacing: 0.08em;
     text-transform: uppercase;
     padding: var(--space-1) var(--space-3);
+    margin-bottom: 2px;
 
     .sidebar[data-collapsed] & {
         display: none;
+    }
+}
+
+.sectionLabelText {
+    flex: 1;
+}
+
+.sectionAdd {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    border-radius: var(--radius-sm);
+    border: 0;
+    background: transparent;
+    color: var(--fg-4);
+    cursor: pointer;
+    padding: 0;
+    transition: background-color var(--duration-fast) var(--ease-out),
+        color var(--duration-fast) var(--ease-out);
+
+    &:hover {
+        background: var(--bg-hover);
+        color: var(--fg);
+    }
+
+    &:focus-visible {
+        outline: 2px solid var(--border-focus);
+        outline-offset: 1px;
     }
 }
 
@@ -64,44 +100,47 @@
     flex-direction: column;
 }
 
+// ── Nav item ─────────────────────────────────────────────────────────
 .item {
     display: flex;
     align-items: center;
     gap: var(--space-2);
-    padding: var(--space-1-5) var(--space-3);
+    // Side margin creates visible space for the rounded corners
+    margin: 1px var(--space-2);
+    padding: 5px var(--space-2);
+    border-radius: var(--radius-md);
     font-size: var(--text-sm);
-    color: var(--text-secondary);
+    color: var(--fg);
     cursor: pointer;
     text-decoration: none;
-    border-right: 2px solid transparent;
-    transition: background-color var(--duration-fast) var(--ease-out),
-        color var(--duration-fast) var(--ease-out);
+    transition: background-color var(--duration-fast) var(--ease-out);
 
     &:hover {
-        background: var(--surface-hover);
-        color: var(--text-primary);
+        background: var(--bg-hover);
     }
 
     &:focus-visible {
-        outline: none;
-        box-shadow: var(--focus-ring);
+        outline: 2px solid var(--border-focus);
+        outline-offset: -2px;
     }
 
     .sidebar[data-collapsed] & {
         justify-content: center;
+        margin-left: var(--space-1-5);
+        margin-right: var(--space-1-5);
         padding-left: 0;
         padding-right: 0;
     }
 }
 
 .itemActive {
-    background: var(--accent-subtle);
-    color: var(--accent-text);
-    border-right-color: var(--accent);
+    background: var(--purple);
+    color: var(--fg);
+    font-weight: var(--weight-medium);
 
     &:hover {
-        background: var(--accent-subtle);
-        color: var(--accent-text);
+        background: var(--purple);
+        color: var(--fg);
     }
 }
 
@@ -127,10 +166,10 @@
 .itemBadge {
     font-size: 10px;
     font-weight: var(--weight-semibold);
-    color: var(--text-muted);
+    color: var(--fg-4);
     padding: 0 var(--space-1);
     border-radius: var(--radius-sm);
-    background: var(--bg-overlay);
+    background: var(--bg-active);
     flex-shrink: 0;
 
     .sidebar[data-collapsed] & {
@@ -138,8 +177,60 @@
     }
 }
 
+// Live status dot — 6×6 circle with green glow
+.dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--green);
+    box-shadow: 0 0 6px var(--green);
+    flex-shrink: 0;
+}
+
+// Count badge — mono right slot
+.count {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--fg-3);
+    flex-shrink: 0;
+    margin-left: auto;
+
+    .itemActive & {
+        color: rgba(255, 255, 255, 0.75);
+    }
+
+    .sidebar[data-collapsed] & {
+        display: none;
+    }
+}
+
+// ── Tree item (inline project sub-nav) ────────────────────────────────
+//
+// Applied as an additional class on SidebarItem when rendered inside
+// the project expand tree. Overrides margin/font from .item to give
+// smaller, left-indented appearance.
+.treeItem {
+    font-size: 12.5px;
+    margin-left: 0;   // Tree container (border-left) provides the indent
+    margin-right: var(--space-1-5);
+    padding-left: 10px;
+
+    // Soft-purple active state for tree (sub-nav) items
+    &.itemActive {
+        background: rgba(189, 147, 249, 0.16);
+        color: #bd93f9;
+        font-weight: var(--weight-medium);
+
+        &:hover {
+            background: rgba(189, 147, 249, 0.16);
+            color: #bd93f9;
+        }
+    }
+}
+
+// ── Divider ───────────────────────────────────────────────────────────
 .divider {
     height: 1px;
-    background: var(--border-subtle);
+    background: var(--border-1);
     margin: var(--space-1-5) var(--space-3);
 }

@@ -9,10 +9,11 @@ import {
     hasAnyEvents,
     eventsPerMinute,
     levelBreakdown,
-    environmentBreakdown,
     topMessages,
     recentErrors,
+    topSources,
 } from "@/features/dashboard/services/aggregations.service";
+import { listAlertRules } from "@/features/alerts/services/alert-rules.service";
 import { DashboardPage } from "@/features/dashboard/components/DashboardPage/DashboardPage";
 import { EmptyProjectState } from "@/features/dashboard/components/EmptyProjectState/EmptyProjectState";
 import type { TimeRange, TimeRangePreset } from "@/features/events/utils/event-filters.types";
@@ -65,13 +66,14 @@ export default async function DashboardRoute({ params, searchParams }: Dashboard
 
     const range = parseRange(sp);
 
-    // Run all 5 aggregation queries in parallel
-    const [eventsPerMin, levelData, envData, topMsgs, recentErrs] = await Promise.all([
+    // Run all queries in parallel
+    const [eventsPerMin, levelData, topMsgs, recentErrs, topSrcs, alertRulesList] = await Promise.all([
         eventsPerMinute(project.id, range),
         levelBreakdown(project.id, range),
-        environmentBreakdown(project.id, range),
         topMessages(project.id, range),
         recentErrors(project.id, range),
+        topSources(project.id, range),
+        listAlertRules(project.id, membership),
     ]);
 
     return (
@@ -82,9 +84,10 @@ export default async function DashboardRoute({ params, searchParams }: Dashboard
             range={range}
             eventsPerMin={eventsPerMin}
             levelBreakdown={levelData}
-            envBreakdown={envData}
             topMessages={topMsgs}
             recentErrors={recentErrs}
+            topSrcs={topSrcs}
+            alertRules={alertRulesList}
         />
     );
 }

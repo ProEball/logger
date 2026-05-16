@@ -1,0 +1,100 @@
+.card {
+    background: var(--bg-raised);
+    border: 1px solid var(--border-1);
+    border-radius: 8px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+.cardHead {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 13px 16px;
+    border-bottom: 1px solid var(--border-1);
+    flex-shrink: 0;
+}
+
+.cardTitle {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--fg);
+}
+
+.totalBadge {
+    font-size: 11px;
+    font-family: var(--font-mono);
+    color: var(--fg-4);
+}
+
+.empty {
+    padding: 40px 16px;
+    text-align: center;
+    color: var(--fg-4);
+    font-size: 12px;
+}
+
+.list {
+    list-style: none;
+    margin: 0;
+    padding: 14px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.item {
+    display: grid;
+    grid-template-columns: 76px 1fr 56px 44px;
+    align-items: center;
+    gap: 10px;
+}
+
+.itemLeft {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+}
+
+.dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.levelName {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--fg-3);
+}
+
+.barTrack {
+    height: 8px;
+    background: var(--bg-raised);
+    border: 1px solid var(--border-1);
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.barFill {
+    height: 100%;
+    border-radius: 3px;
+    opacity: 0.65;
+    transition: width 0.3s var(--ease-out);
+}
+
+.count {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--fg-3);
+    text-align: right;
+}
+
+.pct {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--fg-4);
+    text-align: right;
+}

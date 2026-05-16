@@ -1,50 +1,116 @@
 .card {
     display: flex;
     flex-direction: column;
-    gap: var(--space-2);
-    padding: var(--space-4);
+    gap: 10px;
+    padding: 14px 16px;
     background: var(--bg-raised);
-    border: 1px solid var(--border-subtle);
+    border: 1px solid var(--border-1);
     border-radius: var(--radius-md);
     text-decoration: none;
     color: inherit;
-    transition: var(--transition-colors);
+    transition: background-color var(--duration-fast) var(--ease-out),
+                border-color var(--duration-fast) var(--ease-out);
 
     &:hover {
-        background: var(--surface-hover);
-        border-color: var(--border-default);
+        background: var(--bg-hover);
+        border-color: var(--border-2);
     }
 }
 
-.header {
+// ── Head ──────────────────────────────────────────────────────────────
+.head {
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    gap: 8px;
+}
+
+.statusDot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    background: var(--fg-4);
+}
+
+.statusDot_live {
+    background: var(--green);
+    box-shadow: 0 0 8px var(--green);
+}
+
+.statusDot_degraded {
+    background: var(--orange);
+}
+
+.statusDot_inactive {
+    background: var(--fg-4);
 }
 
 .name {
-    font-size: var(--text-sm);
-    font-weight: 500;
-    color: var(--text-primary);
+    flex: 1;
+    font-size: 13.5px;
+    font-weight: var(--weight-medium);
+    color: var(--fg);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
+.statusBadge {
+    font-size: 11px;
+    font-family: var(--font-mono);
+    padding: 2px 7px;
+    border-radius: var(--radius-sm);
+    font-weight: var(--weight-medium);
+}
+
+.statusBadge_live {
+    background: var(--green-soft);
+    color: var(--green);
+}
+
+.statusBadge_degraded {
+    background: var(--orange-soft);
+    color: var(--orange);
+}
+
+.statusBadge_inactive {
+    background: var(--bg-active);
+    color: var(--fg-3);
+}
+
+// ── Project id ────────────────────────────────────────────────────────
 .slug {
     font-family: var(--font-mono);
-    font-size: var(--text-xs);
-    color: var(--text-muted);
+    font-size: 11px;
+    color: var(--fg-4);
 }
 
-.meta {
+// ── Stats grid ────────────────────────────────────────────────────────
+.stats {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+    padding-top: 8px;
+    border-top: 1px solid var(--border-1);
+}
+
+.stat {
     display: flex;
-    align-items: center;
-    gap: var(--space-3);
-    margin-top: var(--space-1);
+    flex-direction: column;
+    gap: 2px;
 }
 
-.metaItem {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-1);
-    font-size: var(--text-xs);
-    color: var(--text-secondary);
+.statValue {
+    font-family: var(--font-mono);
+    font-size: 16px;
+    font-weight: var(--weight-semibold);
+    color: var(--fg);
+    line-height: 1;
+}
+
+.statLabel {
+    font-size: 10.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--fg-3);
 }

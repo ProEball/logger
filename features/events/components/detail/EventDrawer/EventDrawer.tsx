@@ -32,11 +32,12 @@ export function EventDrawer({ event, activeTab }: EventDrawerProps) {
             onClose={onClose}
             width={520}
             side="right"
+            noPadding
             ariaLabel={t("events.detail.details")}
         >
             {event ? (
                 <div className={styles.body}>
-                    <EventDetailHeader event={event} />
+                    <EventDetailHeader event={event} onClose={onClose} />
                     <EventDetailTabs event={event} activeTab={activeTab} />
                 </div>
             ) : null}

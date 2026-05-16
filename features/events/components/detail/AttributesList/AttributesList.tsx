@@ -8,6 +8,18 @@ interface AttributesListProps {
     attributes: Record<string, unknown>;
 }
 
+function getValueClass(value: unknown): string {
+    if (typeof value === "string") return styles.valueStr;
+    if (typeof value === "number") return styles.valueNum;
+    if (typeof value === "boolean") return styles.valueBool;
+    return "";
+}
+
+function formatValue(value: unknown): string {
+    if (typeof value === "string") return `"${value}"`;
+    return String(value ?? "");
+}
+
 export function AttributesList({ attributes }: AttributesListProps) {
     const router = useRouter();
     const pathname = usePathname();
@@ -23,32 +35,35 @@ export function AttributesList({ attributes }: AttributesListProps) {
         const strVal = String(value);
         const params = new URLSearchParams(searchParams.toString());
         params.set(`attribute.${key}`, strVal);
-        // Close drawer
         params.delete("event");
         params.delete("event_ts");
         params.delete("tab");
-        // Reset cursor
         params.delete("before_ts");
         params.delete("before_id");
         router.replace(`${pathname}?${params.toString()}`);
     };
 
     return (
-        <div className={styles.list}>
-            {entries.map(([key, value]) => (
-                <div key={key} className={styles.row}>
-                    <span className={styles.key}>{key}</span>
-                    <span className={styles.value}>{String(value ?? "")}</span>
-                    <button
-                        type="button"
-                        className={styles.filterBtn}
-                        onClick={() => filterBy(key, value)}
-                        title={t("events.filters.filterBy")}
-                    >
-                        {t("events.filters.filterBy")}
-                    </button>
-                </div>
-            ))}
+        <div>
+            <div className={styles.header}>{entries.length} attributes</div>
+            <div className={styles.list}>
+                {entries.map(([key, value]) => (
+                    <div key={key} className={styles.row}>
+                        <span className={styles.key}>{key}</span>
+                        <span className={`${styles.value} ${getValueClass(value)}`}>
+                            {formatValue(value)}
+                        </span>
+                        <button
+                            type="button"
+                            className={styles.filterBtn}
+                            onClick={() => filterBy(key, value)}
+                            title={t("events.filters.filterBy")}
+                        >
+                            {t("events.filters.filterBy")}
+                        </button>
+                    </div>
+                ))}
+            </div>
         </div>
     );
 }

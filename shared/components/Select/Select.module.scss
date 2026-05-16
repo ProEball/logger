@@ -2,26 +2,44 @@
     position: relative;
     display: inline-flex;
     align-items: center;
-    height: var(--input-height-md);
-    background: var(--bg-raised);
-    border: 1px solid var(--border-default);
+    height: 30px;
+    background: var(--bg-input);
+    border: 1px solid var(--border-1);
     border-radius: var(--radius-sm);
-    color: var(--text-primary);
+    color: var(--fg);
     transition: border-color var(--duration-fast) var(--ease-out),
                 box-shadow var(--duration-fast) var(--ease-out);
 
+    &::after {
+        content: '';
+        position: absolute;
+        right: 10px;
+        top: 50%;
+        width: 8px;
+        height: 8px;
+        border-right: 1.5px solid var(--fg-3);
+        border-bottom: 1.5px solid var(--fg-3);
+        transform: translateY(-65%) rotate(45deg);
+        pointer-events: none;
+        flex-shrink: 0;
+    }
+
+    &:hover:not(:focus-within) {
+        border-color: var(--border-2);
+    }
+
     &:focus-within {
-        border-color: var(--accent);
-        box-shadow: var(--focus-ring);
+        border-color: var(--purple);
+        box-shadow: 0 0 0 3px var(--purple-soft);
     }
 }
 
 .invalid {
-    border-color: var(--status-danger);
+    border-color: var(--red);
 
     &:focus-within {
-        border-color: var(--status-danger);
-        box-shadow: 0 0 0 2px var(--bg-base), 0 0 0 4px var(--status-danger);
+        border-color: var(--red);
+        box-shadow: 0 0 0 3px var(--red-soft);
     }
 }
 
@@ -42,25 +60,16 @@
     outline: none;
     color: inherit;
     font-family: inherit;
-    font-size: var(--text-sm);
+    font-size: 12.5px;
     line-height: 1;
     cursor: pointer;
 
-    // Native option dropdown — give it a sensible bg in dark themes
     & option {
-        background: var(--bg-raised);
-        color: var(--text-primary);
+        background: var(--bg-input);
+        color: var(--fg);
     }
 
     &:disabled {
         cursor: not-allowed;
     }
-}
-
-.chevron {
-    position: absolute;
-    right: 10px;
-    pointer-events: none;
-    color: var(--text-muted);
-    flex-shrink: 0;
 }

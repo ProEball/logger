@@ -1,11 +1,11 @@
 .popover {
     z-index: var(--z-popover);
-    background: var(--bg-overlay);
-    border: 1px solid var(--border-default);
+    background: var(--bg-raised);
+    border: 1px solid var(--border-1);
     border-radius: var(--radius-md);
     box-shadow: var(--shadow-2);
     overflow: hidden;
-    color: var(--text-primary);
+    color: var(--fg);
 
     &:focus {
         outline: none;
@@ -14,20 +14,19 @@
 
 .header {
     padding: 10px 12px 8px;
-    border-bottom: 1px solid var(--border-subtle);
+    border-bottom: 1px solid var(--border-1);
 }
 
 .title {
     font-size: var(--text-sm);
     font-weight: var(--weight-medium);
-    color: var(--text-primary);
+    color: var(--fg);
 }
 
 .body {
-    padding: 10px 12px;
-    font-size: var(--text-xs);
-    color: var(--text-secondary);
-    line-height: var(--leading-normal);
+    padding: 4px 0;
+    font-size: 12.5px;
+    color: var(--fg-2);
 }
 
 .footer {
@@ -35,5 +34,60 @@
     justify-content: flex-end;
     gap: var(--space-1-5);
     padding: var(--space-2) 12px;
-    border-top: 1px solid var(--border-subtle);
+    border-top: 1px solid var(--border-1);
+}
+
+// ── Menu item pattern ────────────────────────────────────────────────
+.ph {
+    padding: 6px 12px 4px;
+    font-size: 10px;
+    font-weight: var(--weight-semibold);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--fg-3);
+}
+
+.pi {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 7px 12px;
+    font-size: 12.5px;
+    color: var(--fg-2);
+    cursor: pointer;
+    background: transparent;
+    border: none;
+    width: 100%;
+    text-align: left;
+    font-family: inherit;
+    transition: background-color var(--duration-fast) var(--ease-out),
+                color var(--duration-fast) var(--ease-out);
+
+    &:hover {
+        background: var(--bg-hover);
+        color: var(--fg);
+    }
+
+    &.danger {
+        color: var(--red);
+
+        &:hover {
+            background: var(--red-soft);
+            color: var(--red);
+        }
+    }
+}
+
+.kbd {
+    margin-left: auto;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--fg-4);
+}
+
+.divider {
+    height: 1px;
+    background: var(--border-1);
+    margin: 4px 0;
+    border: 0;
 }

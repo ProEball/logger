@@ -1,6 +1,23 @@
-.controls {
+.footer {
+    height: 44px;
+    border-top: 1px solid var(--border-1);
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 8px 0;
+    padding: 0 16px;
+    background: var(--bg-base);
+    flex-shrink: 0;
 }
+
+.info {
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    color: var(--fg-3);
+
+    b {
+        color: var(--fg);
+        font-weight: 500;
+    }
+}
+
+.spacer { flex: 1; }

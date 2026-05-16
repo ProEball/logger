@@ -1,42 +1,89 @@
-.header {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    padding-bottom: 16px;
-    border-bottom: 1px solid var(--color-border);
+.head {
+    padding: 14px 16px 0;
+    flex-shrink: 0;
 }
 
-.top {
+// ── Top row: level + id + actions + close ────────────────────────────
+.topRow {
     display: flex;
     align-items: center;
-    justify-content: space-between;
     gap: 8px;
+    margin-bottom: 10px;
 }
 
-.message {
-    font-size: 14px;
+.eventId {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--fg-3);
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.iconBtn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    border-radius: 5px;
+    border: 0;
+    background: transparent;
+    color: var(--fg-3);
+    cursor: pointer;
+    padding: 0;
+    flex-shrink: 0;
+    transition: background-color var(--duration-fast) var(--ease-out),
+        color var(--duration-fast) var(--ease-out);
+
+    &:hover {
+        background: var(--bg-hover);
+        color: var(--fg);
+    }
+
+    &:focus-visible {
+        outline: 2px solid var(--border-focus);
+        outline-offset: 1px;
+    }
+}
+
+// ── Title ────────────────────────────────────────────────────────────
+.title {
+    font-family: var(--font-mono);
+    font-size: 13px;
     font-weight: 500;
-    color: var(--color-text-primary);
-    margin: 0;
-    word-break: break-word;
+    line-height: 1.5;
+    color: var(--fg);
+    margin: 0 0 12px;
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
 }
 
+// ── Meta row ─────────────────────────────────────────────────────────
 .meta {
     display: flex;
-    align-items: center;
-    gap: 12px;
-}
-
-.ts {
-    font-size: 12px;
-    color: var(--color-text-secondary);
-    font-family: var(--font-mono, monospace);
-}
-
-.env {
+    gap: 14px;
+    flex-wrap: wrap;
+    margin-bottom: 14px;
+    font-family: var(--font-mono);
     font-size: 11px;
-    padding: 2px 8px;
-    background: var(--color-surface-secondary);
-    border-radius: 10px;
-    color: var(--color-text-secondary);
+    color: var(--fg-3);
 }
+
+.metaItem {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.metaLabel {
+    color: var(--fg-4);
+}
+
+.metaSource { color: var(--cyan); }
+.metaEnv    { color: var(--green); }
+.metaType   { color: var(--pink); }

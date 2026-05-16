@@ -1,14 +1,14 @@
 .textarea {
     display: block;
     width: 100%;
-    min-height: 64px;
-    padding: var(--space-2) 10px;
-    background: var(--bg-raised);
-    border: 1px solid var(--border-default);
+    min-height: 72px;
+    padding: 8px 10px;
+    background: var(--bg-input);
+    border: 1px solid var(--border-1);
     border-radius: var(--radius-sm);
-    color: var(--text-primary);
+    color: var(--fg);
     font-family: inherit;
-    font-size: var(--text-sm);
+    font-size: 12.5px;
     line-height: var(--leading-normal);
     resize: vertical;
     outline: none;
@@ -16,26 +16,30 @@
                 box-shadow var(--duration-fast) var(--ease-out);
 
     &::placeholder {
-        color: var(--text-placeholder);
+        color: var(--fg-4);
+    }
+
+    &:hover:not(:focus):not(:disabled) {
+        border-color: var(--border-2);
     }
 
     &:focus {
-        border-color: var(--accent);
-        box-shadow: var(--focus-ring);
+        border-color: var(--purple);
+        box-shadow: 0 0 0 3px var(--purple-soft);
     }
 
     &:disabled {
         opacity: 0.5;
         cursor: not-allowed;
-        background: var(--bg-surface);
+        background: var(--bg-input);
     }
 }
 
 .invalid {
-    border-color: var(--status-danger);
+    border-color: var(--red);
 
     &:focus {
-        border-color: var(--status-danger);
-        box-shadow: 0 0 0 2px var(--bg-base), 0 0 0 4px var(--status-danger);
+        border-color: var(--red);
+        box-shadow: 0 0 0 3px var(--red-soft);
     }
 }

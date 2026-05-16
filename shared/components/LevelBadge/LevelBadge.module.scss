@@ -3,18 +3,21 @@
 .badge {
     display: inline-flex;
     align-items: center;
-    gap: var(--space-1);
-    border: 1px solid;
+    gap: 4px;
+    height: 18px;
+    padding: 0 7px;
     border-radius: var(--radius-sm);
-    font-family: inherit;
+    font-family: var(--font-mono);
     font-weight: var(--weight-semibold);
-    letter-spacing: 0.03em;
+    font-size: 10px;
+    letter-spacing: 0.04em;
     text-transform: uppercase;
     white-space: nowrap;
 }
 
 .sm {
-    padding: 1px var(--space-1-5);
+    height: 18px;
+    padding: 0 7px;
     font-size: 10px;
 
     .dot {
@@ -24,12 +27,13 @@
 }
 
 .md {
-    padding: 2px var(--space-2);
+    height: 20px;
+    padding: 0 8px;
     font-size: 11px;
 
     .dot {
-        width: 6px;
-        height: 6px;
+        width: 5px;
+        height: 5px;
     }
 }
 
@@ -43,29 +47,29 @@
 .debug {
     @include level-colors('debug');
 
-    .dot { background: var(--level-debug-dot); }
+    .dot { background: var(--lvl-debug-dot); }
 }
 
 .info {
     @include level-colors('info');
 
-    .dot { background: var(--level-info-dot); }
+    .dot { background: var(--lvl-info-dot); }
 }
 
 .warn {
     @include level-colors('warn');
 
-    .dot { background: var(--level-warn-dot); }
+    .dot { background: var(--lvl-warn-dot); }
 }
 
 .error {
     @include level-colors('error');
 
-    .dot { background: var(--level-error-dot); }
+    .dot { background: var(--lvl-error-dot); }
 }
 
 .fatal {
     @include level-colors('fatal');
 
-    .dot { background: var(--level-fatal-dot); }
+    .dot { background: var(--lvl-fatal-dot); }
 }

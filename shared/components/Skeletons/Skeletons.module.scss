@@ -8,7 +8,7 @@
     align-items: center;
     gap: 16px;
     padding: 12px 16px;
-    border-bottom: 1px solid var(--border-subtle);
+    border-bottom: 1px solid var(--border-1);
 }
 
 .tableColFill {
@@ -22,8 +22,8 @@
     gap: 12px;
     padding: 20px;
     background: var(--bg-raised);
-    border: 1px solid var(--border-subtle);
-    border-radius: 8px;
+    border: 1px solid var(--border-1);
+    border-radius: var(--radius-md);
 }
 
 .card {
@@ -32,8 +32,8 @@
     gap: 12px;
     padding: 16px;
     background: var(--bg-raised);
-    border: 1px solid var(--border-subtle);
-    border-radius: 8px;
+    border: 1px solid var(--border-1);
+    border-radius: var(--radius-md);
 }
 
 .cardContent {
@@ -53,7 +53,7 @@
     align-items: center;
     gap: 12px;
     padding: 14px 0;
-    border-bottom: 1px solid var(--border-subtle);
+    border-bottom: 1px solid var(--border-1);
 }
 
 .listContent {

@@ -1,21 +1,111 @@
+// ── Name cell ─────────────────────────────────────────────────────────
+.nameCell {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.avatar {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--on-accent);
+    letter-spacing: 0.02em;
+}
+
 .name {
-    font: var(--type-body-sm);
+    font-size: 13px;
     font-weight: 500;
-    margin-right: var(--space-2);
+    color: var(--fg);
 }
 
 .ownerBadge {
-    font: var(--type-label-sm);
-    color: var(--accent-primary);
-    background: color-mix(in srgb, var(--accent-primary) 12%, transparent);
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--purple);
+    background: var(--purple-soft);
+    border: 1px solid rgba(189, 147, 249, .22);
     border-radius: 4px;
-    padding: 1px var(--space-2);
+    padding: 1px 6px 1px 5px;
+    line-height: 1.4;
 }
 
-.muted {
-    color: var(--text-secondary);
+.youTag {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--fg-4);
+    background: var(--bg-active);
+    border: 1px solid var(--border-1);
+    padding: 0 5px;
+    border-radius: 3px;
+    line-height: 16px;
+    height: 16px;
+    display: inline-flex;
+    align-items: center;
 }
 
+// ── Role dot ──────────────────────────────────────────────────────────
+.role {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--fg-3);
+    font-size: 13px;
+}
+
+.roleDot {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    background: var(--fg-4);
+}
+
+.roleDotPurple {
+    background: var(--purple);
+    box-shadow: 0 0 6px var(--purple);
+}
+
+.roleDotCyan {
+    background: var(--cyan);
+    box-shadow: 0 0 6px var(--cyan);
+}
+
+.roleDotOrange {
+    background: var(--orange);
+    box-shadow: 0 0 6px var(--orange);
+}
+
+.roleDotGreen {
+    background: var(--green);
+    box-shadow: 0 0 6px var(--green);
+}
+
+.roleDotMuted {
+    background: var(--fg-4);
+}
+
+// ── Mono cells ────────────────────────────────────────────────────────
+.mono {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--fg-3);
+}
+
+// ── Actions cell ──────────────────────────────────────────────────────
 .actionsCell {
     width: 40px;
     text-align: right;
@@ -31,39 +121,68 @@
     border: none;
     background: transparent;
     border-radius: 4px;
-    color: var(--text-secondary);
+    color: var(--fg-3);
     cursor: pointer;
-    transition: background 120ms, color 120ms;
+    opacity: 0;
+    transition: background var(--t-fast), color var(--t-fast), opacity var(--t-fast);
+
+    tr:hover & {
+        opacity: 1;
+    }
 
     &:hover {
         background: var(--bg-hover);
-        color: var(--text-primary);
+        color: var(--fg);
+        opacity: 1;
     }
 }
 
+// ── Kebab dropdown menu ───────────────────────────────────────────────
 .menu {
     display: flex;
     flex-direction: column;
-    padding: var(--space-1) 0;
+    padding: 4px;
 }
 
 .menuItem {
-    display: block;
+    display: flex;
+    align-items: center;
+    gap: 8px;
     width: 100%;
-    padding: var(--space-2) var(--space-3);
+    padding: 7px 8px;
     text-align: left;
-    font: var(--type-body-sm);
-    color: var(--text-primary);
+    font-size: 12.5px;
+    font-family: inherit;
+    color: var(--fg-2);
     background: transparent;
     border: none;
+    border-radius: 3px;
     cursor: pointer;
-    transition: background 100ms;
+    transition: background var(--t-fast), color var(--t-fast);
 
     &:hover {
         background: var(--bg-hover);
+        color: var(--fg);
+    }
+
+    svg {
+        flex-shrink: 0;
+        opacity: 0.8;
     }
 }
 
+.menuSep {
+    display: block;
+    height: 1px;
+    background: var(--border-1);
+    margin: 4px 2px;
+}
+
 .menuItemDanger {
-    color: var(--status-error);
+    color: var(--red);
+
+    &:hover {
+        background: var(--red-soft);
+        color: var(--red);
+    }
 }

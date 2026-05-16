@@ -3,20 +3,18 @@ import { cx } from '@/shared/utils/cx';
 import styles from './AppShell.module.scss';
 
 export interface AppShellProps {
+    rail?: ReactNode;
     sidebar?: ReactNode;
-    topbar?: ReactNode;
     children?: ReactNode;
     className?: string;
 }
 
-export function AppShell({ sidebar, topbar, children, className }: AppShellProps) {
+export function AppShell({ rail, sidebar, children, className }: AppShellProps) {
     return (
         <div className={cx(styles.shell, className)}>
-            {sidebar}
-            <div className={styles.main}>
-                {topbar}
-                <div className={styles.content}>{children}</div>
-            </div>
+            <div className={styles.rail}>{rail}</div>
+            <div className={styles.sidebarCol}>{sidebar}</div>
+            <main className={styles.content}>{children}</main>
         </div>
     );
 }

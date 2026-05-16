@@ -30,12 +30,10 @@ function formatLastTriggered(date: Date | null | string | undefined): string {
 export function AlertRow({ rule, orgSlug, projectSlug, canManage }: AlertRowProps) {
     const [isPending, startTransition] = useTransition();
 
-    const displayState: AlertState = !rule.enabled
-        ? "disabled"
-        : (rule.state as AlertState);
-
+    const displayState: AlertState = !rule.enabled ? "disabled" : (rule.state as AlertState);
     const channels = rule.channels as Array<{ type: string; url: string }>;
     const channelSummary = `${channels.length} webhook${channels.length !== 1 ? "s" : ""}`;
+    const editHref = `/${orgSlug}/${projectSlug}/alerts/${rule.id}`;
 
     const handleToggle = () => {
         startTransition(async () => {
@@ -61,49 +59,51 @@ export function AlertRow({ rule, orgSlug, projectSlug, canManage }: AlertRowProp
         });
     };
 
+    const rowClass = [
+        styles.row,
+        displayState === "firing" ? styles.firingRow : "",
+    ].filter(Boolean).join(" ");
+
     return (
-        <tr className={styles.row}>
-            <td className={styles.name}>
-                <Link href={`/${orgSlug}/${projectSlug}/alerts/${rule.id}`} className={styles.nameLink}>
-                    {rule.name}
-                </Link>
+        <tr className={rowClass} onClick={() => window.location.href = editHref}>
+            <td>
+                <div className={styles.name}>{rule.name}</div>
                 {rule.description && (
-                    <span className={styles.description}>{rule.description}</span>
+                    <div className={styles.description}>{rule.description}</div>
                 )}
             </td>
             <td><AlertStateBadge state={displayState} /></td>
             <td className={styles.meta}>{formatLastTriggered(rule.stateChangedAt)}</td>
-            <td className={styles.meta}>{channelSummary}</td>
+            <td className={styles.channels}>{channelSummary}</td>
             {canManage && (
-                <td className={styles.actions}>
-                    <Switch
-                        checked={rule.enabled}
-                        onChange={handleToggle}
-                        disabled={isPending}
-                        aria-label={rule.enabled ? t("alerts.actions.disable") : t("alerts.actions.enable")}
-                    />
-                    <Link
-                        href={`/${orgSlug}/${projectSlug}/alerts/${rule.id}`}
-                        className={styles.actionBtn}
-                    >
-                        {t("alerts.actions.edit")}
-                    </Link>
-                    <button
-                        type="button"
-                        className={styles.actionBtn}
-                        onClick={handleTestFire}
-                        disabled={isPending}
-                    >
-                        {t("alerts.actions.testFire")}
-                    </button>
-                    <button
-                        type="button"
-                        className={`${styles.actionBtn} ${styles.danger}`}
-                        onClick={handleDelete}
-                        disabled={isPending}
-                    >
-                        {t("alerts.actions.delete")}
-                    </button>
+                <td>
+                    <div className={styles.actions} onClick={(e) => e.stopPropagation()}>
+                        <Switch
+                            checked={rule.enabled}
+                            onChange={handleToggle}
+                            disabled={isPending}
+                            aria-label={rule.enabled ? t("alerts.actions.disable") : t("alerts.actions.enable")}
+                        />
+                        <Link href={editHref} className={styles.actionBtn}>
+                            {t("alerts.actions.edit")}
+                        </Link>
+                        <button
+                            type="button"
+                            className={styles.actionBtn}
+                            onClick={handleTestFire}
+                            disabled={isPending}
+                        >
+                            {t("alerts.actions.testFire")}
+                        </button>
+                        <button
+                            type="button"
+                            className={`${styles.actionBtn} ${styles.danger}`}
+                            onClick={handleDelete}
+                            disabled={isPending}
+                        >
+                            {t("alerts.actions.delete")}
+                        </button>
+                    </div>
                 </td>
             )}
         </tr>

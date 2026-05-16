@@ -1,18 +1,51 @@
 .page {
     display: flex;
     flex-direction: column;
-    height: 100%;
-    overflow: auto;
 }
 
+// ── 12-column dashboard grid ───────────────────────────────────────────
 .grid {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(12, 1fr);
     gap: var(--space-4);
-    padding: var(--space-4) var(--space-6);
-    flex: 1;
+    padding: var(--space-4) var(--space-6) var(--space-8);
+    align-items: start;
 }
 
-.spanFull {
-    grid-column: 1 / -1;
+.span3  { grid-column: span 3; }
+.span4  { grid-column: span 4; }
+.span8  { grid-column: span 8; }
+.span12 { grid-column: span 12; }
+
+// ── Firing alerts list inside KpiCard children slot ────────────────────
+.firingList {
+    list-style: none;
+    margin: var(--space-2) 0 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.firingItem {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.firingDot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--red);
+    flex-shrink: 0;
+}
+
+.firingName {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--red);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }

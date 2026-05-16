@@ -1,12 +1,19 @@
-.wrapper {
+.pile {
     display: flex;
-    flex-direction: column;
+    flex-wrap: wrap;
     gap: 8px;
+    align-items: center;
 }
 
-.label {
-    font-size: 13px;
-    font-weight: 500;
-    color: var(--text-secondary);
-    margin: 0;
+.clearBtn {
+    font-size: 11.5px;
+    color: var(--fg-3);
+    cursor: pointer;
+    background: none;
+    border: none;
+    padding: 0 4px;
+    font-family: inherit;
+    transition: color var(--duration-fast) var(--ease-out);
+
+    &:hover { color: var(--red); text-decoration: underline; text-underline-offset: 2px; }
 }

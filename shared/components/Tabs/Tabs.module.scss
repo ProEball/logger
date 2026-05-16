@@ -1,7 +1,7 @@
 .tabs {
     display: flex;
     gap: 0;
-    border-bottom: 1px solid var(--border-subtle);
+    border-bottom: 1px solid var(--border-1);
     overflow-x: auto;
 }
 
@@ -9,9 +9,9 @@
     display: inline-flex;
     align-items: center;
     gap: var(--space-1-5);
-    padding: var(--space-2) 14px;
+    padding: 9px 14px 11px;
     font-size: var(--text-sm);
-    color: var(--text-muted);
+    color: var(--fg-3);
     cursor: pointer;
     border-bottom: 2px solid transparent;
     margin-bottom: -1px;
@@ -21,30 +21,30 @@
         border-color var(--duration-fast) var(--ease-out);
 
     &:hover {
-        color: var(--text-primary);
+        color: var(--fg);
     }
 
     &:focus-visible {
-        outline: none;
-        box-shadow: var(--focus-ring);
+        outline: 2px solid var(--border-focus);
+        outline-offset: -2px;
         border-radius: var(--radius-sm) var(--radius-sm) 0 0;
     }
 }
 
 .active {
-    color: var(--text-primary);
-    border-bottom-color: var(--accent);
+    color: var(--fg);
+    border-bottom-color: var(--purple);
     font-weight: var(--weight-medium);
     cursor: default;
 }
 
 .disabled {
-    color: var(--text-muted);
+    color: var(--fg-3);
     opacity: 0.5;
     cursor: not-allowed;
 
     &:hover {
-        color: var(--text-muted);
+        color: var(--fg-3);
     }
 }
 
@@ -55,14 +55,40 @@
     min-width: 18px;
     height: 16px;
     padding: 0 var(--space-1);
-    background: var(--bg-overlay);
+    background: var(--bg-active);
     border-radius: var(--radius-sm);
     font-size: 10px;
     font-weight: var(--weight-semibold);
-    color: var(--text-muted);
+    color: var(--fg-3);
 
     .active & {
-        background: var(--accent-subtle);
-        color: var(--accent-text);
+        background: var(--purple-soft);
+        color: var(--purple);
+    }
+}
+
+// ── Segmented control variant ────────────────────────────────────────
+.segmented {
+    display: inline-flex;
+    gap: 2px;
+    padding: 2px;
+    background: var(--bg-sidebar);
+    border: 1px solid var(--border-1);
+    border-radius: var(--radius-md);
+    overflow: visible;
+    border-bottom: 1px solid var(--border-1);
+
+    .tab {
+        border-bottom: none;
+        margin-bottom: 0;
+        border-radius: var(--radius-sm);
+        padding: 5px 12px;
+        font-size: 12px;
+    }
+
+    .active {
+        background: var(--bg-active);
+        color: var(--fg);
+        border-bottom-color: transparent;
     }
 }

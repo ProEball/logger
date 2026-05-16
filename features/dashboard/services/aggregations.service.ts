@@ -8,6 +8,11 @@ import { resolveRange, pickBucket, BUCKET_SECONDS } from "@/features/dashboard/u
 export { resolveRange, pickBucket } from "@/features/dashboard/utils/aggregation-utils";
 export type { BucketSize } from "@/features/dashboard/utils/aggregation-utils";
 
+export type SourceCount = {
+    source: string;
+    count: number;
+};
+
 // ─── Result types ─────────────────────────────────────────────────────────────
 
 export type BucketRow = {
@@ -30,6 +35,7 @@ export type TopMessage = {
     message: string;
     count: number;
     latestAt: Date;
+    dominantLevel: string;
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -145,11 +151,12 @@ export async function topMessages(
 ): Promise<TopMessage[]> {
     const { from, to } = resolveRange(range);
 
-    const rows = await db.execute<{ message: string; count: string; latest_at: Date }>(sql`
+    const rows = await db.execute<{ message: string; count: string; latest_at: Date; dominant_level: string }>(sql`
         SELECT
-            SUBSTRING(message, 1, 200) AS message,
-            COUNT(*)::text             AS count,
-            MAX(timestamp)             AS latest_at
+            SUBSTRING(message, 1, 200)                         AS message,
+            COUNT(*)::text                                     AS count,
+            MAX(timestamp)                                     AS latest_at,
+            mode() WITHIN GROUP (ORDER BY level)               AS dominant_level
         FROM events
         WHERE project_id = ${projectId}
           AND timestamp >= ${toTs(from)}
@@ -163,6 +170,7 @@ export async function topMessages(
         message: r.message,
         count: Number(r.count),
         latestAt: new Date(r.latest_at),
+        dominantLevel: r.dominant_level,
     }));
 }
 
@@ -231,6 +239,30 @@ export async function recentErrors(
         userAgent: r.user_agent,
         ip: r.ip,
     })) as Event[];
+}
+
+/**
+ * Top N event sources (the `source` field) by event count.
+ */
+export async function topSources(
+    projectId: string,
+    range: TimeRange,
+    limit = 10,
+): Promise<SourceCount[]> {
+    const { from, to } = resolveRange(range);
+
+    const rows = await db.execute<{ source: string; count: string }>(sql`
+        SELECT COALESCE(source, '(unknown)') AS source, COUNT(*)::text AS count
+        FROM events
+        WHERE project_id = ${projectId}
+          AND timestamp >= ${toTs(from)}
+          AND timestamp <  ${toTs(to)}
+        GROUP BY COALESCE(source, '(unknown)')
+        ORDER BY count DESC
+        LIMIT ${limit}
+    `);
+
+    return rows.map((r) => ({ source: r.source, count: Number(r.count) }));
 }
 
 /**

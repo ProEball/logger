@@ -1,76 +1,166 @@
 .card {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-    padding: 16px;
-    border: 1px solid var(--border);
+    background: var(--bg-raised);
+    border: 1px solid var(--border-1);
     border-radius: 8px;
-    background: var(--surface);
-}
-
-.cardHeader {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-}
-
-.cardTitle {
-    font-size: 14px;
-    font-weight: 500;
-    color: var(--text-primary);
-}
-
-.field {
+    padding: 14px 16px;
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: 0;
 }
 
-.fieldLabel {
-    font-size: 12px;
-    font-weight: 500;
-    color: var(--text-secondary);
-}
-
-.input {
-    padding: 8px 10px;
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    font-size: 14px;
-    background: var(--bg);
-    color: var(--text-primary);
-    width: 100%;
-
-    &:focus {
-        outline: none;
-        border-color: var(--accent);
-    }
-}
-
-.headers {
+.cardHead {
     display: flex;
-    flex-direction: column;
+    align-items: center;
     gap: 8px;
+    margin-bottom: 12px;
 }
 
-.headerRow {
-    display: grid;
-    grid-template-columns: 1fr 1fr auto;
-    gap: 8px;
-    align-items: center;
+.cardIc { color: var(--cyan); display: flex; align-items: center; }
+
+.cardName {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--fg);
+}
+
+.typePill {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--cyan);
+    background: var(--cyan-soft);
+    padding: 1px 6px;
+    border-radius: 3px;
+    text-transform: lowercase;
+    font-weight: 500;
 }
 
 .removeBtn {
-    font-size: 12px;
-    color: var(--text-secondary);
+    margin-left: auto;
+    width: 22px;
+    height: 22px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--fg-4);
+    cursor: pointer;
+    border-radius: 4px;
     background: none;
     border: none;
-    cursor: pointer;
-    padding: 4px;
-    border-radius: 4px;
-    white-space: nowrap;
+    transition: color var(--duration-fast) var(--ease-out),
+        background var(--duration-fast) var(--ease-out);
 
-    &:hover {
-        color: var(--danger);
-    }
+    &:hover { color: var(--red); background: var(--bg-hover); }
+}
+
+.urlRow {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 0;
+}
+
+.input {
+    flex: 1;
+    background: var(--bg-base);
+    border: 1px solid var(--border-1);
+    color: var(--fg);
+    height: 34px;
+    padding: 0 10px;
+    font-size: 13px;
+    border-radius: 6px;
+    font-family: inherit;
+    outline: 0;
+    transition: border-color var(--duration-fast) var(--ease-out),
+        box-shadow var(--duration-fast) var(--ease-out);
+
+    &::placeholder { color: var(--fg-4); }
+    &:hover { border-color: var(--border-2); }
+    &:focus { border-color: var(--purple); box-shadow: 0 0 0 3px var(--purple-soft); }
+}
+
+.monoInput {
+    font-family: var(--font-mono);
+    font-size: 12px;
+}
+
+.testBtn {
+    height: 34px;
+    padding: 0 12px;
+    background: var(--bg-base);
+    border: 1px solid var(--border-1);
+    color: var(--fg-2);
+    font-size: 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-family: inherit;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+    transition: background var(--duration-fast) var(--ease-out),
+        border-color var(--duration-fast) var(--ease-out),
+        color var(--duration-fast) var(--ease-out);
+
+    &:hover { background: var(--bg-hover); border-color: var(--border-2); color: var(--fg); }
+}
+
+.headersSection {
+    border-top: 1px solid var(--border-1);
+    padding-top: 12px;
+    margin-top: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.headersLabel {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 12px;
+    color: var(--fg-3);
+}
+
+.headerCount {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--fg-4);
+}
+
+.headerGrid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 28px;
+    gap: 6px;
+    align-items: center;
+
+    .input { flex: unset; width: 100%; }
+}
+
+.rmBtn {
+    width: 28px;
+    height: 34px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--fg-4);
+    cursor: pointer;
+    border-radius: 4px;
+    background: none;
+    border: none;
+    transition: color var(--duration-fast) var(--ease-out);
+
+    &:hover { color: var(--red); }
+}
+
+.addHeaderBtn {
+    color: var(--fg-4);
+    font-size: 12px;
+    cursor: pointer;
+    background: transparent;
+    border: 0;
+    padding: 0;
+    font-family: inherit;
+    text-align: left;
+    transition: color var(--duration-fast) var(--ease-out);
+
+    &:hover { color: var(--fg-2); }
 }

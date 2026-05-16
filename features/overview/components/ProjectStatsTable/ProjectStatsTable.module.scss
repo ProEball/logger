@@ -1,0 +1,145 @@
+.tableWrap {
+    overflow-x: auto;
+}
+
+.table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    font-size: 13px;
+}
+
+.th {
+    padding: 0 16px;
+    height: 30px;
+    text-align: left;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--fg-4);
+    background: var(--bg-sidebar);
+    border-bottom: 1px solid var(--border-1);
+    white-space: nowrap;
+}
+
+.row {
+    &:hover td {
+        background: var(--bg-hover);
+    }
+
+    &:last-child td {
+        border-bottom: none;
+    }
+}
+
+.td {
+    padding: 0 16px;
+    height: 42px;
+    border-bottom: 1px solid var(--border-1);
+    vertical-align: middle;
+    white-space: nowrap;
+}
+
+.projectLink {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--fg);
+    text-decoration: none;
+    font-weight: 500;
+    font-size: 13px;
+    transition: color var(--duration-fast) var(--ease-out);
+
+    &:hover {
+        color: var(--purple);
+    }
+}
+
+.projectDot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--green);
+    flex-shrink: 0;
+}
+
+.mono {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--fg-2);
+}
+
+.errorCount {
+    color: var(--lvl-error);
+}
+
+.rateGreen  { font-family: var(--font-mono); font-size: 12px; color: var(--green); }
+.rateYellow { font-family: var(--font-mono); font-size: 12px; color: var(--lvl-warn); }
+.rateRed    { font-family: var(--font-mono); font-size: 12px; color: var(--lvl-error); }
+.rateDash   { font-family: var(--font-mono); font-size: 12px; color: var(--fg-4); }
+
+.topMsgWrap {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    vertical-align: middle;
+    max-width: 340px;
+}
+
+.lvlDot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.topMsg {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--fg-3);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.noData {
+    color: var(--fg-4);
+    font-family: var(--font-mono);
+    font-size: 12px;
+}
+
+// ── Alert badge with pulse ─────────────────────────────────────────────
+.alertBadge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--orange);
+    background: var(--orange-soft);
+    border: 1px solid rgba(255, 184, 108, 0.25);
+    padding: 2px 7px;
+    border-radius: 4px;
+}
+
+.pulseDot {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: var(--orange);
+    flex-shrink: 0;
+    animation: pulseOrange 1.8s infinite;
+}
+
+@keyframes pulseOrange {
+    0%   { box-shadow: 0 0 0 0 rgba(255, 184, 108, 0.55); }
+    70%  { box-shadow: 0 0 0 5px rgba(255, 184, 108, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(255, 184, 108, 0); }
+}
+
+.noAlert {
+    color: var(--fg-4);
+    font-family: var(--font-mono);
+    font-size: 12px;
+}

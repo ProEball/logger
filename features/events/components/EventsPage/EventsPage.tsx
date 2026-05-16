@@ -2,12 +2,12 @@
 
 import { Suspense } from "react";
 import { t } from "@/core/i18n/t";
+import { useSelector } from "react-redux";
+import { selectAutoRefresh } from "@/core/store/slices/user";
 import { useEventFilters } from "@/features/events/hooks/use-event-filters";
 import { EventsFilterBar } from "../filters/EventsFilterBar/EventsFilterBar";
 import { EventsTable } from "../EventsTable/EventsTable";
 import { PaginationControls } from "../pagination/PaginationControls/PaginationControls";
-// EventDrawer is only needed after the user selects an event — keep it out of
-// the initial bundle so it doesn't delay the table render.
 import dynamic from "next/dynamic";
 
 const EventDrawer = dynamic(
@@ -18,6 +18,7 @@ import { AutoRefreshControl } from "../auto-refresh/AutoRefreshControl/AutoRefre
 import { TableSkeleton } from "@/shared/components/Skeletons/TableSkeleton";
 import type { Event } from "@/core/db/schema";
 import type { EventFilters, Cursor } from "@/features/events/utils/event-filters.types";
+import type { AutoRefreshValue } from "@/shared/types/user-preferences.types";
 import styles from "./EventsPage.module.scss";
 
 interface EventsPageProps {
@@ -31,6 +32,11 @@ interface EventsPageProps {
     projectSlug: string;
 }
 
+function getSubtitle(refresh: AutoRefreshValue): string {
+    if (refresh === "off") return "Streaming · manual refresh";
+    return `Streaming · auto-refresh every ${refresh}`;
+}
+
 export function EventsPage({
     events,
     hasMore,
@@ -38,6 +44,8 @@ export function EventsPage({
     selectedEvent,
     activeTab,
 }: EventsPageProps) {
+    const refresh = useSelector(selectAutoRefresh);
+
     const {
         filters,
         setLevels,
@@ -57,8 +65,17 @@ export function EventsPage({
     return (
         <div className={styles.page}>
             <header className={styles.header}>
-                <h1 className={styles.title}>{t("events.title")}</h1>
-                <AutoRefreshControl />
+                <div className={styles.titleGroup}>
+                    <h1 className={styles.title}>{t("events.title")}</h1>
+                    <div className={styles.subtitle}>
+                        <span className={styles.liveDot} aria-hidden />
+                        {getSubtitle(refresh)}
+                    </div>
+                </div>
+                <div className={styles.headSpacer} />
+                <div className={styles.headActions}>
+                    <AutoRefreshControl />
+                </div>
             </header>
 
             <Suspense>
@@ -76,6 +93,8 @@ export function EventsPage({
                     onRemoveAttribute={removeAttribute}
                     onRemoveFilter={removeFilter}
                     onClearAll={clearAll}
+                    eventCount={events.length}
+                    hasMore={hasMore}
                 />
             </Suspense>
 

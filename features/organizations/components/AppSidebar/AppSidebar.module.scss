@@ -1,0 +1,109 @@
+// ── Org header (rendered in Sidebar top slot) ──────────────────────────
+.orgRow {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-1) 0;
+}
+
+.orgIcon {
+    width: 28px;
+    height: 28px;
+    border-radius: var(--radius-md);
+    background: var(--purple-soft);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: var(--weight-semibold);
+    color: var(--purple);
+    flex-shrink: 0;
+    text-transform: uppercase;
+}
+
+.orgInfo {
+    flex: 1;
+    min-width: 0;
+
+    b {
+        display: block;
+        font-size: 13px;
+        font-weight: var(--weight-semibold);
+        color: var(--fg);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    span {
+        display: block;
+        font-size: 11px;
+        color: var(--fg-4);
+    }
+}
+
+// ── Project list item dot (bullet) ────────────────────────────────────
+.projectDot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--fg-4);
+    flex-shrink: 0;
+}
+
+// ── Inline project sub-nav tree ────────────────────────────────────────
+.projectTree {
+    margin: 2px 0 6px 26px;
+    border-left: 1px solid var(--border-1);
+    display: flex;
+    flex-direction: column;
+}
+
+// ── User bottom row (rendered in Sidebar bottom slot) ──────────────────
+.userRow {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-3);
+}
+
+.userAvatar {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: var(--bg-active);
+    border: 1px solid var(--border-1);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    font-weight: var(--weight-semibold);
+    color: var(--fg-3);
+    flex-shrink: 0;
+    text-transform: uppercase;
+}
+
+.userInfo {
+    flex: 1;
+    min-width: 0;
+
+    b {
+        display: block;
+        font-size: 13px;
+        font-weight: var(--weight-medium);
+        color: var(--fg);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    span {
+        display: block;
+        font-size: 11px;
+        color: var(--fg-4);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+}

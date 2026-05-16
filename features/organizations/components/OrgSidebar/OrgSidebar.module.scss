@@ -3,9 +3,10 @@
 }
 
 .dangerItem {
-    color: var(--status-error, var(--level-error-text));
+    color: var(--red);
 
     &:hover {
-        color: var(--level-error-text);
+        color: var(--red);
+        background: var(--red-soft);
     }
 }
