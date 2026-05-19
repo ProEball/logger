@@ -95,7 +95,7 @@ function ProjectDot({ active }: { active: boolean }) {
             aria-hidden="true"
             style={
                 active
-                    ? { background: "var(--purple)", boxShadow: "0 0 6px var(--purple)" }
+                    ? { background: "var(--green)", boxShadow: "0 0 6px var(--green)" }
                     : undefined
             }
         />

@@ -40,6 +40,7 @@ export type OrgEventBucket = {
     projectId: string;
     ts: Date;
     count: number;
+    errorCount: number;
 };
 
 function toTs(d: Date) {
@@ -233,13 +234,14 @@ export async function getOrgEventBuckets(
     if (projectIds.length === 0) return [];
     const { from, to } = range;
 
-    const rows = await db.execute<{ project_id: string; ts: string; count: string }>(sql`
+    const rows = await db.execute<{ project_id: string; ts: string; count: string; error_count: string }>(sql`
         SELECT
             project_id::text,
             to_timestamp(
                 floor(extract(epoch from timestamp) / ${bucketSecs}) * ${bucketSecs}
             )::timestamptz AS ts,
-            COUNT(*)::text AS count
+            COUNT(*)::text                                            AS count,
+            COUNT(*) FILTER (WHERE level IN ('error', 'fatal'))::text AS error_count
         FROM events
         WHERE project_id = ANY(ARRAY[${uuidArray(projectIds)}])
           AND timestamp >= ${toTs(from)}
@@ -252,5 +254,6 @@ export async function getOrgEventBuckets(
         projectId: r.project_id,
         ts: new Date(r.ts),
         count: Number(r.count),
+        errorCount: Number(r.error_count),
     }));
 }
