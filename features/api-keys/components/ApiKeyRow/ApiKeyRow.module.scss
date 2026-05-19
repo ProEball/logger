@@ -1,47 +1,154 @@
-.revoked {
+// ── Row ───────────────────────────────────────────────────────────────
+.row {
+    // Column widths (table-layout: fixed)
+    .colName { width: auto; }
+    .colKey  { width: 168px; }
+    .colLast { width: 92px; text-align: right; }
+    .colAct  { width: 76px; text-align: right; }
+
     td {
-        color: var(--text-muted);
+        padding: 10px 16px;
+        vertical-align: middle;
+        line-height: 1.4;
     }
+}
+
+// ── Name cell: status dot + name text ────────────────────────────────
+.nameCell {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+}
+
+.statusDot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    background: var(--green);
+    box-shadow: 0 0 6px var(--green);
+}
+
+.row.revoked .statusDot {
+    background: var(--red);
+    box-shadow: none;
+    opacity: 0.6;
 }
 
 .name {
-    font-size: var(--text-sm);
-    color: var(--text-primary);
-
-    .revoked & {
-        color: var(--text-muted);
-    }
+    color: var(--fg);
+    font-weight: var(--weight-medium);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
-.key {
-    width: 180px;
+.row.revoked .name {
+    color: var(--fg-3);
+}
+
+// ── Key cell: mono prefix + copy button ──────────────────────────────
+.keyCell {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
 }
 
 .keyMono {
     font-family: var(--font-mono);
-    font-size: var(--text-xs);
-    color: var(--text-secondary);
+    font-size: 12px;
+    color: var(--fg-3);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
-.lastUsed {
-    width: 120px;
-    font-size: var(--text-sm);
-    color: var(--text-secondary);
+.row.revoked .keyMono {
+    color: var(--fg-4);
 }
 
-.status {
-    width: 80px;
-}
+.copyBtn {
+    width: 20px;
+    height: 20px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 0;
+    background: transparent;
+    color: var(--fg-4);
+    border-radius: 3px;
+    cursor: pointer;
+    opacity: 0;
+    transition:
+        opacity var(--duration-fast) var(--ease-out),
+        color var(--duration-fast) var(--ease-out),
+        background var(--duration-fast) var(--ease-out);
 
-.actions {
-    width: 80px;
-    text-align: right;
-}
-
-.revokeBtn {
-    color: var(--status-error);
+    .row:hover & {
+        opacity: 1;
+    }
 
     &:hover {
-        background: color-mix(in srgb, var(--status-error) 8%, transparent);
+        color: var(--fg);
+        background: var(--bg-hover);
     }
+
+    &:focus-visible {
+        opacity: 1;
+        outline: 2px solid var(--border-focus);
+        outline-offset: 1px;
+    }
+}
+
+// ── Last used ─────────────────────────────────────────────────────────
+.lastUsed {
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    color: var(--fg-4);
+    font-variant-numeric: tabular-nums;
+}
+
+// ── Actions ───────────────────────────────────────────────────────────
+.revokeBtn {
+    height: 24px;
+    padding: 0 8px;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 3px;
+    font-size: 11.5px;
+    font-weight: var(--weight-medium);
+    font-family: inherit;
+    color: var(--red);
+    cursor: pointer;
+    opacity: 0;
+    transition:
+        opacity var(--duration-fast) var(--ease-out),
+        background var(--duration-fast) var(--ease-out),
+        border-color var(--duration-fast) var(--ease-out);
+
+    .row:hover & {
+        opacity: 1;
+    }
+
+    &:hover {
+        background: rgba(255, 85, 85, 0.10);
+        border-color: rgba(255, 85, 85, 0.35);
+    }
+
+    &:focus-visible {
+        opacity: 1;
+        outline: 2px solid var(--border-focus);
+        outline-offset: 1px;
+    }
+}
+
+.revokedLabel {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    color: var(--fg-4);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    font-weight: var(--weight-medium);
 }

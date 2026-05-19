@@ -1,15 +1,25 @@
+"use client";
+
+import {
+    ResponsiveContainer,
+    LineChart,
+    Line,
+    XAxis,
+    YAxis,
+    CartesianGrid,
+    Tooltip,
+} from "recharts";
 import type { OrgEventBucket } from "@/features/overview/services/overview.service";
 import styles from "./OrgVolumeChart.module.scss";
 
-const CHART_COLORS = [
-    "#3d8a5a",
-    "#5a9bb0",
-    "#8576b8",
-    "#b88758",
-    "#a85858",
-    "#6b9a8a",
-    "#7a7ab8",
-    "#a87a3d",
+const LINE_COLORS = [
+    "#bd93f9",
+    "#8be9fd",
+    "#50fa7b",
+    "#ffb86c",
+    "#ff79c6",
+    "#f1fa8c",
+    "#ff5555",
 ];
 
 interface Project {
@@ -22,103 +32,129 @@ interface OrgVolumeChartProps {
     projects: Project[];
 }
 
+function formatTick(value: unknown): string {
+    const d = new Date(value as string);
+    return d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+}
+
+interface TooltipPayloadItem {
+    color: string;
+    name: string;
+    value: number;
+}
+
+interface CustomTooltipProps {
+    active?: boolean;
+    label?: string;
+    payload?: TooltipPayloadItem[];
+}
+
+function CustomTooltip({ active, label, payload }: CustomTooltipProps) {
+    if (!active || !payload?.length) return null;
+    return (
+        <div className={styles.tooltip}>
+            <div className={styles.tooltipTime}>
+                {new Date(label ?? "").toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}
+            </div>
+            {payload.map((p) => (
+                <div key={p.name} className={styles.tooltipRow}>
+                    <span className={styles.tooltipDot} style={{ background: p.color }} />
+                    <span className={styles.tooltipName}>{p.name}</span>
+                    <span className={styles.tooltipValue}>{p.value.toFixed(1)}%</span>
+                </div>
+            ))}
+        </div>
+    );
+}
+
+type ChartPoint = Record<string, string | number>;
+
+function buildChartData(buckets: OrgEventBucket[], projects: Project[]): ChartPoint[] {
+    const tsSet = new Set(buckets.map((b) => b.ts.toISOString()));
+    const timestamps = [...tsSet].sort();
+
+    const dataMap = new Map<string, Map<string, { count: number; errorCount: number }>>();
+    for (const b of buckets) {
+        const key = b.ts.toISOString();
+        if (!dataMap.has(key)) dataMap.set(key, new Map());
+        dataMap.get(key)!.set(b.projectId, { count: b.count, errorCount: b.errorCount });
+    }
+
+    return timestamps.map((ts) => {
+        const slot = dataMap.get(ts);
+        const point: ChartPoint = { ts };
+        for (const proj of projects) {
+            const d = slot?.get(proj.id);
+            const ratio = d && d.count > 0 ? (d.errorCount / d.count) * 100 : 0;
+            point[proj.id] = parseFloat(ratio.toFixed(2));
+        }
+        return point;
+    });
+}
+
 export function OrgVolumeChart({ buckets, projects }: OrgVolumeChartProps) {
     if (buckets.length === 0) {
         return (
             <div className={styles.card}>
                 <div className={styles.cardHead}>
-                    <span className={styles.cardTitle}>Event volume</span>
+                    <span className={styles.cardTitle}>Error ratio</span>
+                    <span className={styles.meta}>% errors + fatals</span>
                 </div>
                 <div className={styles.empty}>No events in this range</div>
             </div>
         );
     }
 
-    const tsSet = new Set(buckets.map((b) => b.ts.toISOString()));
-    const timestamps = [...tsSet].sort();
-
-    const dataMap = new Map<string, Map<string, number>>();
-    for (const b of buckets) {
-        const key = b.ts.toISOString();
-        if (!dataMap.has(key)) dataMap.set(key, new Map());
-        dataMap.get(key)!.set(b.projectId, b.count);
-    }
-
-    const maxTotal = Math.max(
-        ...timestamps.map((ts) => {
-            const slot = dataMap.get(ts);
-            if (!slot) return 0;
-            return [...slot.values()].reduce((s, v) => s + v, 0);
-        }),
-        1,
-    );
-
-    const W = 800;
-    const H = 72;
-    const n = timestamps.length;
-    const step = n > 0 ? W / n : W;
-    const barW = Math.max(2, step * 0.82);
-    const barOffset = (step - barW) / 2;
-
-    const bars: React.ReactElement[] = [];
-    timestamps.forEach((ts, i) => {
-        const slot = dataMap.get(ts) ?? new Map<string, number>();
-        let currentY = H;
-        const x = i * step + barOffset;
-
-        projects.forEach((proj, pi) => {
-            const count = slot.get(proj.id) ?? 0;
-            if (count === 0) return;
-            const barH = (count / maxTotal) * H;
-            currentY -= barH;
-            bars.push(
-                <rect
-                    key={`${ts}-${proj.id}`}
-                    x={x.toFixed(2)}
-                    y={currentY.toFixed(2)}
-                    width={barW.toFixed(2)}
-                    height={barH.toFixed(2)}
-                    fill={CHART_COLORS[pi % CHART_COLORS.length]}
-                    opacity="0.78"
-                />,
-            );
-        });
-    });
+    const chartData = buildChartData(buckets, projects);
 
     return (
         <div className={styles.card}>
             <div className={styles.cardHead}>
-                <span className={styles.cardTitle}>Event volume</span>
-                <span className={styles.meta}>{timestamps.length} buckets</span>
+                <span className={styles.cardTitle}>Error ratio</span>
+                <span className={styles.meta}>% errors + fatals</span>
             </div>
             <div className={styles.chartWrap}>
-                <svg
-                    viewBox={`0 0 ${W} ${H}`}
-                    className={styles.chart}
-                    preserveAspectRatio="none"
-                    aria-hidden="true"
-                >
-                    {[0.25, 0.5, 0.75].map((f) => (
-                        <line
-                            key={f}
-                            x1={0}
-                            y1={(H * (1 - f)).toFixed(2)}
-                            x2={W}
-                            y2={(H * (1 - f)).toFixed(2)}
-                            stroke="var(--border-1)"
-                            strokeDasharray="3 4"
-                            strokeWidth="1"
+                <ResponsiveContainer width="100%" height={100}>
+                    <LineChart data={chartData} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
+                        <XAxis
+                            dataKey="ts"
+                            tickFormatter={formatTick}
+                            tick={{ fontSize: 10, fill: "#6e6e85" }}
+                            axisLine={false}
+                            tickLine={false}
+                            minTickGap={40}
                         />
-                    ))}
-                    {bars}
-                </svg>
+                        <YAxis
+                            tickFormatter={(v: number) => `${v}%`}
+                            tick={{ fontSize: 10, fill: "#6e6e85" }}
+                            axisLine={false}
+                            tickLine={false}
+                            width={36}
+                            domain={[0, 100]}
+                        />
+                        <Tooltip content={<CustomTooltip />} />
+                        {projects.map((proj, i) => (
+                            <Line
+                                key={proj.id}
+                                type="monotone"
+                                dataKey={proj.id}
+                                name={proj.name}
+                                stroke={LINE_COLORS[i % LINE_COLORS.length]}
+                                strokeWidth={1.5}
+                                dot={false}
+                                isAnimationActive={false}
+                            />
+                        ))}
+                    </LineChart>
+                </ResponsiveContainer>
             </div>
             <div className={styles.legend}>
                 {projects.map((proj, i) => (
                     <span key={proj.id} className={styles.legendItem}>
                         <span
                             className={styles.legendDot}
-                            style={{ background: CHART_COLORS[i % CHART_COLORS.length] }}
+                            style={{ background: LINE_COLORS[i % LINE_COLORS.length] }}
                         />
                         {proj.name}
                     </span>

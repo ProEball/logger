@@ -5,7 +5,6 @@ import { getProjectBySlug } from "@/features/projects/services/projects.service"
 import { listApiKeysForProject } from "@/features/api-keys/services/api-keys.service";
 import { hasPermission } from "@/shared/permissions/check";
 import { ApiKeysList } from "@/features/api-keys/components/ApiKeysList/ApiKeysList";
-import { ApiKeysPageHeader } from "@/features/api-keys/components/ApiKeysPageHeader/ApiKeysPageHeader";
 import styles from "./page.module.scss";
 
 interface ApiKeysPageProps {
@@ -32,11 +31,14 @@ export default async function ApiKeysPage({ params }: ApiKeysPageProps) {
 
     return (
         <div className={styles.page}>
-            <ApiKeysPageHeader
-                orgSlug={orgSlug}
-                projectSlug={projectSlug}
-                canManage={canManage}
-            />
+            <div className={styles.pageHead}>
+                <h2 className={styles.heading}>API keys</h2>
+                <p className={styles.lead}>
+                    Programmatic access to ingest events into{" "}
+                    <span className={styles.projectName}>{project.name}</span>.
+                    {" "}Keys are only shown once on creation — store them securely.
+                </p>
+            </div>
             <ApiKeysList
                 apiKeys={apiKeys}
                 orgSlug={orgSlug}

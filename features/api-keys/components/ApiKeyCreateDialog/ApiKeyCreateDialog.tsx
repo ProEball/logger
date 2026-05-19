@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useTransition, useEffect } from "react";
 import { Button, FormField, Input, Modal } from "@/shared/components";
 import { createApiKeyAction } from "@/features/api-keys/actions/create-api-key.action";
 import { ApiKeyCreatedDialog } from "../ApiKeyCreatedDialog/ApiKeyCreatedDialog";
@@ -40,51 +40,57 @@ export function ApiKeyCreateDialog({ open, onClose, orgSlug, projectSlug }: ApiK
         });
     };
 
+    useEffect(() => {
+        if (!open) {
+            setCreatedKey(null);
+            setName("");
+            setError(null);
+        }
+    }, [open]);
+
     const handleRevealClose = () => {
         setCreatedKey(null);
         setName("");
         onClose();
     };
 
-    if (createdKey) {
-        return (
-            <ApiKeyCreatedDialog
-                open
-                onClose={handleRevealClose}
-                plainKey={createdKey}
-            />
-        );
-    }
-
     return (
-        <Modal open={open} onClose={handleClose} title="Create API key" size="sm">
-            <form onSubmit={handleCreate} noValidate>
-                <div className={styles.body}>
-                    <FormField
-                        label="Key name"
-                        required
-                        helper="A label to identify this key in the list."
-                    >
-                        <Input
-                            value={name}
-                            onChange={(e) => { setName(e.target.value); setError(null); }}
-                            placeholder="Production server"
-                            disabled={isPending}
-                            maxLength={80}
-                            autoFocus
-                        />
-                    </FormField>
-                    {error ? <p className={styles.error} role="alert">{error}</p> : null}
-                </div>
-                <div className={styles.footer}>
-                    <Button type="button" variant="ghost" onClick={handleClose} disabled={isPending}>
-                        Cancel
-                    </Button>
-                    <Button type="submit" variant="primary" disabled={isPending || !name.trim()}>
-                        {isPending ? "Creating…" : "Create"}
-                    </Button>
-                </div>
-            </form>
-        </Modal>
+        <>
+            <Modal open={open && !createdKey} onClose={handleClose} title="Create API key" size="sm">
+                <form onSubmit={handleCreate} noValidate>
+                    <div className={styles.body}>
+                        <FormField
+                            label="Key name"
+                            required
+                            helper="A label to identify this key in the list."
+                        >
+                            <Input
+                                value={name}
+                                onChange={(e) => { setName(e.target.value); setError(null); }}
+                                placeholder="Production server"
+                                disabled={isPending}
+                                maxLength={80}
+                                autoFocus
+                            />
+                        </FormField>
+                        {error ? <p className={styles.error} role="alert">{error}</p> : null}
+                    </div>
+                    <div className={styles.footer}>
+                        <Button type="button" variant="ghost" onClick={handleClose} disabled={isPending}>
+                            Cancel
+                        </Button>
+                        <Button type="submit" variant="primary" disabled={isPending || !name.trim()}>
+                            {isPending ? "Creating…" : "Create"}
+                        </Button>
+                    </div>
+                </form>
+            </Modal>
+
+            <ApiKeyCreatedDialog
+                open={Boolean(createdKey)}
+                onClose={handleRevealClose}
+                plainKey={createdKey ?? ""}
+            />
+        </>
     );
 }
