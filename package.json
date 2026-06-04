@@ -12,7 +12,8 @@
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
     "test": "vitest run",
-    "test:e2e": "playwright test --pass-with-no-tests"
+    "test:e2e": "playwright test --pass-with-no-tests",
+    "demo": "node scripts/demo-live.mjs"
   },
   "dependencies": {
     "@floating-ui/react": "^0.27.19",
