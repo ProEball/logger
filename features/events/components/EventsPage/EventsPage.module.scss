@@ -1,7 +1,7 @@
 .page {
     display: flex;
     flex-direction: column;
-    height: 100%;
+    height: calc(100vh - var(--topbar-height));
     overflow: hidden;
 }
 

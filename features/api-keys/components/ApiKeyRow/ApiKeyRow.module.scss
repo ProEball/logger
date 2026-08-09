@@ -1,10 +1,11 @@
 // ── Row ───────────────────────────────────────────────────────────────
 .row {
     // Column widths (table-layout: fixed)
-    .colName { width: auto; }
-    .colKey  { width: 168px; }
-    .colLast { width: 92px; text-align: right; }
-    .colAct  { width: 76px; text-align: right; }
+    .colName      { width: auto; }
+    .colKey       { width: 168px; }
+    .colRateLimit { width: 120px; }
+    .colLast      { width: 92px; text-align: right; }
+    .colAct       { width: 116px; text-align: right; }
 
     td {
         padding: 10px 16px;
@@ -48,14 +49,7 @@
     color: var(--fg-3);
 }
 
-// ── Key cell: mono prefix + copy button ──────────────────────────────
-.keyCell {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    min-width: 0;
-}
-
+// ── Key cell: masked prefix ────────────────────────────────────────────
 .keyMono {
     font-family: var(--font-mono);
     font-size: 12px;
@@ -69,7 +63,26 @@
     color: var(--fg-4);
 }
 
-.copyBtn {
+// ── Rate limit cell: value + edit button ───────────────────────────────
+.rateLimitCell {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+}
+
+.rateLimitValue {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--fg-3);
+    font-variant-numeric: tabular-nums;
+}
+
+.row.revoked .rateLimitValue {
+    color: var(--fg-4);
+}
+
+.editRateLimitBtn {
     width: 20px;
     height: 20px;
     display: inline-flex;
@@ -151,4 +164,45 @@
     letter-spacing: 0.04em;
     text-transform: uppercase;
     font-weight: var(--weight-medium);
+}
+
+.revokedActions {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.deleteBtn {
+    height: 24px;
+    padding: 0 8px;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 3px;
+    font-size: 11.5px;
+    font-weight: var(--weight-medium);
+    font-family: inherit;
+    color: var(--fg-3);
+    cursor: pointer;
+    opacity: 0;
+    transition:
+        opacity var(--duration-fast) var(--ease-out),
+        background var(--duration-fast) var(--ease-out),
+        border-color var(--duration-fast) var(--ease-out),
+        color var(--duration-fast) var(--ease-out);
+
+    .row:hover & {
+        opacity: 1;
+    }
+
+    &:hover {
+        color: var(--red);
+        background: rgba(255, 85, 85, 0.10);
+        border-color: rgba(255, 85, 85, 0.35);
+    }
+
+    &:focus-visible {
+        opacity: 1;
+        outline: 2px solid var(--border-focus);
+        outline-offset: 1px;
+    }
 }

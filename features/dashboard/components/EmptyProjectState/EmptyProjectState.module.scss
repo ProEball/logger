@@ -27,17 +27,48 @@
     max-width: 440px;
 }
 
-.example {
+.steps {
     width: 100%;
     text-align: left;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-6);
+}
+
+.step {
     display: flex;
     flex-direction: column;
     gap: var(--space-2);
 }
 
-.exampleLabel {
+.stepLabel {
     font-size: var(--text-sm);
-    font-weight: var(--weight-medium);
+    font-weight: var(--weight-semibold);
     color: var(--text-primary);
     margin: 0;
+}
+
+.stepBody {
+    font-size: var(--text-sm);
+    color: var(--text-secondary);
+    margin: 0;
+}
+
+.ctaLink {
+    align-self: flex-start;
+    display: inline-flex;
+    align-items: center;
+    height: 30px;
+    padding: 0 var(--space-3);
+    background: var(--purple);
+    border-radius: var(--radius-sm);
+    color: var(--on-accent);
+    font-size: 12.5px;
+    font-weight: var(--weight-semibold);
+    text-decoration: none;
+    transition: background-color var(--duration-fast) var(--ease-out);
+
+    &:hover {
+        background: #c9a4fa;
+    }
 }

@@ -2,9 +2,17 @@
 
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { Button } from '@/shared/components/Button/Button';
 import { revokeSessionAction } from '@/features/auth/actions/revoke-session.action';
 import styles from './SessionsList.module.scss';
+
+function IconMonitor() {
+    return (
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <rect x="2" y="3" width="20" height="14" rx="2" />
+            <path d="M8 21h8M12 17v4" />
+        </svg>
+    );
+}
 
 export interface SessionItem {
     id: string;
@@ -76,27 +84,32 @@ export function SessionsList({ sessions, currentToken }: SessionsListProps) {
                         return (
                             <tr key={s.id} className={isCurrent ? styles.currentRow : undefined}>
                                 <td>
-                                    <span className={styles.device}>{shortUA(s.userAgent)}</span>
-                                    {isCurrent ? (
-                                        <span className={styles.currentBadge}>This session</span>
-                                    ) : null}
-                                    {errors[s.token] ? (
-                                        <span className={styles.rowError}>{errors[s.token]}</span>
-                                    ) : null}
+                                    <div className={styles.deviceCell}>
+                                        <span className={styles.deviceIcon}><IconMonitor /></span>
+                                        <div>
+                                            <span className={styles.device}>{shortUA(s.userAgent)}</span>
+                                            {isCurrent ? (
+                                                <span className={styles.currentBadge}>This session</span>
+                                            ) : null}
+                                            {errors[s.token] ? (
+                                                <span className={styles.rowError}>{errors[s.token]}</span>
+                                            ) : null}
+                                        </div>
+                                    </div>
                                 </td>
-                                <td className={styles.muted}>{s.ipAddress ?? '—'}</td>
-                                <td className={styles.muted}>{formatDate(s.createdAt)}</td>
-                                <td className={styles.muted}>{formatDate(s.expiresAt)}</td>
+                                <td className={styles.ipCell}>{s.ipAddress ?? '—'}</td>
+                                <td className={styles.dateCell}>{formatDate(s.createdAt)}</td>
+                                <td className={styles.dateCell}>{formatDate(s.expiresAt)}</td>
                                 <td className={styles.actionsCell}>
                                     {!isCurrent ? (
-                                        <Button
-                                            variant="ghost"
-                                            size="sm"
+                                        <button
+                                            type="button"
+                                            className={styles.revokeBtn}
                                             onClick={() => handleRevoke(s.token)}
                                             disabled={isRevoking}
                                         >
                                             {isRevoking ? 'Revoking…' : 'Revoke'}
-                                        </Button>
+                                        </button>
                                     ) : null}
                                 </td>
                             </tr>

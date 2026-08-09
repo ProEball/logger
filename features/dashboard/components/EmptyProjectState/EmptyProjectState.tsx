@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { CodeBlock } from "@/shared/components";
 import { t } from "@/core/i18n/t";
 import styles from "./EmptyProjectState.module.scss";
@@ -5,19 +6,26 @@ import styles from "./EmptyProjectState.module.scss";
 interface EmptyProjectStateProps {
     /** Project name shown in the heading. */
     projectName: string;
+    orgSlug: string;
+    projectSlug: string;
     /**
      * API key prefix (e.g. "lgr_abc1") used in the curl example.
-     * If not provided, a placeholder is shown instead.
+     * If not provided, step 1 prompts the user to create a key instead.
      */
     apiKeyPrefix?: string;
 }
 
-export function EmptyProjectState({ projectName, apiKeyPrefix }: EmptyProjectStateProps) {
-    const keyPlaceholder = apiKeyPrefix ? `lgr_${apiKeyPrefix}...` : "<your-api-key>";
+export function EmptyProjectState({ projectName, orgSlug, projectSlug, apiKeyPrefix }: EmptyProjectStateProps) {
+    const hasKey = Boolean(apiKeyPrefix);
+    const keyPlaceholder = hasKey ? `lgr_${apiKeyPrefix}...` : "<your-api-key>";
     const curlExample = `curl -X POST https://your-logger.example.com/api/ingest \\
   -H "Authorization: Bearer ${keyPlaceholder}" \\
   -H "Content-Type: application/json" \\
   -d '{"level":"info","message":"Hello, Logger!"}'`;
+    const apiKeysHref = `/${orgSlug}/${projectSlug}/settings/api-keys`;
+    const step1Body = hasKey
+        ? t("dashboard.emptyProjectStep1BodyHasKey").replace("{{prefix}}", `lgr_${apiKeyPrefix}...`)
+        : t("dashboard.emptyProjectStep1BodyNoKey");
 
     return (
         <div className={styles.root}>
@@ -28,9 +36,20 @@ export function EmptyProjectState({ projectName, apiKeyPrefix }: EmptyProjectSta
             </div>
             <h2 className={styles.heading}>{projectName}</h2>
             <p className={styles.body}>{t("dashboard.emptyProject")}</p>
-            <div className={styles.example}>
-                <p className={styles.exampleLabel}>{t("dashboard.emptyProjectCta")}</p>
-                <CodeBlock language="bash" code={curlExample} />
+
+            <div className={styles.steps}>
+                <div className={styles.step}>
+                    <p className={styles.stepLabel}>{t("dashboard.emptyProjectStep1Title")}</p>
+                    <p className={styles.stepBody}>{step1Body}</p>
+                    <Link href={apiKeysHref} className={styles.ctaLink}>
+                        {hasKey ? t("dashboard.emptyProjectManageKeys") : t("dashboard.emptyProjectCreateKey")}
+                    </Link>
+                </div>
+
+                <div className={styles.step}>
+                    <p className={styles.stepLabel}>{t("dashboard.emptyProjectStep2Title")}</p>
+                    <CodeBlock language="bash" code={curlExample} />
+                </div>
             </div>
         </div>
     );

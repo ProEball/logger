@@ -1,27 +1,30 @@
 .wrap {
     overflow-x: auto;
-    border: 1px solid var(--border-subtle);
-    border-radius: 8px;
+    border: 1px solid var(--border-1);
+    border-radius: var(--radius-md);
 }
 
 .table {
     width: 100%;
     border-collapse: collapse;
-    font: var(--type-body-sm);
+    font-size: 13px;
 
     th {
         padding: var(--space-3) var(--space-4);
         text-align: left;
-        font: var(--type-label-sm);
-        color: var(--text-secondary);
-        border-bottom: 1px solid var(--border-subtle);
+        font-size: 11px;
+        font-weight: var(--weight-semibold);
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: var(--fg-4);
+        border-bottom: 1px solid var(--border-1);
         background: var(--bg-base);
     }
 
     td {
         padding: var(--space-3) var(--space-4);
-        color: var(--text-primary);
-        border-bottom: 1px solid var(--border-subtle);
+        color: var(--fg);
+        border-bottom: 1px solid var(--border-1);
         vertical-align: middle;
     }
 
@@ -31,36 +34,87 @@
 }
 
 .currentRow td {
-    background: color-mix(in srgb, var(--accent-primary) 4%, transparent);
+    background: var(--purple-soft);
+}
+
+.deviceCell {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.deviceIcon {
+    width: 30px;
+    height: 30px;
+    border-radius: var(--radius-md);
+    background: var(--bg-raised);
+    color: var(--fg-3);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
 }
 
 .device {
     display: block;
-    font-weight: 500;
+    font-weight: var(--weight-medium);
 }
 
 .currentBadge {
-    display: inline-block;
-    font: var(--type-label-sm);
-    color: var(--accent-primary);
-    background: color-mix(in srgb, var(--accent-primary) 12%, transparent);
-    border-radius: 4px;
-    padding: 1px var(--space-2);
-    margin-top: var(--space-1);
+    display: block;
+    font-size: 11px;
+    color: var(--purple);
+    margin-top: 2px;
 }
 
 .rowError {
     display: block;
-    font: var(--type-body-sm);
-    color: var(--status-error);
+    font-size: 12.5px;
+    color: var(--red);
     margin-top: var(--space-1);
 }
 
-.muted {
-    color: var(--text-secondary);
+.ipCell {
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    color: var(--fg-2);
+}
+
+.dateCell {
+    color: var(--fg-2);
 }
 
 .actionsCell {
     text-align: right;
     white-space: nowrap;
+}
+
+.revokeBtn {
+    height: 28px;
+    padding: 0 10px;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    font-size: 12px;
+    font-weight: var(--weight-medium);
+    font-family: inherit;
+    color: var(--fg-3);
+    cursor: pointer;
+    transition: var(--transition-colors);
+
+    &:hover:not(:disabled) {
+        background: var(--red-soft);
+        color: var(--red);
+        border-color: rgba(255, 85, 85, 0.35);
+    }
+
+    &:disabled {
+        cursor: not-allowed;
+        opacity: 0.6;
+    }
+
+    &:focus-visible {
+        outline: none;
+        box-shadow: 0 0 0 2px var(--purple-soft);
+    }
 }

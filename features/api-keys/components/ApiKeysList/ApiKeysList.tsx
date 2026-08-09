@@ -52,6 +52,7 @@ export function ApiKeysList({ apiKeys, orgSlug, projectSlug, canManage }: ApiKey
                             <tr>
                                 <th>Name</th>
                                 <th>Key</th>
+                                <th>Rate limit</th>
                                 <th>Last used</th>
                                 <th>Actions</th>
                             </tr>

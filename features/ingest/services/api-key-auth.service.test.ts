@@ -53,6 +53,7 @@ describe("authenticateRequest", () => {
                 projectId: "proj-id",
                 name: "test",
                 keyPrefix: "abcd",
+                rateLimitPerMin: 1000,
                 lastUsedAt: null,
                 revokedAt: null,
                 createdBy: null,
@@ -64,5 +65,6 @@ describe("authenticateRequest", () => {
         expect(result.apiKeyId).toBe("key-id");
         expect(result.projectId).toBe("proj-id");
         expect(result.organizationId).toBe("org-id");
+        expect(result.rateLimitPerMin).toBe(1000);
     });
 });

@@ -24,9 +24,10 @@ export class RollingWindowLimiter {
         this.limitPerMin = limitPerMin;
     }
 
-    take(apiKeyId: string, count = 1): RateLimitResult {
+    take(apiKeyId: string, count = 1, limitOverride?: number): RateLimitResult {
         this.ensureCleanupStarted();
 
+        const limit = limitOverride ?? this.limitPerMin;
         const now = Date.now();
         const entry = this.store.get(apiKeyId);
 
@@ -35,7 +36,7 @@ export class RollingWindowLimiter {
             return { allowed: true, retryAfterSeconds: 0 };
         }
 
-        if (entry.count + count > this.limitPerMin) {
+        if (entry.count + count > limit) {
             const retryAfterSeconds = Math.ceil((WINDOW_MS - (now - entry.windowStart)) / 1000);
             return { allowed: false, retryAfterSeconds };
         }

@@ -4,7 +4,7 @@
 - [x] Done
 - Started: 2026-05-05
 - Completed: 2026-05-05
-- Last touched: 2026-05-05
+- Last touched: 2026-08-09 (post-MVP: per-key rate limit, delete revoked keys)
 - Progress: 41 / 41 checklist items
 
 ## Goal
@@ -51,6 +51,7 @@ api_keys
   name            text                                       -- "Production server", "CI"
   key_hash        text                                       -- sha256 hex (64 chars)
   key_prefix      text                                       -- first 4 chars after lgr_, e.g. "aBcD"
+  rate_limit_per_min integer default 1000 not null           -- per-key override, enforced by feature 03's RollingWindowLimiter
   last_used_at    timestamptz                                -- updated by ingest endpoint
   created_at      timestamptz
   revoked_at      timestamptz                                -- null = active
@@ -74,13 +75,14 @@ Implications across features:
 
 - `0005_projects.sql` — projects table
 - `0006_api_keys.sql` — api_keys table
+- `0005_past_maria_hill.sql` (2026-08-09) — adds `api_keys.rate_limit_per_min integer default 1000 not null`
 
 ## Server-side artifacts
 
 ### Services
 - `features/projects/services/projects.service.ts` — CRUD; all reads filter `deleted_at IS NULL` by default
 - `features/projects/utils/slugify.ts` — name → slug + uniqueness retry helper (`my-api-server`, `my-api-server-2` if collision)
-- `features/api-keys/services/api-keys.service.ts` — generate, hash, lookup-by-hash, revoke
+- `features/api-keys/services/api-keys.service.ts` — generate, hash, lookup-by-hash, revoke, `updateApiKeyRateLimit(id, rateLimitPerMin)`, `deleteApiKey(id)` (hard delete, guarded by `WHERE revoked_at IS NOT NULL`)
 - `features/api-keys/utils/key-generator.ts` — `crypto.randomBytes(32)` → base64url with `lgr_` prefix
 - `features/api-keys/utils/key-hash.ts` — SHA-256 hex helper
 
@@ -92,8 +94,10 @@ features/projects/actions/
   delete-project.action.ts        — assertPermission('projects.delete'), soft delete
 
 features/api-keys/actions/
-  create-api-key.action.ts        — assertPermission('api_keys.manage'), returns plain key ONCE
+  create-api-key.action.ts        — assertPermission('api_keys.manage'), returns plain key ONCE, takes rateLimitPerMin (1–100,000)
   revoke-api-key.action.ts        — assertPermission('api_keys.manage'), sets revoked_at
+  update-api-key-rate-limit.action.ts — assertPermission('api_keys.manage'), Zod-validated 1–100,000/min
+  delete-api-key.action.ts        — assertPermission('api_keys.manage'), hard delete — service layer only deletes rows where revoked_at IS NOT NULL, so an active key can't be deleted without revoking first
 ```
 
 ## Client-side artifacts
@@ -109,11 +113,13 @@ features/projects/components/
     SlugInput.tsx                 — input with auto-fill from name + manual override
 
 features/api-keys/components/
-  ApiKeysList.tsx                 — table: name, prefix, last_used, status, actions
-  ApiKeyRow.tsx
-  ApiKeyCreateDialog.tsx          — form: name only
+  ApiKeysList.tsx                 — table: name, prefix, rate limit, last_used, status, actions
+  ApiKeyRow.tsx                   — masked prefix has no copy affordance (nothing valid to copy — key_hash is one-way); rate limit cell has an inline edit button
+  ApiKeyCreateDialog.tsx          — form: name + rate limit (1–100,000/min, default 1000)
   ApiKeyCreatedDialog.tsx         — shows plain key with copy + "I saved it" confirm
   ApiKeyRevokeDialog.tsx          — confirm
+  ApiKeyRateLimitDialog.tsx       — edit an existing key's rate limit (2026-08-09)
+  ApiKeyDeleteDialog.tsx          — confirm permanent delete; only reachable on already-revoked keys (2026-08-09)
 ```
 
 ### Hooks
@@ -189,10 +195,11 @@ features/api-keys/components/
 - [x] 25. `create-api-key.action.ts` (Zod: name required). Returns plain key ONLY in this response — never stored anywhere else.
 - [x] 26. `revoke-api-key.action.ts`.
 - [x] 27. `app/[org]/[project]/settings/api-keys/page.tsx` (server component) — `ApiKeysList`.
-- [x] 28. `ApiKeyRow`: shows name, `lgr_<prefix>...` masked display, last_used relative time, status badge, revoke button.
+- [x] 28. `ApiKeyRow`: shows name, `lgr_<prefix>...` masked display, rate limit (with edit button, 2026-08-09), last_used relative time, status badge, revoke button.
 - [x] 29. `ApiKeyCreateDialog`: form with name. On submit → calls action → result triggers `ApiKeyCreatedDialog`.
 - [x] 30. `ApiKeyCreatedDialog`: full plain key with monospace + Copy button + "I've saved it" confirm checkbox enabling Close. Cannot dismiss without checkbox.
 - [x] 31. `ApiKeyRevokeDialog`: confirm action.
+- [x] 31b. `ApiKeyDeleteDialog` (2026-08-09): permanent delete, gated to revoked keys only — "Delete" only renders in `ApiKeyRow`'s actions column once `revoked_at` is set.
 - [x] 32. Live check: create key → see plain value once → close → see only `lgr_aBcD...` masked → revoke → confirmed revoked status.
 
 ### Empty states + permissions
@@ -241,3 +248,6 @@ None outstanding for this feature.
 | 2026-05-01 | Soft-deleted projects: events stay until partition drop, no archive UI | Simplest contract; 30-day retention naturally garbage-collects them; restore feature deferred |
 | 2026-05-01 | FK cascades: `projects → organizations CASCADE`, `api_keys → projects CASCADE`, `api_keys.created_by → users SET NULL` | Org delete should wipe its projects/keys; key audit trail survives user deletion |
 | 2026-05-01 | Slug uniqueness via DB constraint + retry on `23505`, no pre-check | Pre-check is racy; the partial UNIQUE INDEX is the only correct source of truth |
+| 2026-08-09 | `ApiKeyRow`'s masked-key "copy" button removed; no per-key full-key retrieval added | Only `key_hash` is stored (one-way), so both the old copy button and a user request to "copy full key" would either copy garbage or require storing keys in reversible form — a credential-leak risk on any DB read. The show-once flow at creation (`ApiKeyCreatedDialog`) remains the only place to copy the real key |
+| 2026-08-09 | Added `api_keys.rate_limit_per_min` (default 1000), editable at creation and after via `ApiKeyRateLimitDialog` | Feature 03's rate limiter was previously a single global default (`RATE_LIMIT_PER_MIN` env var) applied to every key; per-key limits let different integrations (e.g. a low-volume CI key vs. a production ingest key) be tuned independently |
+| 2026-08-09 | Added hard delete for revoked keys (`deleteApiKey`), but not for active ones | Revoking already makes a key inert (ingest auth filters `revoked_at IS NULL`), so a revoked row has no runtime effect — deleting it is safe. Deleting an *active* key was intentionally left out: revoke is the reversible-by-policy stop switch (audit trail + explicit two-step to actually erase), so the delete action and the service-layer guard both require `revoked_at IS NOT NULL` |

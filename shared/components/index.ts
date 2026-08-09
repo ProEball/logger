@@ -63,8 +63,6 @@ export type { LogRowProps, LogRowVariant } from './LogRow/LogRow';
 
 export { Modal } from './Modal/Modal';
 
-export { OrgRail } from './OrgRail/OrgRail';
-export type { OrgRailOrg, OrgRailProps } from './OrgRail/OrgRail';
 export type { ModalProps, ModalSize } from './Modal/Modal';
 
 export { Popover } from './Popover/Popover';

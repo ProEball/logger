@@ -8,6 +8,7 @@ import { logger } from "@/core/logger";
 
 export const auth = betterAuth({
     secret: env.AUTH_SECRET,
+    baseURL: env.APP_URL,
 
     database: drizzleAdapter(db, {
         provider: "pg",

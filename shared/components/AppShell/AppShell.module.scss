@@ -1,14 +1,10 @@
 .shell {
     display: grid;
-    grid-template-columns: var(--rail-width) var(--sidebar-width) 1fr;
+    grid-template-columns: var(--sidebar-width) 1fr;
     height: 100vh;
     overflow: hidden;
     background: var(--bg-base);
     color: var(--fg);
-}
-
-.rail {
-    height: 100vh;
 }
 
 .sidebarCol {

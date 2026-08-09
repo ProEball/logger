@@ -4,7 +4,7 @@
 - [x] Done
 - Started: 2026-05-08
 - Completed: 2026-05-08
-- Last touched: 2026-05-08
+- Last touched: 2026-08-09 (post-MVP: per-key rate limit override)
 - Progress: 36 / 36 checklist items
 
 ## Goal
@@ -108,7 +108,7 @@ WHERE parent_table = 'public.events';
 
 ### Auth and limits
 - `features/ingest/services/api-key-auth.service.ts` — extracts `Authorization: Bearer <key>`, validates via `api-keys.service.ts` (feature 02), returns active project + key
-- `features/ingest/services/rate-limit.service.ts` — in-memory Map<apiKeyId, { count, windowStart }>. 1000 / 60s. Returns `{ allowed, retryAfter }`.
+- `features/ingest/services/rate-limit.service.ts` — in-memory Map<apiKeyId, { count, windowStart }>. Default 1000/60s (`RATE_LIMIT_PER_MIN` env var), overridable per-request via `take(apiKeyId, count, limitOverride)`. Both ingest routes pass `auth.rateLimitPerMin` (feature 02's `api_keys.rate_limit_per_min`, set at key creation / edited later) so each API key can have its own limit. Returns `{ allowed, retryAfter }`.
 - Updates `api_keys.last_used_at` (debounced — write only every 60s per key, in-memory tracking)
 
 ### Ingest service
@@ -180,8 +180,8 @@ OPTIONS /api/ingest/batch       — CORS preflight (204)
 - [x] 17. Unit test.
 
 ### Rate limiter
-- [x] 18. `rate-limit.service.ts`: `RollingWindowLimiter` class with `take(apiKeyId, count = 1)` returning `{ allowed, retryAfterSeconds }`. Module-level singleton instance. Cleanup interval (`setInterval` every 5 min purging stale Map entries) is started lazily on first `take()` call — NOT at module import time, so test runs / build steps don't leak timers.
-- [x] 19. Configurable: `RATE_LIMIT_PER_MIN` env var, default 1000.
+- [x] 18. `rate-limit.service.ts`: `RollingWindowLimiter` class with `take(apiKeyId, count = 1, limitOverride?)` returning `{ allowed, retryAfterSeconds }`. `limitOverride` (added 2026-08-09) lets callers pass a per-key limit; falls back to the instance default when omitted, so existing call sites and tests are unaffected. Module-level singleton instance. Cleanup interval (`setInterval` every 5 min purging stale Map entries) is started lazily on first `take()` call — NOT at module import time, so test runs / build steps don't leak timers.
+- [x] 19. Configurable: `RATE_LIMIT_PER_MIN` env var, default 1000 — now only the fallback when a key has no override; per-key limit lives in `api_keys.rate_limit_per_min` (feature 02).
 - [x] 20. Unit test: 1000 single requests pass; 1001st fails; after 60s window resets. Cleanup timer is lazy (asserted by spying on `setInterval`).
 - [x] 21. Note in code AND in this doc: NOT multi-instance safe. Multi-replica deployment requires Redis-backed limiter (see feature 08 open questions).
 
@@ -277,3 +277,4 @@ Using API key from feature 02 live check:
 | 2026-05-01 | Worker dev mode behind `WORKER_IN_PROCESS=true` | Explicit opt-in prevents two `next dev` instances from both running schedules |
 | 2026-05-08 | pg_partman installs into `public` schema (not `partman`) | `apt install postgresql-16-partman` uses public schema; all references updated to `public.part_config`, `public.create_parent` |
 | 2026-05-08 | `p_interval := '1 day'` not `'daily'` | pg_partman 5.x dropped legacy interval aliases; must use standard interval strings |
+| 2026-08-09 | `RollingWindowLimiter.take()` gained an optional 3rd `limitOverride` param instead of a per-key constructor/map | Keeps the module-level singleton and existing test signatures (`take(id)`, `take(id, count)`) working unchanged; the limit now travels with each request via `auth.rateLimitPerMin` instead of being baked into the limiter instance |

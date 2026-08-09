@@ -11,6 +11,26 @@ export async function getOrgBySlug(slug: string): Promise<typeof organizations.$
     return org ?? null;
 }
 
+export async function getFirstOrgForUser(userId: string): Promise<typeof organizations.$inferSelect | null> {
+    const [row] = await db
+        .select({
+            id: organizations.id,
+            name: organizations.name,
+            slug: organizations.slug,
+            plan: organizations.plan,
+            limits: organizations.limits,
+            allowSignup: organizations.allowSignup,
+            createdAt: organizations.createdAt,
+            updatedAt: organizations.updatedAt,
+        })
+        .from(organizationMembers)
+        .innerJoin(organizations, eq(organizationMembers.organizationId, organizations.id))
+        .where(eq(organizationMembers.userId, userId))
+        .orderBy(organizationMembers.joinedAt)
+        .limit(1);
+    return row ?? null;
+}
+
 export async function getMembership(userId: string, organizationId: string) {
     const [row] = await db
         .select({
@@ -84,25 +104,4 @@ export async function getPendingInvitations(organizationId: string): Promise<Pen
                 isNull(invitations.acceptedAt),
             ),
         );
-}
-
-export type OrgSummary = {
-    id: string;
-    name: string;
-    slug: string;
-};
-
-export async function getUserOrgs(userId: string): Promise<OrgSummary[]> {
-    return db
-        .select({
-            id: organizations.id,
-            name: organizations.name,
-            slug: organizations.slug,
-        })
-        .from(organizationMembers)
-        .innerJoin(
-            organizations,
-            eq(organizationMembers.organizationId, organizations.id),
-        )
-        .where(eq(organizationMembers.userId, userId));
 }

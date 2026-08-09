@@ -46,6 +46,7 @@ export const apiKeys = pgTable(
         name: text("name").notNull(),
         keyHash: text("key_hash").notNull().unique(),
         keyPrefix: text("key_prefix").notNull(),
+        rateLimitPerMin: integer("rate_limit_per_min").notNull().default(1000),
         lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
         revokedAt: timestamp("revoked_at", { withTimezone: true }),
         createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),

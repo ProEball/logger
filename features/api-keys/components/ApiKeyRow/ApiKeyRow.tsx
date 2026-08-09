@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import { ApiKeyRevokeDialog } from "../ApiKeyRevokeDialog/ApiKeyRevokeDialog";
+import { ApiKeyRateLimitDialog } from "../ApiKeyRateLimitDialog/ApiKeyRateLimitDialog";
+import { ApiKeyDeleteDialog } from "../ApiKeyDeleteDialog/ApiKeyDeleteDialog";
 import type { ApiKey } from "@/features/api-keys/services/api-keys.service";
 import styles from "./ApiKeyRow.module.scss";
 
@@ -14,17 +16,12 @@ interface ApiKeyRowProps {
 
 export function ApiKeyRow({ apiKey, orgSlug, projectSlug, canManage }: ApiKeyRowProps) {
     const [showRevoke, setShowRevoke] = useState(false);
-    const [copied, setCopied] = useState(false);
+    const [showRateLimit, setShowRateLimit] = useState(false);
+    const [showDelete, setShowDelete] = useState(false);
 
     const isRevoked = apiKey.revokedAt !== null;
     const maskedKey = `lgr_${apiKey.keyPrefix}…`;
     const lastUsed = apiKey.lastUsedAt ? formatRelative(new Date(apiKey.lastUsedAt)) : "Never";
-
-    const handleCopy = async () => {
-        await navigator.clipboard.writeText(maskedKey);
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
-    };
 
     return (
         <>
@@ -37,28 +34,28 @@ export function ApiKeyRow({ apiKey, orgSlug, projectSlug, canManage }: ApiKeyRow
                 </td>
 
                 <td className={styles.colKey}>
-                    <span className={styles.keyCell}>
-                        <span title="Full key cannot be retrieved." className={styles.keyMono}>
-                            {maskedKey}
-                        </span>
-                        <button
-                            type="button"
-                            className={styles.copyBtn}
-                            onClick={handleCopy}
-                            aria-label={copied ? "Copied!" : "Copy to clipboard"}
-                            title={copied ? "Copied!" : "Copy to clipboard"}
-                        >
-                            {copied ? (
+                    <span title="Full key cannot be retrieved." className={styles.keyMono}>
+                        {maskedKey}
+                    </span>
+                </td>
+
+                <td className={styles.colRateLimit}>
+                    <span className={styles.rateLimitCell}>
+                        <span className={styles.rateLimitValue}>{apiKey.rateLimitPerMin}/min</span>
+                        {!isRevoked && canManage ? (
+                            <button
+                                type="button"
+                                className={styles.editRateLimitBtn}
+                                onClick={() => setShowRateLimit(true)}
+                                aria-label="Edit rate limit"
+                                title="Edit rate limit"
+                            >
                                 <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                                    <polyline points="20 6 9 17 4 12" />
+                                    <path d="M12 20h9" />
+                                    <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
                                 </svg>
-                            ) : (
-                                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
-                                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-                                </svg>
-                            )}
-                        </button>
+                            </button>
+                        ) : null}
                     </span>
                 </td>
 
@@ -68,7 +65,18 @@ export function ApiKeyRow({ apiKey, orgSlug, projectSlug, canManage }: ApiKeyRow
 
                 <td className={styles.colAct}>
                     {isRevoked ? (
-                        <span className={styles.revokedLabel}>revoked</span>
+                        <span className={styles.revokedActions}>
+                            <span className={styles.revokedLabel}>revoked</span>
+                            {canManage ? (
+                                <button
+                                    type="button"
+                                    className={styles.deleteBtn}
+                                    onClick={() => setShowDelete(true)}
+                                >
+                                    Delete
+                                </button>
+                            ) : null}
+                        </span>
                     ) : canManage ? (
                         <button
                             type="button"
@@ -84,6 +92,26 @@ export function ApiKeyRow({ apiKey, orgSlug, projectSlug, canManage }: ApiKeyRow
             <ApiKeyRevokeDialog
                 open={showRevoke}
                 onClose={() => setShowRevoke(false)}
+                keyId={apiKey.id}
+                keyName={apiKey.name}
+                keyPrefix={apiKey.keyPrefix}
+                orgSlug={orgSlug}
+                projectSlug={projectSlug}
+            />
+
+            <ApiKeyRateLimitDialog
+                open={showRateLimit}
+                onClose={() => setShowRateLimit(false)}
+                keyId={apiKey.id}
+                keyName={apiKey.name}
+                currentRateLimitPerMin={apiKey.rateLimitPerMin}
+                orgSlug={orgSlug}
+                projectSlug={projectSlug}
+            />
+
+            <ApiKeyDeleteDialog
+                open={showDelete}
+                onClose={() => setShowDelete(false)}
                 keyId={apiKey.id}
                 keyName={apiKey.name}
                 keyPrefix={apiKey.keyPrefix}

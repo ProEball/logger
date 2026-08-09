@@ -41,7 +41,7 @@ export async function POST(req: Request): Promise<NextResponse> {
     }
 
     // Rate limit
-    const rl = rateLimiter.take(auth.apiKeyId);
+    const rl = rateLimiter.take(auth.apiKeyId, 1, auth.rateLimitPerMin);
     if (!rl.allowed) {
         return NextResponse.json(
             { error: "Rate limit exceeded." },

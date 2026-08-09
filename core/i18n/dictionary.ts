@@ -93,8 +93,13 @@ export const dictionary = {
     dashboard: {
         title: "Dashboard",
         empty: "No data for this time range.",
-        emptyProject: "No events yet. Send your first event to see your dashboard come alive.",
-        emptyProjectCta: "Send your first event",
+        emptyProject: "No events yet. Follow the two steps below to see your dashboard come alive.",
+        emptyProjectStep1Title: "1. Get an API key",
+        emptyProjectStep1BodyNoKey: "You'll need an API key to authenticate requests from your app.",
+        emptyProjectStep1BodyHasKey: "Your key ({{prefix}}) is ready to use below. Full key values are shown only once, right after creation — if you've lost it, create a new one.",
+        emptyProjectCreateKey: "Create API key",
+        emptyProjectManageKeys: "Manage API keys",
+        emptyProjectStep2Title: "2. Send your first event",
         widening: "Widen the time range to see more data.",
         widenRange: "Widen range",
         widgets: {

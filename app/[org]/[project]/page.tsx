@@ -59,6 +59,8 @@ export default async function DashboardRoute({ params, searchParams }: Dashboard
         return (
             <EmptyProjectState
                 projectName={project.name}
+                orgSlug={orgSlug}
+                projectSlug={projectSlug}
                 apiKeyPrefix={activeKey?.keyPrefix}
             />
         );

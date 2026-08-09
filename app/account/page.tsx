@@ -14,14 +14,12 @@ export default async function AccountPage() {
         <main className={styles.root}>
             <h1 className={styles.title}>Account</h1>
 
-            <section className={styles.section}>
+            <section className={styles.block}>
                 <h2 className={styles.sectionTitle}>Profile</h2>
                 <AccountProfileForm initialName={user.name} email={user.email} />
             </section>
 
-            <hr className={styles.divider} />
-
-            <section className={styles.section}>
+            <section className={styles.block}>
                 <h2 className={styles.sectionTitle}>Change password</h2>
                 <ChangePasswordForm />
             </section>

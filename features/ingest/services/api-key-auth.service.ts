@@ -7,6 +7,7 @@ export interface AuthResult {
     apiKeyId: string;
     projectId: string;
     organizationId: string;
+    rateLimitPerMin: number;
 }
 
 export class ApiKeyAuthError extends Error {
@@ -44,6 +45,7 @@ export async function authenticateRequest(req: Request): Promise<AuthResult> {
         apiKeyId: result.apiKey.id,
         projectId: result.project.id,
         organizationId: result.project.organizationId,
+        rateLimitPerMin: result.apiKey.rateLimitPerMin,
     };
 }
 

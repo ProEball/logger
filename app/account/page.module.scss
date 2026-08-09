@@ -1,29 +1,26 @@
 .root {
     padding: var(--space-8);
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-8);
-    max-width: 600px;
+    max-width: 460px;
 }
 
 .title {
-    font: var(--type-h2);
-    color: var(--text-primary);
+    font-size: 20px;
+    font-weight: var(--weight-semibold);
+    color: var(--fg);
+    margin: 0 0 var(--space-6);
 }
 
-.section {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-5);
+.block + .block {
+    margin-top: var(--space-8);
+    padding-top: var(--space-6);
+    border-top: 1px solid var(--border-1);
 }
 
 .sectionTitle {
-    font: var(--type-label-lg);
-    color: var(--text-primary);
-}
-
-.divider {
-    border: none;
-    border-top: 1px solid var(--border-subtle);
-    margin: 0;
+    font-size: 10px;
+    font-weight: var(--weight-semibold);
+    color: var(--fg-4);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin: 0 0 var(--space-4);
 }

@@ -1,11 +1,10 @@
 import { notFound, redirect } from "next/navigation";
 import { getCurrentUser } from "@/core/auth/server";
-import { getMembership, getOrgBySlug, getUserOrgs } from "@/features/organizations/services/organizations.service";
+import { getMembership, getOrgBySlug } from "@/features/organizations/services/organizations.service";
 import { getProjectBySlug, listProjectsForOrg } from "@/features/projects/services/projects.service";
 import { ProjectHydrator } from "@/core/store/ProjectHydrator";
 import { AppSidebar } from "@/features/organizations/components/AppSidebar/AppSidebar";
 import { AppShell } from "@/shared/components";
-import { OrgRail } from "@/shared/components/OrgRail/OrgRail";
 import { OrgHydrator } from "@/core/store/OrgHydrator";
 import { OrgTopBar } from "@/features/organizations/components/OrgTopBar/OrgTopBar";
 import { getThemeFromCookie } from "@/core/theme/cookie";
@@ -36,10 +35,7 @@ export default async function ProjectLayout({ children, params }: ProjectLayoutP
     const cookieTheme = await getThemeFromCookie();
     const theme: ThemeValue = preferences.theme ?? cookieTheme;
 
-    const [userOrgs, projects] = await Promise.all([
-        getUserOrgs(user.id),
-        listProjectsForOrg(org.id),
-    ]);
+    const projects = await listProjectsForOrg(org.id);
 
     return (
         <>
@@ -57,25 +53,16 @@ export default async function ProjectLayout({ children, params }: ProjectLayoutP
                 orgId={org.id}
             />
             <AppShell
-                rail={<OrgRail orgs={userOrgs} currentOrgSlug={orgSlug} />}
                 sidebar={
                     <AppSidebar
                         orgSlug={orgSlug}
                         orgName={org.name}
                         projects={projects}
                         activeProjectSlug={projectSlug}
-                        userName={user.name ?? undefined}
-                        userEmail={user.email ?? undefined}
                     />
                 }
             >
-                <OrgTopBar
-                    orgSlug={orgSlug}
-                    orgName={org.name}
-                    orgs={userOrgs}
-                    userName={user.name}
-                    userEmail={user.email}
-                />
+                <OrgTopBar userName={user.name} userEmail={user.email} />
                 {children}
             </AppShell>
         </>

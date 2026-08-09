@@ -11,6 +11,7 @@ type SetupForm = {
     name: string;
     email: string;
     password: string;
+    confirmPassword: string;
 };
 
 interface SetupWizardProps {
@@ -29,6 +30,15 @@ const validators: GValidators<SetupForm> = {
     password: new GValidator<SetupForm>()
         .withRequiredMessage("Password is required")
         .withMinLengthMessage("At least 8 characters"),
+    confirmPassword: new GValidator<SetupForm>()
+        .withRequiredMessage("Please confirm your password")
+        .withCustomValidation((input, fields) => {
+            if (input.value !== fields.password.value) {
+                input.errorText = "Passwords don't match";
+                return true;
+            }
+            return false;
+        }),
 };
 
 export function SetupWizard({ action }: SetupWizardProps) {
@@ -41,6 +51,7 @@ export function SetupWizard({ action }: SetupWizardProps) {
         name: `${uid}-name`,
         email: `${uid}-email`,
         password: `${uid}-password`,
+        confirmPassword: `${uid}-confirmPassword`,
     };
 
     // GForm only calls e.preventDefault() when state.isValid. Attach a native
@@ -162,6 +173,26 @@ export function SetupWizard({ action }: SetupWizardProps) {
                                         <Input
                                             {...props}
                                             id={ids.password}
+                                            invalid={input.dirty && input.error}
+                                        />
+                                    </FormField>
+                                )}
+                            />
+
+                            <GInput
+                                formKey="confirmPassword"
+                                type="password"
+                                required
+                                element={(input, props) => (
+                                    <FormField
+                                        label="Confirm password"
+                                        required
+                                        htmlFor={ids.confirmPassword}
+                                        error={input.dirty && input.error ? input.errorText : undefined}
+                                    >
+                                        <Input
+                                            {...props}
+                                            id={ids.confirmPassword}
                                             invalid={input.dirty && input.error}
                                         />
                                     </FormField>

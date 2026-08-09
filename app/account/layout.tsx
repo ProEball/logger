@@ -1,31 +1,30 @@
-import { notFound, redirect } from "next/navigation";
+import { redirect } from "next/navigation";
 import { AppShell } from "@/shared/components";
 import { OrgHydrator } from "@/core/store/OrgHydrator";
 import { getCurrentUser } from "@/core/auth/server";
 import { getThemeFromCookie } from "@/core/theme/cookie";
 import type { ThemeValue } from "@/core/store/slices/theme";
-import { getMembership, getOrgBySlug } from "@/features/organizations/services/organizations.service";
+import { getFirstOrgForUser, getMembership } from "@/features/organizations/services/organizations.service";
 import { listProjectsForOrg } from "@/features/projects/services/projects.service";
 import { AppSidebar } from "@/features/organizations/components/AppSidebar/AppSidebar";
 import { OrgTopBar } from "@/features/organizations/components/OrgTopBar/OrgTopBar";
 import { parsePreferences } from "@/shared/types/user-preferences.types";
 
-interface OrgShellLayoutProps {
+interface AccountLayoutProps {
     children: React.ReactNode;
-    params: Promise<{ org: string }>;
 }
 
-export default async function OrgShellLayout({ children, params }: OrgShellLayoutProps) {
-    const { org: slug } = await params;
-
+export default async function AccountLayout({ children }: AccountLayoutProps) {
     const user = await getCurrentUser();
     if (!user) redirect("/login");
 
-    const org = await getOrgBySlug(slug);
-    if (!org) notFound();
+    const org = await getFirstOrgForUser(user.id);
+    if (!org) {
+        // No org membership yet — render account pages without the app shell.
+        return <>{children}</>;
+    }
 
     const membership = await getMembership(user.id, org.id);
-    if (!membership) redirect("/login");
 
     const preferences = parsePreferences(user.preferences);
     const cookieTheme = await getThemeFromCookie();
@@ -35,13 +34,15 @@ export default async function OrgShellLayout({ children, params }: OrgShellLayou
 
     return (
         <>
-            <OrgHydrator
-                orgId={org.id}
-                orgSlug={org.slug}
-                membership={membership}
-                theme={theme}
-                preferences={preferences}
-            />
+            {membership ? (
+                <OrgHydrator
+                    orgId={org.id}
+                    orgSlug={org.slug}
+                    membership={membership}
+                    theme={theme}
+                    preferences={preferences}
+                />
+            ) : null}
             <AppShell
                 sidebar={
                     <AppSidebar

@@ -22,20 +22,6 @@ interface AppSidebarProps {
     orgName: string;
     projects: Project[];
     activeProjectSlug?: string;
-    userName?: string;
-    userEmail?: string;
-}
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-function userInitials(name: string): string {
-    return name
-        .split(" ")
-        .filter(Boolean)
-        .map((p) => p[0])
-        .join("")
-        .toUpperCase()
-        .slice(0, 2);
 }
 
 // ── Icons ─────────────────────────────────────────────────────────────────────
@@ -135,8 +121,6 @@ export function AppSidebar({
     orgName,
     projects,
     activeProjectSlug,
-    userName,
-    userEmail,
 }: AppSidebarProps) {
     const pathname = usePathname();
     const router = useRouter();
@@ -162,21 +146,8 @@ export function AppSidebar({
         </div>
     );
 
-    const bottom =
-        userName || userEmail ? (
-            <div className={styles.userRow}>
-                <div className={styles.userAvatar}>
-                    {userName ? userInitials(userName) : "?"}
-                </div>
-                <div className={styles.userInfo}>
-                    {userName && <b>{userName}</b>}
-                    {userEmail && <span>{userEmail}</span>}
-                </div>
-            </div>
-        ) : undefined;
-
     return (
-        <Sidebar ariaLabel="Application navigation" top={top} bottom={bottom}>
+        <Sidebar ariaLabel="Application navigation" top={top}>
             {/* Org-level navigation */}
             <SidebarSection label="Organization">
                 <SidebarItem
