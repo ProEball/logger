@@ -4,11 +4,11 @@
  * renders to SVG/Canvas and cannot resolve CSS custom properties.
  */
 export const LEVEL_COLOR: Record<string, string> = {
-    debug: "#64748b",
-    info:  "#3b82f6",
-    warn:  "#f59e0b",
-    error: "#ef4444",
-    fatal: "#9333ea",
+    debug: "#6272a4",
+    info:  "#8be9fd",
+    warn:  "#ffb86c",
+    error: "#ff5555",
+    fatal: "#ff79c6",
 };
 
 /** Ordered list of known levels (used for stacking). */

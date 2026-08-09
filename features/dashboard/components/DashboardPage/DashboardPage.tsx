@@ -140,6 +140,7 @@ export function DashboardPage({
                     <KpiCard
                         label="Firing alerts"
                         value={calcFiring(alertRules)}
+                        valueColor="orange"
                         footerLeft={`of ${alertRules.length} rules total`}
                         critical={firingCount > 0}
                     >
@@ -156,7 +157,7 @@ export function DashboardPage({
                     </KpiCard>
                 </div>
 
-                {/* Row 2 — Events chart span 8 + Level donut span 4 */}
+                {/* Row 2 — Events chart span 8 + Level breakdown span 4 */}
                 <div className={styles.span8}>
                     <EventsPerMinuteWidget data={eventsPerMin} />
                 </div>

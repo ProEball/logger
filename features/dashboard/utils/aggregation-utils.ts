@@ -22,26 +22,61 @@ export function resolveRange(range: TimeRange): { from: Date; to: Date } {
 
 // ─── Bucket sizing ────────────────────────────────────────────────────────────
 
-export type BucketSize = "1m" | "5m" | "15m" | "1h" | "4h";
+export type BucketSize = "1m" | "1h" | "12h" | "1d";
 
 /** Seconds per bucket — used with epoch-floor arithmetic in SQL. */
 export const BUCKET_SECONDS: Record<BucketSize, number> = {
     "1m":  60,
-    "5m":  300,
-    "15m": 900,
     "1h":  3_600,
-    "4h":  14_400,
+    "12h": 43_200,
+    "1d":  86_400,
 };
 
 /**
- * Choose a bucket width that yields 60–180 data points for the given range.
- * Boundaries: ≤1h→1m, ≤6h→5m, ≤24h→15m, ≤7d→1h, >7d→4h.
+ * Choose a bucket width tied to the range length, matching the dashboard's
+ * range filter: ~1h→1m, ~24h→1h, ~7d→12h, ~30d→1d. Keeps the point count
+ * small regardless of range (max ~60), so wide ranges stay fast to render.
  */
 export function pickBucket(from: Date, to: Date): BucketSize {
     const minutes = (to.getTime() - from.getTime()) / 60_000;
     if (minutes <= 60)    return "1m";
-    if (minutes <= 360)   return "5m";
-    if (minutes <= 1440)  return "15m";
-    if (minutes <= 10080) return "1h";
-    return "4h";
+    if (minutes <= 1440)  return "1h";
+    if (minutes <= 10080) return "12h";
+    return "1d";
+}
+
+// ─── Bucket zero-fill ─────────────────────────────────────────────────────────
+
+export type BucketRow = {
+    ts: Date;
+    total: number;
+    byLevel: Record<string, number>;
+};
+
+/**
+ * Fill gaps in a sparse BucketRow[] (one row per bucket that actually had
+ * events) with zero-count rows, so the series covers every bucket in
+ * [from, to) contiguously. Without this, a gap in events makes the series
+ * stop short instead of showing a drop to zero.
+ *
+ * Bucket boundaries are computed the same way as the SQL query (epoch-floor
+ * to the bucket width), so filled timestamps line up with real ones.
+ */
+export function fillBuckets(
+    rows: BucketRow[],
+    from: Date,
+    to: Date,
+    bucketSize: BucketSize,
+): BucketRow[] {
+    const bucketMs = BUCKET_SECONDS[bucketSize] * 1000;
+    const firstBucketMs = Math.floor(from.getTime() / bucketMs) * bucketMs;
+    // `to` is an exclusive upper bound; the last bucket is the one containing (to - 1ms).
+    const lastBucketMs = Math.floor((to.getTime() - 1) / bucketMs) * bucketMs;
+
+    const byTs = new Map(rows.map((r) => [r.ts.getTime(), r]));
+    const filled: BucketRow[] = [];
+    for (let ts = firstBucketMs; ts <= lastBucketMs; ts += bucketMs) {
+        filled.push(byTs.get(ts) ?? { ts: new Date(ts), total: 0, byLevel: {} });
+    }
+    return filled;
 }

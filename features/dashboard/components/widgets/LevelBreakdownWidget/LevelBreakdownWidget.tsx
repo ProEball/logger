@@ -1,6 +1,6 @@
 "use client";
 
-import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from "recharts";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { WidgetCard } from "../../WidgetCard/WidgetCard";
 import { t } from "@/core/i18n/t";
@@ -25,77 +25,60 @@ export function LevelBreakdownWidget({
     projectSlug,
 }: LevelBreakdownWidgetProps) {
     const router = useRouter();
+    const [hovered, setHovered] = useState<string | null>(null);
     const isEmpty = data.length === 0;
+
     const total = data.reduce((s, r) => s + r.count, 0);
+    const max = Math.max(1, ...data.map((r) => r.count));
+    const rows = [...data].sort((a, b) => b.count - a.count);
 
     const handleClick = (level: string) => {
         const params = serializeFilters({ range, levels: [level as EventLevel] });
         router.push(`/${orgSlug}/${projectSlug}/events?${params.toString()}`);
     };
 
-    const chartData = data.map((r) => ({
-        name: r.level,
-        value: r.count,
-    }));
+    const subtitle = `${total.toLocaleString()} events · last ${range.type === "preset" ? range.value : "range"}`;
 
     return (
-        <WidgetCard title={t("dashboard.widgets.levelBreakdown")} isEmpty={isEmpty}>
-            <div className={styles.inner}>
-                <ResponsiveContainer width="100%" height={160}>
-                    <PieChart>
-                        <Pie
-                            data={chartData}
-                            cx="50%"
-                            cy="50%"
-                            innerRadius={48}
-                            outerRadius={72}
-                            paddingAngle={2}
-                            dataKey="value"
-                            isAnimationActive={false}
-                            cursor="pointer"
-                            onClick={(entry) => handleClick(entry.name as string)}
-                        >
-                            {chartData.map((entry, index) => (
-                                <Cell
-                                    key={`${entry.name}-${index}`}
-                                    fill={levelColor(entry.name)}
-                                />
-                            ))}
-                        </Pie>
-                        <Tooltip
-                            contentStyle={{
-                                background: "#18181c",
-                                border: "1px solid #2e2e37",
-                                borderRadius: 6,
-                                fontSize: 12,
-                            }}
-                            formatter={(value) => {
-                                const n = typeof value === "number" ? value : 0;
-                                return [`${n.toLocaleString()} (${total > 0 ? Math.round((n / total) * 100) : 0}%)`];
-                            }}
-                        />
-                    </PieChart>
-                </ResponsiveContainer>
+        <WidgetCard
+            title={t("dashboard.widgets.levelBreakdown")}
+            isEmpty={isEmpty}
+            actions={<span className={styles.subtitle}>{subtitle}</span>}
+        >
+            <div className={styles.list}>
+                {rows.map(({ level, count }) => {
+                    const pct = total > 0 ? (count / total) * 100 : 0;
+                    const dimmed = hovered !== null && hovered !== level;
 
-                <ul className={styles.legend}>
-                    {data.map((row) => (
-                        <li
-                            key={row.level}
-                            className={styles.legendItem}
-                            onClick={() => handleClick(row.level)}
+                    return (
+                        <div
+                            key={level}
+                            className={styles.col}
+                            onClick={() => handleClick(level)}
+                            onMouseEnter={() => setHovered(level)}
+                            onMouseLeave={() => setHovered(null)}
                             role="button"
                             tabIndex={0}
-                            onKeyDown={(e) => e.key === "Enter" && handleClick(row.level)}
+                            onKeyDown={(e) => e.key === "Enter" && handleClick(level)}
                         >
-                            <span
-                                className={styles.dot}
-                                style={{ background: levelColor(row.level) }}
-                            />
-                            <span className={styles.levelName}>{row.level}</span>
-                            <span className={styles.levelCount}>{row.count.toLocaleString()}</span>
-                        </li>
-                    ))}
-                </ul>
+                            <span className={styles.count}>{count.toLocaleString()}</span>
+                            <span className={styles.track}>
+                                <span
+                                    className={styles.fill}
+                                    style={{
+                                        height: `${(count / max) * 100}%`,
+                                        background: levelColor(level),
+                                        opacity: dimmed ? 0.35 : 1,
+                                    }}
+                                />
+                            </span>
+                            <span className={styles.name}>{level}</span>
+                            <span className={styles.pct}>
+                                {pct > 0 && pct < 0.1 ? "< 0.1%" : `${pct.toFixed(1)}%`}
+                            </span>
+                        </div>
+                    );
+                })}
             </div>
         </WidgetCard>
     );

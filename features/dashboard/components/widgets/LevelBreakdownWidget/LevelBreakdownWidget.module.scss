@@ -1,48 +1,82 @@
-.inner {
-    display: flex;
-    align-items: center;
-    gap: var(--space-4);
+.subtitle {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--fg-3);
+    white-space: nowrap;
 }
 
-.legend {
-    list-style: none;
+.list {
+    display: flex;
+    align-items: stretch;
+    justify-content: space-between;
+    gap: var(--space-1);
+    height: 100%;
+    min-height: 160px;
+}
+
+.col {
     display: flex;
     flex-direction: column;
-    gap: var(--space-2);
-    flex: 0 0 auto;
-    min-width: 120px;
-}
-
-.legendItem {
-    display: flex;
     align-items: center;
-    gap: var(--space-2);
-    cursor: pointer;
+    justify-content: flex-end;
+    gap: var(--space-1);
+    flex: 1;
+    min-width: 0;
+    padding: var(--space-1) 1px;
     border-radius: var(--radius-sm);
-    padding: var(--space-0-5) var(--space-1);
+    cursor: pointer;
     transition: var(--transition-colors);
 
     &:hover {
-        background: var(--surface-hover);
+        background: var(--bg-hover);
     }
 }
 
-.dot {
-    width: 8px;
-    height: 8px;
-    border-radius: var(--radius-full);
-    flex: 0 0 auto;
+.count {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: var(--weight-semibold);
+    color: var(--fg);
 }
 
-.levelName {
-    font-size: var(--text-sm);
-    color: var(--text-secondary);
+.track {
+    position: relative;
+    width: 100%;
+    max-width: 40px;
     flex: 1;
-    text-transform: capitalize;
+    min-height: 0;
+    border-radius: 6px 6px 3px 3px;
+    background: var(--border-1);
+    overflow: hidden;
 }
 
-.levelCount {
-    font-size: var(--text-sm);
-    color: var(--text-primary);
-    font-variant-numeric: tabular-nums;
+.fill {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    border-radius: 6px 6px 3px 3px;
+    transition: height var(--duration-base) var(--ease-out), opacity var(--duration-fast) var(--ease-out);
+}
+
+.name {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 9px;
+    font-weight: var(--weight-semibold);
+    letter-spacing: 0.01em;
+    color: var(--fg-3);
+    text-transform: uppercase;
+
+    .col:hover & {
+        color: var(--fg);
+    }
+}
+
+.pct {
+    font-family: var(--font-mono);
+    font-size: 8.5px;
+    color: var(--fg-4);
 }

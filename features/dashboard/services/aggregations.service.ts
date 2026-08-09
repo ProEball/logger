@@ -2,11 +2,12 @@ import { sql } from "drizzle-orm";
 import { db } from "@/core/db/client";
 import type { TimeRange } from "@/features/events/utils/event-filters.types";
 import type { Event } from "@/core/db/schema";
-import { resolveRange, pickBucket, BUCKET_SECONDS } from "@/features/dashboard/utils/aggregation-utils";
+import { resolveRange, pickBucket, fillBuckets, BUCKET_SECONDS } from "@/features/dashboard/utils/aggregation-utils";
+import type { BucketRow } from "@/features/dashboard/utils/aggregation-utils";
 
 // Re-export pure helpers so callers can import from one place.
-export { resolveRange, pickBucket } from "@/features/dashboard/utils/aggregation-utils";
-export type { BucketSize } from "@/features/dashboard/utils/aggregation-utils";
+export { resolveRange, pickBucket, fillBuckets } from "@/features/dashboard/utils/aggregation-utils";
+export type { BucketSize, BucketRow } from "@/features/dashboard/utils/aggregation-utils";
 
 export type SourceCount = {
     source: string;
@@ -14,12 +15,6 @@ export type SourceCount = {
 };
 
 // ─── Result types ─────────────────────────────────────────────────────────────
-
-export type BucketRow = {
-    ts: Date;
-    total: number;
-    byLevel: Record<string, number>;
-};
 
 export type LevelCount = {
     level: string;
@@ -92,7 +87,7 @@ export async function eventsPerMinute(
         entry.byLevel[row.level] = (entry.byLevel[row.level] ?? 0) + n;
     }
 
-    return Array.from(bucketMap.values());
+    return fillBuckets(Array.from(bucketMap.values()), from, to, bucketSize);
 }
 
 /**
@@ -162,7 +157,7 @@ export async function topMessages(
           AND timestamp >= ${toTs(from)}
           AND timestamp <  ${toTs(to)}
         GROUP BY SUBSTRING(message, 1, 200)
-        ORDER BY count DESC
+        ORDER BY COUNT(*) DESC
         LIMIT ${limit}
     `);
 

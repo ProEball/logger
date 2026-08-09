@@ -77,6 +77,9 @@ export function KpiCard({
     const hasSparkline = sparklineData && sparklineData.length >= 2;
     const hasFooter = footerLeft || footerRight;
     const arrowChar = deltaDirection === "up" ? "↑" : deltaDirection === "dn" ? "↓" : "—";
+    // Default the value's color to match its sparkline, so the number and the
+    // trend it summarizes read as one thing at a glance.
+    const resolvedValueColor = valueColor ?? (hasSparkline ? sparklineColor : undefined);
 
     return (
         <div className={cx(styles.card, critical && styles.critical, className)}>
@@ -90,7 +93,7 @@ export function KpiCard({
             <div className={styles.valueRow}>
                 <span
                     className={styles.value}
-                    style={valueColor ? { color: `var(--${valueColor})` } : undefined}
+                    style={resolvedValueColor ? { color: `var(--${resolvedValueColor})` } : undefined}
                 >
                     {value}
                 </span>

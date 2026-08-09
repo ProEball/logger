@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { setAutoRefresh, selectAutoRefresh } from "@/core/store/slices/user";
 import { updatePreferencesAction } from "@/features/auth/actions/update-preferences.action";
@@ -19,6 +20,17 @@ export function AutoRefreshControl() {
     const dispatch = useDispatch();
     const current = useSelector(selectAutoRefresh);
 
+    // TODO: `current` is seeded from Redux's default state and only corrected after
+    // OrgHydrator's mount effect dispatches the real preference, so SSR and the first
+    // client paint disagree. Proper fix is to seed the store's initial preferences from
+    // the server-fetched value instead of a post-mount effect — touches the shared
+    // org/project/theme hydrator pattern too, so treat as a separate task. The `mounted`
+    // gate below is a quick fix: it renders no option as active until the real
+    // preference has landed, so SSR and the first client paint always agree.
+    const [mounted, setMounted] = useState(false);
+    useEffect(() => setMounted(true), []);
+    const isActive = (opt: AutoRefreshValue) => mounted && current === opt;
+
     useAutoRefresh(current);
 
     const handleChange = async (value: AutoRefreshValue) => {
@@ -34,11 +46,11 @@ export function AutoRefreshControl() {
                     <button
                         key={opt}
                         type="button"
-                        className={`${styles.option} ${current === opt ? styles.active : ""}`}
+                        className={`${styles.option} ${isActive(opt) ? styles.active : ""}`}
                         onClick={() => handleChange(opt)}
-                        aria-pressed={current === opt}
+                        aria-pressed={isActive(opt)}
                     >
-                        {opt !== "off" && current === opt && (
+                        {opt !== "off" && isActive(opt) && (
                             <span className={styles.pulseDot} aria-hidden />
                         )}
                         {getLabel(opt)}

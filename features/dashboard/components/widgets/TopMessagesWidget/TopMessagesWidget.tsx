@@ -96,7 +96,7 @@ export function TopMessagesWidget({
         <WidgetCard title="Top messages" isEmpty={isEmpty}>
             <div className={styles.grid}>
                 {/* Header */}
-                <div className={`${styles.th} ${styles.colCount}`}>#</div>
+                <div className={`${styles.th} ${styles.colCount}`}>Count</div>
                 <div className={`${styles.th} ${styles.colMsg}`}>Message</div>
                 <div className={`${styles.th} ${styles.colTrend}`}>Trend</div>
                 <div className={`${styles.th} ${styles.colLevel}`}>Level</div>
@@ -135,7 +135,10 @@ export function TopMessagesWidget({
                                     size="sm"
                                 />
                             </div>
-                            <div className={`${styles.td} ${styles.colTime} ${styles.timeCell}`}>
+                            <div
+                                className={`${styles.td} ${styles.colTime} ${styles.timeCell}`}
+                                suppressHydrationWarning
+                            >
                                 {formatRelative(row.latestAt)}
                             </div>
                         </div>
