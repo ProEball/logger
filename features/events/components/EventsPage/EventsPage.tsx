@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { t } from "@/core/i18n/t";
 import { useSelector } from "react-redux";
 import { selectAutoRefresh } from "@/core/store/slices/user";
@@ -17,7 +17,7 @@ const EventDrawer = dynamic(
 import { AutoRefreshControl } from "../auto-refresh/AutoRefreshControl/AutoRefreshControl";
 import { TableSkeleton } from "@/shared/components/Skeletons/TableSkeleton";
 import type { Event } from "@/core/db/schema";
-import type { EventFilters, Cursor } from "@/features/events/utils/event-filters.types";
+import type { EventFilters, Cursor, FacetCounts } from "@/features/events/utils/event-filters.types";
 import type { AutoRefreshValue } from "@/shared/types/user-preferences.types";
 import styles from "./EventsPage.module.scss";
 
@@ -26,6 +26,7 @@ interface EventsPageProps {
     hasMore: boolean;
     cursor: Cursor | undefined;
     filters: EventFilters;
+    facetCounts: FacetCounts;
     selectedEvent: Event | null;
     activeTab: string;
     orgSlug: string;
@@ -41,22 +42,22 @@ export function EventsPage({
     events,
     hasMore,
     cursor,
+    facetCounts,
     selectedEvent,
     activeTab,
 }: EventsPageProps) {
     const refresh = useSelector(selectAutoRefresh);
+    // `refresh` is seeded from Redux's default state and only corrected after
+    // OrgHydrator's mount effect dispatches the real preference (see the same note in
+    // AutoRefreshControl.tsx), so SSR and the first client paint disagree. Render the
+    // SSR-safe default until mounted so hydration always agrees.
+    const [mounted, setMounted] = useState(false);
+    useEffect(() => setMounted(true), []);
 
     const {
         filters,
-        setLevels,
-        setEnvironments,
-        setSources,
-        setReleases,
-        setErrorTypes,
-        setMessage,
+        applyFilters,
         setTimeRange,
-        setCorrelation,
-        addAttribute,
         removeAttribute,
         removeFilter,
         clearAll,
@@ -69,7 +70,7 @@ export function EventsPage({
                     <h1 className={styles.title}>{t("events.title")}</h1>
                     <div className={styles.subtitle}>
                         <span className={styles.liveDot} aria-hidden />
-                        {getSubtitle(refresh)}
+                        {getSubtitle(mounted ? refresh : "off")}
                     </div>
                 </div>
                 <div className={styles.headSpacer} />
@@ -81,15 +82,9 @@ export function EventsPage({
             <Suspense>
                 <EventsFilterBar
                     filters={filters}
-                    onSetLevels={setLevels}
-                    onSetEnvironments={setEnvironments}
-                    onSetSources={setSources}
-                    onSetReleases={setReleases}
-                    onSetErrorTypes={setErrorTypes}
-                    onSetMessage={setMessage}
+                    facetCounts={facetCounts}
+                    onApplyFilters={applyFilters}
                     onSetTimeRange={setTimeRange}
-                    onSetCorrelation={setCorrelation}
-                    onAddAttribute={addAttribute}
                     onRemoveAttribute={removeAttribute}
                     onRemoveFilter={removeFilter}
                     onClearAll={clearAll}

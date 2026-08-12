@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { getCurrentUser } from "@/core/auth/server";
+import { ASSIGNABLE_PERMISSIONS } from "@/features/roles/utils/assignable-permissions";
 import { RolesList } from "@/features/roles/components/RolesList/RolesList";
 import { getOrgRoles } from "@/features/roles/services/roles.service";
 import { getMembership, getOrgBySlug } from "@/features/organizations/services/organizations.service";
@@ -33,10 +34,18 @@ export default async function RolesPage({ params }: RolesPageProps) {
         <main className={styles.root}>
             <div className={styles.header}>
                 <h1 className={styles.title}>Roles</h1>
+                <span className={styles.sub}>
+                    {roles.length} role{roles.length === 1 ? '' : 's'} · {ASSIGNABLE_PERMISSIONS.length} permissions
+                </span>
+                <div className={styles.spacer} />
                 <Link href={`/${slug}/settings/roles/new`} className={styles.newBtn}>
                     New role
                 </Link>
             </div>
+            <p className={styles.desc}>
+                Roles bundle permissions and are assigned to members from the Team page.
+                System roles cannot be renamed or deleted.
+            </p>
 
             <RolesList roles={roles} orgSlug={slug} />
         </main>

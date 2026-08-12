@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useId, useRef, useState, useTransition } from "react";
+import { useEffect, useId, useState, useTransition } from "react";
 import { GForm, GInput, GValidator } from "gform-react";
 import type { GValidators } from "gform-react";
 import { Button, FormField, Input, Modal, Select } from "@/shared/components";
@@ -34,11 +34,9 @@ export function InviteMemberDialog({
     const [isPending, startTransition] = useTransition();
     const [serverError, setServerError] = useState<string | null>(null);
     const [roleId, setRoleId] = useState(roles[0]?.id ?? "");
-    const formRef = useRef<HTMLFormElement>(null);
     const uid = useId();
     const ids = { email: `${uid}-email` };
 
-    // Reset state when dialog closes
     useEffect(() => {
         if (!open) {
             setServerError(null);
@@ -46,22 +44,14 @@ export function InviteMemberDialog({
         }
     }, [open, roles]);
 
-    useEffect(() => {
-        const form = formRef.current;
-        if (!form) return;
-        const handler = (e: Event) => e.preventDefault();
-        form.addEventListener("submit", handler);
-        return () => form.removeEventListener("submit", handler);
-    }, []);
-
     return (
         <Modal open={open} onClose={onClose} title="Invite member" size="sm">
             <div className={styles.body}>
                 <GForm<InviteForm>
-                    ref={formRef}
                     validators={validators}
                     className={styles.form}
-                    onSubmit={(state) => {
+                    onSubmit={(state, e) => {
+                        e.preventDefault();
                         if (state.isInvalid) return;
                         setServerError(null);
                         startTransition(async () => {

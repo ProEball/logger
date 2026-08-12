@@ -3,6 +3,7 @@ import { useRef, useEffect, useId, useState, useTransition } from "react";
 import { GForm, GInput, GValidator } from "gform-react";
 import type { GValidators } from "gform-react";
 import { Button, FormField, Input } from "@/shared/components";
+import { PasswordField } from "../PasswordField/PasswordField";
 import type { setupAction } from "../../actions/setup.action";
 import styles from "./SetupWizard.module.scss";
 
@@ -84,10 +85,13 @@ export function SetupWizard({ action }: SetupWizardProps) {
                     });
                 }}
             >
-                {(state) => (
+                {() => (
                     <>
                         <section className={styles.section}>
-                            <h2 className={styles.sectionTitle}>Organization</h2>
+                            <div className={styles.sectionHead}>
+                                <span className={styles.sectionNum}>1</span>
+                                <span className={styles.sectionTitle}>Organization</span>
+                            </div>
 
                             <GInput
                                 formKey="orgName"
@@ -113,7 +117,10 @@ export function SetupWizard({ action }: SetupWizardProps) {
                         </section>
 
                         <section className={styles.section}>
-                            <h2 className={styles.sectionTitle}>Your account</h2>
+                            <div className={styles.sectionHead}>
+                                <span className={styles.sectionNum}>2</span>
+                                <span className={styles.sectionTitle}>Your account</span>
+                            </div>
 
                             <GInput
                                 formKey="name"
@@ -170,7 +177,7 @@ export function SetupWizard({ action }: SetupWizardProps) {
                                         helper="At least 8 characters"
                                         error={input.dirty && input.error ? input.errorText : undefined}
                                     >
-                                        <Input
+                                        <PasswordField
                                             {...props}
                                             id={ids.password}
                                             invalid={input.dirty && input.error}
@@ -190,7 +197,7 @@ export function SetupWizard({ action }: SetupWizardProps) {
                                         htmlFor={ids.confirmPassword}
                                         error={input.dirty && input.error ? input.errorText : undefined}
                                     >
-                                        <Input
+                                        <PasswordField
                                             {...props}
                                             id={ids.confirmPassword}
                                             invalid={input.dirty && input.error}
@@ -209,7 +216,14 @@ export function SetupWizard({ action }: SetupWizardProps) {
                             <Button
                                 type="submit"
                                 variant="primary"
+                                size="lg"
                                 disabled={isPending}
+                                rightIcon={
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                        <line x1="5" y1="12" x2="19" y2="12" />
+                                        <polyline points="12 5 19 12 12 19" />
+                                    </svg>
+                                }
                             >
                                 {isPending ? "Setting up…" : "Create workspace"}
                             </Button>

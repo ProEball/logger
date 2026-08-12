@@ -9,14 +9,17 @@ import {
     or,
     sql,
     inArray,
+    type SQL,
 } from "drizzle-orm";
+import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import { db } from "@/core/db/client";
 import { events } from "@/core/db/schema";
 import { projects } from "@/core/db/schema";
-import type { EventFilters, Cursor } from "@/features/events/utils/event-filters.types";
+import type { EventFilters, Cursor, FacetCounts } from "@/features/events/utils/event-filters.types";
 import type { Event } from "@/core/db/schema";
 
 const PAGE_SIZE = 50;
+const FACET_OPTION_LIMIT = 20;
 
 export type EventsPage = {
     events: Event[];
@@ -52,41 +55,41 @@ function resolveTimeRange(filters: EventFilters): { from: Date; to: Date } {
 }
 
 /**
- * List events with filters and cursor-based pagination.
- * Returns up to 50 events + hasMore flag.
- * Defense-in-depth: JOINs projects and filters deleted_at IS NULL.
+ * Build the shared WHERE conditions for events queries (project scope, time range,
+ * and one clause per active filter field). `exclude` skips a field's own clause —
+ * used by facet-count queries so a field's own selection doesn't shrink its own counts.
  */
-export async function listEvents(
+function buildConditions(
     projectId: string,
     filters: EventFilters,
-    cursor?: Cursor,
-): Promise<EventsPage> {
+    exclude: (keyof EventFilters)[] = [],
+): SQL[] {
     const { from, to } = resolveTimeRange(filters);
 
-    const conditions = [
+    const conditions: SQL[] = [
         eq(events.projectId, projectId),
         isNull(projects.deletedAt),
         gte(events.timestamp, from),
         lte(events.timestamp, to),
     ];
 
-    if (filters.levels?.length) {
+    if (!exclude.includes("levels") && filters.levels?.length) {
         conditions.push(inArray(events.level, filters.levels));
     }
 
-    if (filters.environments?.length) {
+    if (!exclude.includes("environments") && filters.environments?.length) {
         conditions.push(inArray(events.environment, filters.environments as [string, ...string[]]));
     }
 
-    if (filters.sources?.length) {
+    if (!exclude.includes("sources") && filters.sources?.length) {
         conditions.push(inArray(events.source, filters.sources as [string, ...string[]]));
     }
 
-    if (filters.releases?.length) {
+    if (!exclude.includes("releases") && filters.releases?.length) {
         conditions.push(inArray(events.release, filters.releases as [string, ...string[]]));
     }
 
-    if (filters.errorTypes?.length) {
+    if (!exclude.includes("errorTypes") && filters.errorTypes?.length) {
         conditions.push(inArray(events.errorType, filters.errorTypes as [string, ...string[]]));
     }
 
@@ -107,8 +110,9 @@ export async function listEvents(
     }
 
     if (filters.message) {
-        const tsquery = sql`to_tsvector('simple', ${events.message}) @@ websearch_to_tsquery('simple', ${filters.message})`;
-        conditions.push(tsquery);
+        conditions.push(
+            sql`to_tsvector('simple', ${events.message}) @@ websearch_to_tsquery('simple', ${filters.message})`,
+        );
     }
 
     if (filters.attributes?.length) {
@@ -117,6 +121,21 @@ export async function listEvents(
             conditions.push(sql`${events.attributes} @> ${jsonFragment}::jsonb`);
         }
     }
+
+    return conditions;
+}
+
+/**
+ * List events with filters and cursor-based pagination.
+ * Returns up to 50 events + hasMore flag.
+ * Defense-in-depth: JOINs projects and filters deleted_at IS NULL.
+ */
+export async function listEvents(
+    projectId: string,
+    filters: EventFilters,
+    cursor?: Cursor,
+): Promise<EventsPage> {
+    const conditions = buildConditions(projectId, filters);
 
     // Cursor: rows strictly before (timestamp, id) DESC
     if (cursor) {
@@ -170,4 +189,45 @@ export async function getEventById(
         .limit(1);
 
     return rows[0]?.events ?? null;
+}
+
+/**
+ * Count distinct values of a nullable text column, scoped by the given conditions.
+ * Null values are grouped under "(unset)".
+ */
+function textFacet(column: AnyPgColumn, conditions: SQL[]) {
+    return db
+        .select({
+            value: sql<string>`coalesce(${column}, '(unset)')`,
+            count: sql<number>`count(*)::int`,
+        })
+        .from(events)
+        .innerJoin(projects, eq(events.projectId, projects.id))
+        .where(and(...conditions))
+        .groupBy(sql`coalesce(${column}, '(unset)')`)
+        .orderBy(desc(sql`count(*)`))
+        .limit(FACET_OPTION_LIMIT);
+}
+
+/**
+ * Facet option counts for level/environment/source/release/errorType, each scoped by
+ * project + time range and every *other* active filter — but not the facet's own
+ * filter, so unchecking an option elsewhere never zeroes out its own count list.
+ */
+export async function getFacetCounts(projectId: string, filters: EventFilters): Promise<FacetCounts> {
+    const [levels, environments, sources, releases, errorTypes] = await Promise.all([
+        db
+            .select({ value: events.level, count: sql<number>`count(*)::int` })
+            .from(events)
+            .innerJoin(projects, eq(events.projectId, projects.id))
+            .where(and(...buildConditions(projectId, filters, ["levels"])))
+            .groupBy(events.level)
+            .orderBy(desc(sql`count(*)`)),
+        textFacet(events.environment, buildConditions(projectId, filters, ["environments"])),
+        textFacet(events.source, buildConditions(projectId, filters, ["sources"])),
+        textFacet(events.release, buildConditions(projectId, filters, ["releases"])),
+        textFacet(events.errorType, buildConditions(projectId, filters, ["errorTypes"])),
+    ]);
+
+    return { levels, environments, sources, releases, errorTypes };
 }

@@ -1,0 +1,193 @@
+.trigger {
+    height: 28px;
+    border: 1px solid var(--border-1);
+    background: var(--bg-sidebar);
+    border-radius: var(--radius-sm);
+    padding: 0 10px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    font-weight: var(--weight-medium);
+    color: var(--fg-2);
+    cursor: pointer;
+    font-family: inherit;
+    transition: all var(--duration-fast) var(--ease-out);
+
+    &:hover,
+    &[data-open] {
+        border-color: var(--border-2);
+        color: var(--fg);
+        background: var(--bg-active);
+    }
+}
+
+.count {
+    background: var(--purple);
+    color: var(--on-accent);
+    font-size: 10px;
+    font-weight: var(--weight-semibold);
+    border-radius: 999px;
+    min-width: 15px;
+    height: 15px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 4px;
+    font-family: var(--font-mono);
+}
+
+.popover {
+    max-width: 92vw;
+}
+
+.searchRow {
+    padding: 10px;
+    border-bottom: 1px solid var(--border-1);
+}
+
+.columns {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(120px, 1fr));
+    max-height: 260px;
+    overflow: auto;
+    border-bottom: 1px solid var(--border-1);
+}
+
+.facetColumn {
+    padding: 10px 6px;
+    border-right: 1px solid var(--border-1);
+
+    &:last-child {
+        border-right: 0;
+    }
+}
+
+.facetTitle {
+    font-size: 10px;
+    font-weight: var(--weight-semibold);
+    color: var(--fg-4);
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    padding: 4px 8px 6px;
+}
+
+.facetOption {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 8px;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 12.5px;
+    color: var(--fg-2);
+    transition: background var(--duration-fast) var(--ease-out);
+
+    &:hover {
+        background: var(--bg-hover);
+    }
+}
+
+.facetLabel {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.facetCount {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    color: var(--fg-4);
+    flex-shrink: 0;
+}
+
+.freeformRow {
+    display: grid;
+    grid-template-columns: 1fr 1.4fr 1.4fr;
+    gap: 16px;
+    padding: 12px;
+}
+
+.freeformGroup {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 0;
+}
+
+.correlationGrid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 6px;
+}
+
+.attrAddRow {
+    display: grid;
+    grid-template-columns: 1fr 1fr auto;
+    gap: 6px;
+    align-items: center;
+}
+
+.attrList {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.attrTag {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 4px 2px 8px;
+    background: var(--purple-soft);
+    border: 1px solid rgba(189, 147, 249, 0.25);
+    border-radius: var(--radius-sm);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--purple);
+}
+
+.attrRemove {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    background: none;
+    border: none;
+    color: inherit;
+    cursor: pointer;
+    border-radius: 3px;
+    font-size: 12px;
+    line-height: 1;
+
+    &:hover {
+        background: var(--bg-active);
+    }
+}
+
+.footerRow {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+}
+
+.clearAll {
+    font-size: 11.5px;
+    color: var(--fg-3);
+    cursor: pointer;
+    background: none;
+    border: none;
+    padding: 0;
+    font-family: inherit;
+    transition: color var(--duration-fast) var(--ease-out);
+
+    &:hover {
+        color: var(--red);
+        text-decoration: underline;
+        text-underline-offset: 2px;
+    }
+}

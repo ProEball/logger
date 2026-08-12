@@ -2,20 +2,36 @@
     padding: var(--space-8);
     display: flex;
     flex-direction: column;
-    gap: var(--space-6);
-    max-width: 900px;
+    gap: var(--space-5);
+    max-width: 1000px;
 }
 
 .header {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    gap: var(--space-4);
+    gap: var(--space-3);
 }
 
 .title {
     font: var(--type-h2);
-    color: var(--text-primary);
+    color: var(--fg);
+}
+
+.sub {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    color: var(--fg-4);
+}
+
+.spacer {
+    flex: 1;
+}
+
+.desc {
+    font: var(--type-body-sm);
+    color: var(--fg-3);
+    margin: calc(var(--space-3) * -1) 0 0;
+    max-width: 640px;
 }
 
 // Primary-button styled link (avoids <a> inside <button>)
@@ -23,17 +39,18 @@
     display: inline-flex;
     align-items: center;
     gap: var(--space-2);
-    padding: var(--space-2) var(--space-4);
-    font: var(--type-label-sm);
-    font-weight: 600;
-    color: var(--btn-primary-text);
-    background: var(--btn-primary-bg);
-    border-radius: 6px;
+    padding: 0 var(--space-4);
+    height: 32px;
+    font-size: 12.5px;
+    font-weight: var(--weight-semibold);
+    color: var(--on-accent);
+    background: var(--purple);
+    border-radius: var(--radius-sm);
     text-decoration: none;
     white-space: nowrap;
-    transition: background 0.15s;
+    transition: var(--transition-colors);
 
     &:hover {
-        background: var(--btn-primary-bg-hover);
+        background: #c9a4fa;
     }
 }

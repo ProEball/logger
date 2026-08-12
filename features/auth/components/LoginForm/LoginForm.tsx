@@ -1,8 +1,10 @@
 "use client";
 import { useRef, useEffect, useId, useState, useTransition } from "react";
+import Link from "next/link";
 import { GForm, GInput, GValidator } from "gform-react";
 import type { GValidators } from "gform-react";
 import { Button, FormField, Input } from "@/shared/components";
+import { PasswordField } from "../PasswordField/PasswordField";
 import type { loginAction } from "../../actions/login.action";
 import styles from "./LoginForm.module.scss";
 
@@ -89,7 +91,7 @@ export function LoginForm({ action }: LoginFormProps) {
                                     htmlFor={ids.password}
                                     error={input.dirty && input.error ? input.errorText : undefined}
                                 >
-                                    <Input
+                                    <PasswordField
                                         {...props}
                                         id={ids.password}
                                         invalid={input.dirty && input.error}
@@ -107,13 +109,20 @@ export function LoginForm({ action }: LoginFormProps) {
                             <Button
                                 type="submit"
                                 variant="primary"
+                                size="lg"
                                 disabled={isPending}
+                                rightIcon={
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                        <line x1="5" y1="12" x2="19" y2="12" />
+                                        <polyline points="12 5 19 12 12 19" />
+                                    </svg>
+                                }
                             >
                                 {isPending ? "Signing in…" : "Sign in"}
                             </Button>
-                            <a href="/forgot-password" className={styles.forgotLink}>
+                            <Link href="/forgot-password" className={styles.forgotLink}>
                                 Forgot your password?
-                            </a>
+                            </Link>
                         </div>
                     </>
                 )}

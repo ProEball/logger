@@ -9,6 +9,7 @@ import { OrgHydrator } from "@/core/store/OrgHydrator";
 import { OrgTopBar } from "@/features/organizations/components/OrgTopBar/OrgTopBar";
 import { getThemeFromCookie } from "@/core/theme/cookie";
 import type { ThemeValue } from "@/core/store/slices/theme";
+import { hasPermission } from "@/shared/permissions/check";
 import { parsePreferences } from "@/shared/types/user-preferences.types";
 
 interface ProjectLayoutProps {
@@ -59,6 +60,8 @@ export default async function ProjectLayout({ children, params }: ProjectLayoutP
                         orgName={org.name}
                         projects={projects}
                         activeProjectSlug={projectSlug}
+                        isOwner={membership.isOwner}
+                        canManageOrg={hasPermission(membership, "org.update")}
                     />
                 }
             >

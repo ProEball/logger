@@ -1,13 +1,13 @@
+import { AuthSplitLayout } from "@/features/auth/components/AuthSplitLayout/AuthSplitLayout";
 import { SetupWizard } from "@/features/auth/components/SetupWizard/SetupWizard";
 import { setupAction } from "@/features/auth/actions/setup.action";
-import styles from "./page.module.scss";
 
 export const metadata = { title: "Set up your workspace — Logger" };
 
 export default function SetupPage() {
     return (
-        <main className={styles.root}>
+        <AuthSplitLayout>
             <SetupWizard action={setupAction} />
-        </main>
+        </AuthSplitLayout>
     );
 }

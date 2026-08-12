@@ -7,6 +7,7 @@ import { SidebarItem } from "@/shared/components/Sidebar/parts/SidebarItem";
 import { SidebarSection } from "@/shared/components/Sidebar/parts/SidebarSection";
 import { SidebarDivider } from "@/shared/components/Sidebar/parts/SidebarDivider";
 import sidebarStyles from "@/shared/components/Sidebar/Sidebar.module.scss";
+import { cx } from "@/shared/utils/cx";
 import styles from "./AppSidebar.module.scss";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -22,6 +23,8 @@ interface AppSidebarProps {
     orgName: string;
     projects: Project[];
     activeProjectSlug?: string;
+    isOwner: boolean;
+    canManageOrg: boolean;
 }
 
 // ── Icons ─────────────────────────────────────────────────────────────────────
@@ -97,6 +100,25 @@ function IconKey() {
     );
 }
 
+function IconShield() {
+    return (
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <path d="M8 2a3 3 0 100 6 3 3 0 000-6zM4 11c0-2.2 1.8-4 4-4h0c2.2 0 4 1.8 4 4v1H4v-1z" stroke="currentColor" strokeWidth="1.25" strokeLinejoin="round" />
+            <path d="M11 7.5l1.5 1.5-1.5 1.5" stroke="currentColor" strokeWidth="1.25" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+    );
+}
+
+function IconWarning() {
+    return (
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <path d="M8 2L14 13H2L8 2z" stroke="currentColor" strokeWidth="1.25" strokeLinejoin="round" />
+            <path d="M8 6v3" stroke="currentColor" strokeWidth="1.25" strokeLinecap="round" />
+            <circle cx="8" cy="11" r="0.75" fill="currentColor" />
+        </svg>
+    );
+}
+
 // ── Project nav definition ─────────────────────────────────────────────────────
 
 type ProjectNavItem = {
@@ -114,6 +136,16 @@ const PROJECT_NAV: ProjectNavItem[] = [
     { id: "settings", label: "Settings", path: "/settings", icon: <IconSettings /> },
 ];
 
+// ── Org settings nav definition ─────────────────────────────────────────────────
+
+type SettingsNavItem = ProjectNavItem & { ownerOnly?: boolean; danger?: boolean };
+
+const SETTINGS_NAV: SettingsNavItem[] = [
+    { id: "general", label: "General", path: "", icon: <IconSettings /> },
+    { id: "roles", label: "Roles", path: "/roles", icon: <IconShield />, ownerOnly: true },
+    { id: "danger", label: "Danger Zone", path: "/danger", icon: <IconWarning />, ownerOnly: true, danger: true },
+];
+
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export function AppSidebar({
@@ -121,6 +153,8 @@ export function AppSidebar({
     orgName,
     projects,
     activeProjectSlug,
+    isOwner,
+    canManageOrg,
 }: AppSidebarProps) {
     const pathname = usePathname();
     const router = useRouter();
@@ -133,6 +167,24 @@ export function AppSidebar({
         const base = `/${orgSlug}/${slug}`;
         return pathname === base || pathname.startsWith(`${base}/`);
     };
+
+    const settingsNav = SETTINGS_NAV.filter((n) =>
+        n.id === "general" ? canManageOrg : isOwner,
+    );
+    const isSettingsActive = orgStartsWith("/settings");
+    const settingsBase = `/${orgSlug}/settings`;
+
+    // Pick the most-specific matching sub-item, mirroring the project nav logic below
+    const activeSettingsId = isSettingsActive
+        ? settingsNav.reduce<string | null>((best, n) => {
+            const href = `${settingsBase}${n.path}`;
+            const matches = n.path === "" ? pathname === href : pathname.startsWith(href);
+            if (!matches) return best;
+            if (best === null) return n.id;
+            const bestItem = settingsNav.find((x) => x.id === best)!;
+            return href.length > `${settingsBase}${bestItem.path}`.length ? n.id : best;
+        }, null)
+        : null;
 
     const top = (
         <div className={styles.orgRow}>
@@ -162,12 +214,33 @@ export function AppSidebar({
                     active={orgStartsWith("/team")}
                     icon={<IconUsers />}
                 />
-                <SidebarItem
-                    label="Settings"
-                    href={`/${orgSlug}/settings`}
-                    active={orgStartsWith("/settings")}
-                    icon={<IconSettings />}
-                />
+                {settingsNav.length > 0 && (
+                    <>
+                        <SidebarItem
+                            label="Settings"
+                            href={`/${orgSlug}/settings`}
+                            active={isSettingsActive && activeSettingsId === "general"}
+                            icon={<IconSettings />}
+                        />
+                        {isSettingsActive && (
+                            <div className={styles.navTree}>
+                                {settingsNav.map((n) => (
+                                    <SidebarItem
+                                        key={n.id}
+                                        label={n.label}
+                                        href={`${settingsBase}${n.path}`}
+                                        active={n.id === activeSettingsId}
+                                        icon={n.icon}
+                                        className={cx(
+                                            sidebarStyles.treeItem,
+                                            n.danger && styles.dangerItem,
+                                        )}
+                                    />
+                                ))}
+                            </div>
+                        )}
+                    </>
+                )}
             </SidebarSection>
 
             <SidebarDivider />
@@ -210,7 +283,7 @@ export function AppSidebar({
 
                             {/* Inline project nav when this project is active */}
                             {active && (
-                                <div className={styles.projectTree}>
+                                <div className={styles.navTree}>
                                     {PROJECT_NAV.map((n) => {
                                         const href = `${projectBase}${n.path}`;
                                         return (

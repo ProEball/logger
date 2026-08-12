@@ -4,20 +4,12 @@ import { useCallback } from "react";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import { serializeFilters } from "@/features/events/utils/serialize-filters";
 import { parseFilters } from "@/features/events/utils/parse-filters";
-import type { EventFilters, TimeRange, AttributeFilter } from "@/features/events/utils/event-filters.types";
-import type { EventLevel } from "@/features/ingest/utils/event-schema";
+import type { EventFilters, TimeRange } from "@/features/events/utils/event-filters.types";
 
 export function useEventFilters(): {
     filters: EventFilters;
-    setLevels: (levels: EventLevel[]) => void;
-    setEnvironments: (envs: string[]) => void;
-    setSources: (sources: string[]) => void;
-    setReleases: (releases: string[]) => void;
-    setErrorTypes: (types: string[]) => void;
-    setMessage: (msg: string | undefined) => void;
+    applyFilters: (next: Omit<EventFilters, "range">) => void;
     setTimeRange: (range: TimeRange) => void;
-    setCorrelation: (key: "userId" | "sessionId" | "requestId" | "traceId", value: string | undefined) => void;
-    addAttribute: (attr: AttributeFilter) => void;
     removeAttribute: (key: string) => void;
     removeFilter: (key: keyof EventFilters) => void;
     clearAll: () => void;
@@ -45,53 +37,28 @@ export function useEventFilters(): {
         [router, pathname, searchParams],
     );
 
-    const setLevels = useCallback(
-        (levels: EventLevel[]) => navigate({ ...filters, levels: levels.length ? levels : undefined }),
-        [filters, navigate],
-    );
-
-    const setEnvironments = useCallback(
-        (envs: string[]) => navigate({ ...filters, environments: envs.length ? envs : undefined }),
-        [filters, navigate],
-    );
-
-    const setSources = useCallback(
-        (sources: string[]) => navigate({ ...filters, sources: sources.length ? sources : undefined }),
-        [filters, navigate],
-    );
-
-    const setReleases = useCallback(
-        (releases: string[]) => navigate({ ...filters, releases: releases.length ? releases : undefined }),
-        [filters, navigate],
-    );
-
-    const setErrorTypes = useCallback(
-        (types: string[]) => navigate({ ...filters, errorTypes: types.length ? types : undefined }),
-        [filters, navigate],
-    );
-
-    const setMessage = useCallback(
-        (msg: string | undefined) => navigate({ ...filters, message: msg || undefined }),
+    /** Commit every non-range filter field at once — the Filters popover owns all of them as one draft. */
+    const applyFilters = useCallback(
+        (next: Omit<EventFilters, "range">) =>
+            navigate({
+                range: filters.range,
+                levels: next.levels?.length ? next.levels : undefined,
+                environments: next.environments?.length ? next.environments : undefined,
+                sources: next.sources?.length ? next.sources : undefined,
+                releases: next.releases?.length ? next.releases : undefined,
+                errorTypes: next.errorTypes?.length ? next.errorTypes : undefined,
+                userId: next.userId || undefined,
+                sessionId: next.sessionId || undefined,
+                requestId: next.requestId || undefined,
+                traceId: next.traceId || undefined,
+                message: next.message || undefined,
+                attributes: next.attributes?.length ? next.attributes : undefined,
+            }),
         [filters, navigate],
     );
 
     const setTimeRange = useCallback(
         (range: TimeRange) => navigate({ ...filters, range }),
-        [filters, navigate],
-    );
-
-    const setCorrelation = useCallback(
-        (key: "userId" | "sessionId" | "requestId" | "traceId", value: string | undefined) =>
-            navigate({ ...filters, [key]: value || undefined }),
-        [filters, navigate],
-    );
-
-    const addAttribute = useCallback(
-        (attr: AttributeFilter) => {
-            const existing = filters.attributes ?? [];
-            const updated = existing.filter((a) => a.key !== attr.key);
-            navigate({ ...filters, attributes: [...updated, attr] });
-        },
         [filters, navigate],
     );
 
@@ -121,15 +88,8 @@ export function useEventFilters(): {
 
     return {
         filters,
-        setLevels,
-        setEnvironments,
-        setSources,
-        setReleases,
-        setErrorTypes,
-        setMessage,
+        applyFilters,
         setTimeRange,
-        setCorrelation,
-        addAttribute,
         removeAttribute,
         removeFilter,
         clearAll,

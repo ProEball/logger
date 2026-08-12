@@ -74,12 +74,15 @@ export async function POST(req: Request): Promise<NextResponse> {
 
     // Validate each event individually
     const validEvents: Array<ReturnType<typeof eventSchema.parse>> = [];
+    // originalIndices[i] is the position in `body` that validEvents[i] came from
+    const originalIndices: number[] = [];
     const errors: Array<{ index: number; message: string }> = [];
 
     for (let i = 0; i < body.length; i++) {
         const parsed = eventSchema.safeParse(body[i]);
         if (parsed.success) {
             validEvents.push(parsed.data);
+            originalIndices.push(i);
         } else {
             errors.push({ index: i, message: parsed.error.flatten().fieldErrors.toString() });
         }
@@ -89,10 +92,16 @@ export async function POST(req: Request): Promise<NextResponse> {
         return NextResponse.json({ accepted: 0, errors }, { status: 400, headers: CORS_HEADERS });
     }
 
-    // Ingest valid events
+    // Ingest valid events (ingestBatch's error indices are relative to validEvents)
     const ctx = extractRequestContext(req, auth.projectId);
     try {
         const result = await ingestBatch(validEvents, ctx);
+        const remappedErrors = result.errors.map((e) => ({
+            index: originalIndices[e.index],
+            message: e.message,
+        }));
+        errors.push(...remappedErrors);
+        errors.sort((a, b) => a.index - b.index);
         const status = errors.length > 0 ? 207 : 202;
         return NextResponse.json(
             { accepted: result.accepted, errors },

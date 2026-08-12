@@ -13,3 +13,16 @@ export type Cursor = {
     beforeTs: string;
     beforeId: string;
 };
+
+export type FacetOption = {
+    value: string;
+    count: number;
+};
+
+export type FacetCounts = {
+    levels: FacetOption[];
+    environments: FacetOption[];
+    sources: FacetOption[];
+    releases: FacetOption[];
+    errorTypes: FacetOption[];
+};

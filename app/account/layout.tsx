@@ -8,6 +8,7 @@ import { getFirstOrgForUser, getMembership } from "@/features/organizations/serv
 import { listProjectsForOrg } from "@/features/projects/services/projects.service";
 import { AppSidebar } from "@/features/organizations/components/AppSidebar/AppSidebar";
 import { OrgTopBar } from "@/features/organizations/components/OrgTopBar/OrgTopBar";
+import { hasPermission } from "@/shared/permissions/check";
 import { parsePreferences } from "@/shared/types/user-preferences.types";
 
 interface AccountLayoutProps {
@@ -49,6 +50,8 @@ export default async function AccountLayout({ children }: AccountLayoutProps) {
                         orgSlug={org.slug}
                         orgName={org.name}
                         projects={projects}
+                        isOwner={membership?.isOwner ?? false}
+                        canManageOrg={membership ? hasPermission(membership, "org.update") : false}
                     />
                 }
             >

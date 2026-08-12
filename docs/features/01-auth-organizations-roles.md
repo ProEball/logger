@@ -245,9 +245,9 @@ ORGANIZATION SCOPE                  permission required
 ## Designs
 
 - 🎨 Design system: not yet generated. Prompt at `docs/prompts/design-system.md`.
-- 🎨 Screen designs: not yet generated. Prompt to be created at `docs/prompts/screens/01-auth.md` after this feature plan is reviewed.
+- 🎨 Screen designs: not yet generated. Prompt drafted at `docs/prompts/screens/01-auth.md` — currently covers Roles screens only (list + create/edit); login/setup/invite/account sections still need to be added before a full-feature run.
 - Design output destination: `docs/designs/screens/01-auth/`
-- Design status: ⬜ not requested
+- Design status: ⬜ prompt drafted (roles screens only), not yet run
 
 ## Implementation Checklist
 

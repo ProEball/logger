@@ -10,6 +10,7 @@ import { createRoleAction } from '@/features/roles/actions/create-role.action';
 import { updateRoleAction } from '@/features/roles/actions/update-role.action';
 import type { OrgRole } from '@/features/roles/services/roles.service';
 import type { Permission } from '@/shared/permissions/registry';
+import { ASSIGNABLE_PERMISSIONS } from '@/features/roles/utils/assignable-permissions';
 import { PermissionMatrix } from '../PermissionMatrix/PermissionMatrix';
 import styles from './RoleEditor.module.scss';
 
@@ -50,6 +51,22 @@ export function RoleEditor({ orgSlug, role }: RoleEditorProps) {
 
     return (
         <form className={styles.form} onSubmit={handleSubmit} noValidate>
+            <div className={styles.head}>
+                <h1 className={styles.title}>{role ? role.name : 'New role'}</h1>
+                <span className={styles.sub}>
+                    {permissions.length} of {ASSIGNABLE_PERMISSIONS.length} permissions
+                </span>
+                <div className={styles.spacer} />
+                <Button
+                    variant="ghost"
+                    type="button"
+                    onClick={() => router.push(`/${orgSlug}/settings/roles`)}
+                    disabled={isPending}
+                >
+                    Back to roles
+                </Button>
+            </div>
+
             <div className={styles.fields}>
                 <FormField label="Name" required>
                     <Input
@@ -77,21 +94,21 @@ export function RoleEditor({ orgSlug, role }: RoleEditorProps) {
                     />
                 </FormField>
 
-                <div className={styles.matrixSection}>
-                    <p className={styles.matrixLabel}>Permissions</p>
-                    <PermissionMatrix
-                        value={permissions}
-                        onChange={setPermissions}
-                        disabled={isPending}
-                    />
-                </div>
+                <PermissionMatrix
+                    value={permissions}
+                    onChange={setPermissions}
+                    disabled={isPending}
+                />
             </div>
 
             {error ? <p className={styles.error} role="alert">{error}</p> : null}
 
             <div className={styles.actions}>
+                <span className={styles.note}>
+                    {permissions.length} {permissions.length === 1 ? 'permission' : 'permissions'} selected
+                </span>
                 <Button
-                    variant="ghost"
+                    variant="secondary"
                     type="button"
                     onClick={() => router.push(`/${orgSlug}/settings/roles`)}
                     disabled={isPending}

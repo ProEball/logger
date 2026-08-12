@@ -8,6 +8,7 @@ import { getMembership, getOrgBySlug } from "@/features/organizations/services/o
 import { listProjectsForOrg } from "@/features/projects/services/projects.service";
 import { AppSidebar } from "@/features/organizations/components/AppSidebar/AppSidebar";
 import { OrgTopBar } from "@/features/organizations/components/OrgTopBar/OrgTopBar";
+import { hasPermission } from "@/shared/permissions/check";
 import { parsePreferences } from "@/shared/types/user-preferences.types";
 
 interface OrgShellLayoutProps {
@@ -48,6 +49,8 @@ export default async function OrgShellLayout({ children, params }: OrgShellLayou
                         orgSlug={org.slug}
                         orgName={org.name}
                         projects={projects}
+                        isOwner={membership.isOwner}
+                        canManageOrg={hasPermission(membership, "org.update")}
                     />
                 }
             >

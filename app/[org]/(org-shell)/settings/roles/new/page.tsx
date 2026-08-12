@@ -26,7 +26,6 @@ export default async function NewRolePage({ params }: NewRolePageProps) {
 
     return (
         <main className={styles.root}>
-            <h1 className={styles.title}>New role</h1>
             <RoleEditor orgSlug={slug} />
         </main>
     );

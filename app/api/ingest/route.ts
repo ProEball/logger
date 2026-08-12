@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { ZodError } from "zod";
 import { eventSchema } from "@/features/ingest/utils/event-schema";
 import { EventTimestampOutOfRetentionError } from "@/features/ingest/utils/sanitize-timestamp";
+import { AttributeTypeConflictError } from "@/features/ingest/utils/attribute-types";
 import { authenticateRequest, ApiKeyAuthError } from "@/features/ingest/services/api-key-auth.service";
 import { rateLimiter } from "@/features/ingest/services/rate-limit.service";
 import { ingestSingle } from "@/features/ingest/services/ingest.service";
@@ -77,6 +78,12 @@ export async function POST(req: Request): Promise<NextResponse> {
     } catch (e) {
         if (e instanceof EventTimestampOutOfRetentionError) {
             return NextResponse.json({ error: e.message }, { status: 400, headers: CORS_HEADERS });
+        }
+        if (e instanceof AttributeTypeConflictError) {
+            return NextResponse.json(
+                { error: "Attribute type conflict.", details: e.conflicts },
+                { status: 400, headers: CORS_HEADERS },
+            );
         }
         if (e instanceof ZodError) {
             return NextResponse.json(

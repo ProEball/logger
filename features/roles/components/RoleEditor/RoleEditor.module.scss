@@ -1,8 +1,29 @@
 .form {
     display: flex;
     flex-direction: column;
-    gap: var(--space-8);
-    max-width: 560px;
+    gap: var(--space-6);
+    max-width: 720px;
+}
+
+.head {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+}
+
+.title {
+    font: var(--type-h2);
+    color: var(--fg);
+}
+
+.sub {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    color: var(--fg-4);
+}
+
+.spacer {
+    flex: 1;
 }
 
 .fields {
@@ -13,38 +34,34 @@
 
 .systemNote {
     font: var(--type-body-sm);
-    color: var(--text-secondary);
-    margin: 0;
+    color: var(--fg-3);
+    margin: calc(var(--space-1) * -1) 0 0;
     padding: var(--space-2) var(--space-3);
-    background: var(--bg-subtle);
-    border-radius: 6px;
-    border-left: 3px solid var(--border-subtle);
-}
-
-.matrixSection {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-3);
-}
-
-.matrixLabel {
-    font: var(--type-label-sm);
-    color: var(--text-secondary);
-    margin: 0;
+    background: var(--bg-sidebar);
+    border-radius: var(--radius-md);
+    border-left: 3px solid var(--border-2);
 }
 
 .error {
     font: var(--type-body-sm);
-    color: var(--status-error);
+    color: var(--red);
     margin: 0;
     padding: var(--space-2) var(--space-3);
-    background: color-mix(in srgb, var(--status-error) 8%, transparent);
-    border: 1px solid color-mix(in srgb, var(--status-error) 25%, transparent);
-    border-radius: 6px;
+    background: var(--red-soft);
+    border: 1px solid rgba(255, 85, 85, 0.25);
+    border-radius: var(--radius-md);
 }
 
 .actions {
     display: flex;
-    justify-content: flex-end;
+    align-items: center;
     gap: var(--space-2);
+    justify-content: flex-end;
+}
+
+.note {
+    margin-right: auto;
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    color: var(--fg-4);
 }

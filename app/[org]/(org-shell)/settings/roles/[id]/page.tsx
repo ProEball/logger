@@ -30,10 +30,6 @@ export default async function EditRolePage({ params }: EditRolePageProps) {
 
     return (
         <main className={styles.root}>
-            <div className={styles.header}>
-                <h1 className={styles.title}>Edit role</h1>
-                <p className={styles.roleName}>{role.name}</p>
-            </div>
             <RoleEditor orgSlug={slug} role={role} />
         </main>
     );

@@ -52,10 +52,19 @@
     flex-shrink: 0;
 }
 
-// ── Inline project sub-nav tree ────────────────────────────────────────
-.projectTree {
+// ── Inline sub-nav tree (projects, settings) ────────────────────────────
+.navTree {
     margin: 2px 0 6px 20px;
     border-left: 1px solid var(--border-1);
     display: flex;
     flex-direction: column;
+}
+
+.dangerItem {
+    color: var(--red);
+
+    &:hover {
+        color: var(--red);
+        background: var(--red-soft);
+    }
 }
