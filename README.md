@@ -6,7 +6,8 @@ A self-hosted structured event logging service.
 
 | Doc | For |
 |---|---|
-| [`docs/OPERATIONS.md`](docs/OPERATIONS.md) | **Deploying and running it** — first deployment, updates, backups and restore, logs, health, certificates |
+| [`docs/LAUNCH.md`](docs/LAUNCH.md) | **Going live the first time** — what to buy, in what order, and what breaks if you skip a step |
+| [`docs/OPERATIONS.md`](docs/OPERATIONS.md) | **Running it** — deployments, updates, backups and restore, logs, health, certificates |
 | [`docs/reference/`](docs/reference/README.md) | What the code does today — stack, architecture, HTTP API, roles, logging, security |
 | [`docs/PROGRESS.md`](docs/PROGRESS.md) | Current state and the remaining gaps |
 

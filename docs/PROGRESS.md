@@ -10,7 +10,7 @@
 
 **Feature 08 — Docker packaging is done** · `docs/features/08-docker-packaging.md` — 30 / 30, live-checked against a real stack on 2026-08-13. The app is deployable: multi-stage `Dockerfile`, production `docker-compose.yml` (proxy/app/worker/migrate/postgres/backup), `Caddyfile` with automatic HTTPS, standalone worker and migration entrypoints, backup/restore scripts, and CI + release workflows. Deployment procedures live in [`docs/OPERATIONS.md`](OPERATIONS.md).
 
-**Next: no feature is in progress.** The roadmap's numbered features are all complete. What remains is the gap list below — pick from it rather than starting something new.
+**Next: no feature is in progress.** The roadmap's numbered features are all complete. What remains is the gap list below, sequenced for a real launch in [`LAUNCH.md`](LAUNCH.md) — pick from there rather than starting something new.
 
 **Production readiness: features ~85–90%, operations ~75%.** Packaging, delivery and CI are closed. What is left is email, offsite-backup verification, and a real staging run.
 
