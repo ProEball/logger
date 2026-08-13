@@ -34,7 +34,7 @@ retention:
 
 | Option | Roughly | Notes |
 |---|---|---|
-| **Hetzner Cloud** | cheapest of the three by a wide margin | Best price/performance for exactly this shape of workload. EU/US locations. **Recommended** unless something below overrides it |
+| **Hetzner Cloud** | cheapest of the three by a wide margin | Best price/performance for exactly this shape of workload. EU/US locations. **Recommended** — step-by-step in [Appendix A](#appendix-a--hetzner-cloud-concretely). Billed hourly with a monthly cap, so the certificate dry run in Phase 5 costs cents. Note new accounts are sometimes held for identity verification, which can take up to a day — register before you plan to deploy |
 | **DigitalOcean** | ~3–4× Hetzner for equivalent specs | Better docs, friendlier console, one-click Docker image. Worth the premium if you want to spend zero time on the host |
 | **Azure** | most expensive | Only if there is an organisational reason — existing tenant, billing, compliance. Nothing in this app benefits from it |
 
@@ -259,6 +259,115 @@ assumes you already know:
 are estimates, not quotes.
 
 ---
+
+## Appendix A — Hetzner Cloud, concretely
+
+Phases 2 and 3 written out for the provider recommended in 0.1. Verified against
+Hetzner's docs on 2026-08-13.
+
+> ⚠️ **Hetzner Cloud, not Managed Server.** They are different products under
+> similar names. Managed Server gives no root access at all — Docker is
+> impossible on it, not merely undocumented. The right product is at
+> [hetzner.com/cloud](https://www.hetzner.com/cloud/).
+
+### Creating the server
+
+| Field | Value |
+|---|---|
+| Location | Falkenstein / Nuremberg / Helsinki for EU users |
+| Image | **Apps → Docker CE** (Ubuntu 24.04, Docker Engine + Compose plugin, no bundled reverse proxy) |
+| Type | **CX33** — shared Intel/AMD, 4 vCPU, 8 GB RAM, 80 GB disk |
+| SSH key | Add one. **Do not** take the emailed root password — a key means password auth is never enabled, even briefly |
+| Backups | Worth taking here (~20% of server cost). See the note below |
+
+**Why CX33.** It matches the 4 vCPU / 8 GB target exactly. The disk is 80 GB
+against the 160 GB in the sizing table — the projection is ~22 GB database +
+~15 GB local dumps + images, logs and system, so roughly 50 GB used. It fits,
+without much headroom. Attach a Volume or move up to CX43 if it gets tight, and
+note that growing a disk is generally irreversible.
+
+**Do not take a CAX plan.** They are Ampere ARM. `release.yml` builds on a
+GitHub runner, which produces **amd64** — that image will not run on ARM without
+either adding `platforms: linux/amd64,linux/arm64` to the workflow (doubling
+build times) or building on the server. The saving is not worth the change.
+
+**On provider backups.** In 0.4 the reasoning was that our own `backup`
+container plus an offsite bucket already covers the only stateful thing that
+matters, so a paid snapshot service is redundant. At Hetzner's ~20% of a cheap
+server that calculus flips — it is a couple of euros for a whole-machine
+restore point, which our `pg_dump` deliberately is not. Take it here; it does
+**not** replace offsite backups, because a provider outage takes both with it.
+
+### Firewall
+
+Use the **Hetzner Cloud Firewall**, not (only) UFW. It sits outside the machine,
+so — unlike UFW — Docker cannot punch through it: published container ports
+bypass UFW entirely by writing their own iptables rules, which means UFW gives
+false confidence about exactly the ports this stack publishes.
+
+Inbound rules, and nothing else:
+
+| Port | Protocol | Source |
+|---|---|---|
+| 22 | TCP | your IP if it is static, otherwise anywhere |
+| 80 | TCP | anywhere — ⚠️ required for the ACME HTTP-01 challenge even on an HTTPS-only site |
+| 443 | TCP | anywhere |
+| 443 | UDP | anywhere — HTTP/3 (QUIC), which `docker-compose.yml` publishes |
+
+Postgres needs no rule: it is deliberately unpublished in `docker-compose.yml`
+and reachable only on the compose network.
+
+### Host setup
+
+```bash
+# 1. Non-root user with docker and sudo access.
+adduser deploy                      # set a password when prompted — sudo needs it
+usermod -aG sudo,docker deploy
+rsync --archive --chown=deploy:deploy ~/.ssh /home/deploy/
+```
+
+```bash
+# 2. Lock down SSH, then verify from a SECOND terminal before closing this one.
+sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin no/' /etc/ssh/sshd_config
+sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config
+systemctl reload ssh
+```
+
+> ⚠️ **Check `/etc/ssh/sshd_config.d/` before trusting the above.** Cloud images
+> routinely drop a `50-cloud-init.conf` in there containing
+> `PasswordAuthentication yes`, and an included file **overrides** the main
+> config. Editing only `sshd_config` then looks like it worked and changes
+> nothing. `sshd -T | grep -i passwordauth` reports what is actually in effect.
+
+```bash
+# 3. Docker log rotation. The json-file driver has NO size limit by default;
+#    this app plus Caddy's access logs will fill the disk and take Postgres
+#    down with it. Applies to containers created after the restart.
+tee /etc/docker/daemon.json >/dev/null <<'EOF'
+{
+  "log-driver": "json-file",
+  "log-opts": { "max-size": "50m", "max-file": "5" }
+}
+EOF
+systemctl restart docker
+```
+
+```bash
+# 4. Unattended security upgrades and SSH brute-force protection.
+apt update && apt install -y unattended-upgrades fail2ban
+dpkg-reconfigure -plow unattended-upgrades
+```
+
+```bash
+# 5. Confirm the toolchain before deploying.
+docker --version
+docker compose version    # must be v2.x — the compose file uses `name:` and
+                          # `service_completed_successfully`, neither of which
+                          # exists in the legacy v1 `docker-compose`
+timedatectl               # NTP must be active; partitions and cron key off time
+```
+
+No swap needed on CX33's 8 GB. Add 2 GB if you drop to a 4 GB plan.
 
 ## What this app does *not* need
 
