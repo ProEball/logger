@@ -1,187 +1,158 @@
-# NextJS and React APP Coding Rules and Guidelines
+# Logger — Code Rules
+
+Rules for writing code in **this** repository. Structure and layering claims here were verified against the tree on 2026-08-13; if you find a discrepancy, the code is right and this file is a bug — fix it (see `WORKFLOW.md` §1).
+
+Each rule is tagged:
+
+- **[MUST]** — binding. A violation is a defect; fix it or explain in a comment why the rule does not apply here.
+- **[DEFAULT]** — the way to do it unless there is a concrete reason not to. Deviating is fine; deviating silently is not.
 
 ## 1. Core Principles
-- Follow SOLID principles:
-    - Single Responsibility Principle
-    - Open-Closed Principle
-    - Liskov Substitution Principle
-    - Interface Segregation Principle
-    - Dependency Inversion Principle
-- Always keep code DRY (don't repeat yourself)
-- Always keep in mind performance and efficiency
-- Prefer readability over cleverness
+
+- **[DEFAULT]** SOLID, DRY, and single-responsibility at every level — module, function, component.
+- **[MUST]** Prefer readability over cleverness. The next reader is a cold session with no context.
+- **[DEFAULT]** Keep performance in mind, but do not optimize without evidence.
 
 ## 2. Project Structure
-- 2.1 Follow Feature Driven Development (FDD) pattern at the project root:
-    - `core/` — Redux store, state management core, core components, global services, and anything app-wide.
-    - `shared/` — shared library of components, hooks, services, and utilities used across features.
-    - `features/` — individual features of the application.
-      Each feature is composed of:
-        - `components/` — feature-specific components (see §2.2 for folder structure)
-        - `services/` — feature-specific API/data services
-        - `hooks/` — feature-specific custom hooks
-        - `utils/` — feature-specific utility functions
-    - Features must NOT import from another feature. If something needs to be shared, move it to `shared/`.
-    - Use the `@/` path alias (mapped to project root) for all imports: `@/core/`, `@/shared/`, `@/features/`.
-- 2.2 Component folder structure — **every component lives in its own named subfolder**:
-    ```
-    components/
-      ComponentName/
-        ComponentName.tsx
-        ComponentName.module.scss
-        parts/                        ← sub-components used ONLY by this component
-          SubComponent.tsx
-          SubComponent.module.scss
-    ```
-    - Semantic grouping subfolders (`filters/`, `detail/`, `widgets/`, etc.) are allowed inside `components/` when a feature has many thematically related components. Inside each group, the same per-component folder rule applies:
-      ```
-      components/
-        filters/
-          TimeRangePicker/
-            TimeRangePicker.tsx
-            TimeRangePicker.module.scss
-      ```
-    - A `parts/` subfolder at the **feature** `components/` level is NOT allowed. If a component is used by more than one parent, give it its own top-level folder in `components/`. If it is only ever used by one parent, nest it inside that parent's `parts/`.
-    - Do NOT add barrel `index.ts` files per component folder — import using the full explicit path: `import { Foo } from "@/features/f/components/Foo/Foo"`.
-    - `shared/components/` follows the same pattern. Its top-level `index.ts` barrel is the only exception (for convenience imports across all features).
-- 2.3 `app/` is reserved for Next.js App Router only — layouts, pages, and route segments.
-    - Do NOT place business logic, components, or services inside `app/`.
-    - Pages in `app/` should only compose feature components and handle routing concerns.
 
-## 3. Coding Rules
-- 3.1 General
-    - Always put `;` at the end of each statement.
-    - Use 4 spaces for indentation.
-- 3.2 Functions
-    - Must be 40 lines or fewer.
-    - Follow the single responsibility principle.
-- 3.3 Components
-    - Must be 250 lines or fewer, unless unavoidable.
-    - By default, components are Server Components. Use `"use client";` only when:
-        - Using `useState`, `useEffect`, or other client-side hooks.
-        - Accessing browser-only APIs.
-        - Using event handlers (`onClick`, `onChange`, etc.).
-        - Never convert entire pages to client components unnecessarily.
-    - Follow the single responsibility principle.
-    - Keep components small and focused.
-    - Extract complex logic into hooks.
-    - Avoid inline functions inside JSX when possible.
-    - Avoid accepting `setState` functions as props.
-    - Extract repeated UI into reusable components.
-        - If a sub-component is used only inside one parent component, place it as a flat file inside that parent's `parts/` subfolder: `ParentName/parts/SubName.tsx` (+ `.module.scss`). Do NOT put a sub-subfolder inside `parts/`.
-        - If a sub-component is used by two or more components, promote it to its own top-level folder in `components/`.
-- 3.4 Hooks
-    - Never call hooks conditionally.
-    - Follow the single responsibility principle.
-    - Custom hooks must start with `use`.
-    - Hooks must not mutate external state directly.
-    - Side effects belong in `useEffect`.
+### 2.1 Feature-Driven layout
 
-## 4. TypeScript Rules
-- Always use TypeScript — no `any`, no `@ts-ignore` without an explanation comment.
-- Prefer `type` for unions, intersections, and aliases; prefer `interface` for object shapes that may be extended.
-- Do not use type assertions (`as`) unless absolutely necessary; add a comment explaining why.
-- Enable and respect `strict: true` — all compiler errors must be fixed, not suppressed.
-- Export types and interfaces that are shared across files.
-- Name types and interfaces in PascalCase.
+```
+core/       app-wide singletons and infrastructure:
+            auth/ (better-auth config + server helpers), db/ (client, schema,
+            migrations, middleware), env/ (validated env schema), i18n/,
+            store/ (Redux), theme/, worker/ (pg-boss bootstrap), logger.ts
+shared/     cross-feature code: components/ (+ its top-level index.ts barrel),
+            hooks/, permissions/, types/, utils/
+features/   one folder per feature (11 today): alerts api-keys auth dashboard
+            events help ingest organizations overview projects roles
+app/        Next.js App Router only
+```
 
-## 5. State Management
-- 5.1 General
-    - Never mutate state directly.
-- 5.2 Application-level State
-    - Use Redux Toolkit for global app state:
-        - user state
-        - theme state
-        - language state
-        - etc.
-- 5.3 Feature-level State
-    - Use React Context for simple feature-scoped state.
-    - Use `useSyncExternalStore` to avoid unnecessary re-renders when subscribing to external stores.
-- 5.4 Component-level State
-    - Use `useState` for simple local state.
-    - Avoid an excessive number of `useState` calls — consider `useReducer` for complex local state.
-    - Avoid passing `setState` functions as props.
+A feature contains **only the subfolders it needs**, drawn from:
+
+| Subfolder | Holds | Example |
+|---|---|---|
+| `components/` | feature UI (see §2.2) | all features with UI |
+| `actions/` | Server Actions, one per file (§8) | `alerts`, `auth`, `projects`, `roles`, `api-keys`, `organizations` |
+| `services/` | data access and business logic (§7) | most features |
+| `utils/` | pure functions | most features |
+| `hooks/` | feature-specific hooks | `dashboard`, `events` |
+| `jobs/` | pg-boss job definitions | `alerts`, `ingest` |
+| `content/` | static authored content | `help` |
+
+- **[MUST]** A feature never imports from another feature. If two need it, it moves to `shared/`.
+- **[MUST]** Use the `@/` alias for all cross-folder imports: `@/core/…`, `@/shared/…`, `@/features/…`.
+
+### 2.2 Component folders
+
+**[MUST]** Every component lives in its own named folder, file matching folder:
+
+```
+components/
+  ComponentName/
+    ComponentName.tsx
+    ComponentName.module.scss
+    parts/                  ← sub-components used ONLY by this parent, flat
+      SubComponent.tsx
+```
+
+- Semantic grouping folders (`filters/`, `widgets/`, `detail/`) are allowed inside `components/`; the per-component rule still applies inside them.
+- **[MUST]** No `parts/` directly under a feature's `components/`. Used by one parent → nest in that parent's `parts/`. Used by two or more → its own top-level folder.
+- **[MUST]** No nested folders inside `parts/`.
+- **[MUST]** No per-component barrel `index.ts`. Import the explicit path. The single exception is `shared/components/index.ts`.
+
+### 2.3 `app/` is routing only
+
+**[MUST]** No business logic, services, or components in `app/`. Pages compose feature components and handle routing, params, and data loading. Route files follow App Router conventions (`page.tsx`, `layout.tsx`, `loading.tsx`, `error.tsx`, `not-found.tsx`).
+
+> Next 16 renamed `middleware.ts` to **`proxy.ts`** (repo root). It handles auth gating and mints the per-request CSP nonce — read `docs/reference/security.md` before touching it.
+
+## 3. Code Style
+
+- **[MUST]** Semicolons. 4-space indent.
+- **[MUST]** Functions ≤ 40 lines.
+- **[MUST]** Components ≤ 250 lines. One known exception: `AppSidebar.tsx`.
+- **[MUST]** Server Components by default. Add `"use client"` only for hooks, browser APIs, or event handlers — and push it down to the smallest component that needs it, never a whole page.
+- **[DEFAULT]** Extract complex logic into hooks; avoid large inline functions in JSX; do not pass `setState` as a prop.
+
+## 4. TypeScript
+
+- **[MUST]** `strict: true` errors are fixed, never suppressed. `npx tsc --noEmit` stays at 0.
+- **[MUST]** No `any`, no `@ts-ignore`, no `as` — unless a comment explains precisely why it is unavoidable. See `features/roles/utils/seed-system-roles.ts` for the bar.
+- **[DEFAULT]** `type` for unions and aliases, `interface` for extensible object shapes. PascalCase. Export what is shared.
+
+## 5. State
+
+- **[MUST]** Never mutate state directly.
+- **[DEFAULT]** Redux Toolkit for app-wide state (user, theme, current org/project). React Context for feature-scoped state. `useState` locally; `useReducer` once there are several related pieces.
+- **[MUST]** Do not gate rendering on a `useState` + `useEffect` "mounted" flag — it is a cascading render and eslint rejects it. Use `useIsHydrated()` from `@/shared/hooks/use-is-hydrated`. To reset state when a prop changes, adjust state during render with a "previous value" state, not an effect.
 
 ## 6. Data Fetching
-- Fetch on the server whenever possible using async Server Components.
-- Use `Suspense` for loading states.
-- Avoid client-side fetching unless necessary (interactivity, user-triggered actions).
-- No direct `fetch` calls inside components — use services.
 
-## 7. API & Services Layer
-- All API calls must go through service functions located in `services/`.
-- Services must:
-    - Validate inputs before sending requests.
-    - Handle and throw meaningful errors.
-- No business logic inside route handlers (`app/api/`) — delegate to services.
+- **[DEFAULT]** Fetch on the server in async Server Components. `Suspense` for loading. Client fetching only for genuine interactivity.
+- **[MUST]** No `fetch` inside a component — go through a service.
+
+## 7. Services
+
+- **[MUST]** All data access lives in `services/`. Route handlers under `app/api/` contain no business logic — they parse, delegate, and map errors to status codes.
+- **[MUST]** Services validate inputs and throw meaningful, typed errors.
 
 ## 8. Server Actions
-- Place Server Actions in dedicated `actions/` files, not inline inside components.
-- Server Actions must validate all inputs using a schema (e.g., Zod).
-- Handle errors explicitly — never let a Server Action fail silently.
-- Use Server Actions for form submissions and mutations; prefer fetching data in Server Components.
+
+- **[MUST]** One action per file in `actions/`, never inline in a component.
+- **[MUST]** Validate every input with Zod. Never fail silently — return a typed `{ error }` or throw deliberately.
+- **[DEFAULT]** Server Actions for mutations; Server Components for reads.
 
 ## 9. Error Handling
-- Never swallow errors silently.
-- Always handle async errors with `try/catch` or `.catch()`.
-- Use Next.js `error.tsx` boundaries for route-level error handling.
-- Return meaningful, typed error messages from services and Server Actions.
 
-## 10. Performance Guidelines
-- Avoid unnecessary re-renders.
-- Memoize expensive computations with `useMemo`.
-- Use `React.memo` only when profiling confirms it helps.
-- Avoid large client bundles — use Next.js `dynamic()` imports for heavy components.
-- Prefer Server Components for static or data-driven UI to reduce client bundle size.
+- **[MUST]** Never swallow an error. Every async path has `try/catch` or `.catch()`.
+- **[MUST]** Route segments have `error.tsx` boundaries; use the shared `GlobalErrorPage` / `NotFoundPage` / `ForbiddenPage`.
+
+## 10. Performance
+
+- **[DEFAULT]** `useMemo` for genuinely expensive computation. `React.memo` only when profiling shows it helps.
+- **[DEFAULT]** `dynamic()` for heavy client components — Recharts widgets and the event drawer already use it.
 
 ## 11. Testing
-- 11.1 Unit & Integration — Vitest + React Testing Library
-    - Test components, hooks, utilities, and Server Actions logic.
-    - Test files live next to the source file: `ComponentName.test.tsx`.
-    - Test behaviour, not implementation — query by role/label, not by class or id.
-    - Mock only at system boundaries (external APIs, databases) — do not mock internal modules.
-- 11.2 End-to-End — Playwright
-    - Cover full user flows, API routes, and server-rendered pages.
-    - E2E tests live in `e2e/` at the project root.
-    - Each flow should have its own spec file: `e2e/auth.spec.ts`, `e2e/dashboard.spec.ts`, etc.
-- 11.3 General
-    - Aim for high coverage on business logic; do not chase 100% coverage on presentational components.
-    - **When** tests are required and what "covered" means is defined in `WORKFLOW.md` §2 — that is the binding rule. This section covers only *how* to write them.
 
-## 12. Styling Rules
-- Use SCSS modules (`.module.scss`) — no global styles except in `app/globals.scss`.
-- Use SASS nesting ordered by HTML structure.
-- Avoid inline styles unless absolutely necessary.
-- Extract repeated styles into reusable components or SCSS mixins/variables.
-- Use meaningful, descriptive class names in camelCase.
+- **[MUST]** *When* tests are required is defined in `WORKFLOW.md` §2. This section is only *how*.
+- **[MUST]** Test behaviour, not implementation — query by role and label, never class or id.
+- **[MUST]** Mock only at real system boundaries: database, external HTTP, DNS, clock. Never mock an internal module.
+- Unit tests sit next to their source: `thing.test.ts`. E2E specs live in `e2e/`, one per flow, `kebab-case.spec.ts`.
+- **Reality check:** 23 unit test files, all `.test.ts` — there are currently **no** component tests, and `features/auth/` (9 Server Actions) and `features/overview/` have none at all. Do not read the existing layout as the target.
+
+## 12. Styling
+
+- **[MUST]** SCSS Modules. Global styles only in `app/globals.scss`. Design tokens over literal values.
+- **[MUST]** camelCase class names. Nesting follows HTML structure.
+- **[DEFAULT]** Avoid inline styles. Note that CSP forbids tightening `style-src`, so inline styles are not *blocked* — that is not permission to use them.
 
 ## 13. Forms
-- Use `gform-react` library for all forms.
-- Use GForm's `validators` prop for form validation.
-- Use Server Actions for form submission.
 
-## 14. Naming Conventions
-- Use `camelCase` for variables, functions, hooks, and methods.
-- Use `PascalCase` for components, classes, types, and interfaces.
-- Use `UPPER_SNAKE_CASE` for constants: `API_BASE_URL`.
-- Boolean variables must start with: `is`, `has`, `should`, or `can`.
+**The codebase does both, and the split is not random.** `gform-react` (6 components) covers the **unauthenticated entry flows**: `LoginForm`, `SetupWizard`, `AcceptInviteForm`, `ForgotPasswordForm`, `ResetPasswordForm`, plus `InviteMemberDialog`. Plain controlled `useState` + `<form onSubmit>` + shared `FormField`/`Input` (10+ components) covers **in-app forms**, including `AccountProfileForm` and `ChangePasswordForm` inside `features/auth/` itself, plus `ProjectCreateForm`, `OrgSettingsForm`, `AlertRuleEditor`.
 
-## 15. File Naming Conventions
-- Components → own subfolder in `PascalCase`, file matches folder: `UserCard/UserCard.tsx` + `UserCard/UserCard.module.scss`
-- Hooks → `kebab-case`: `use-auth.ts`
-- Utilities & functions → `camelCase`: `formatDate.ts`
-- Services → `camelCase.service.ts`: `user.service.ts`
-- Types/interfaces files → `camelCase.types.ts`: `user.types.ts`
-- Test files → same name as source + `.test`, lives in the same component folder: `UserCard/UserCard.test.tsx`
-- E2E files → `kebab-case.spec.ts`: `user-auth.spec.ts`
+- **[MUST]** Submission goes through a Server Action (§8), and inputs are validated server-side with Zod regardless of what the client does. Client-side validation is UX, never the boundary.
+- **[DEFAULT]** Match the surrounding feature. Do not introduce the other pattern into a file that does not already use it.
 
-## 16. Anti-Patterns to Avoid
-- Massive page components — pages compose, features implement
-- Deep prop drilling — use composition or context
-- Business logic inside JSX
-- Anonymous large inline functions
-- Global mutable state
-- Ignoring loading and error states
-- Using `any` type or suppressing TypeScript errors
-- Placing feature code inside `app/` directory
-- Importing from one feature into another
+*Open: whether that entry-flow / in-app split is the intended rule or an accident. If intended, state it as [MUST] and delete this note; if not, pick one and migrate.*
+
+## 14. Internationalization
+
+`core/i18n/` is a typed English-only dictionary; `t("a.b.c")` returns the key itself when missing, so a gap degrades to an ugly string instead of a crash.
+
+**Currently 30 of 120 feature components use `t()`** — the rest hardcode English. That inconsistency is the status quo, not the goal.
+
+- **[DEFAULT]** New user-facing strings go through `t()` with a key under the feature's namespace.
+- **[MUST]** Never mix the two inside one component — a half-translated component is worse than a consistently hardcoded one.
+- Not required for: `aria-label`s on icon-only controls in unmigrated components, developer-facing log messages, or test fixtures.
+
+## 15. Naming
+
+- `camelCase` — variables, functions, hooks, methods. `PascalCase` — components, types, interfaces, classes. `UPPER_SNAKE_CASE` — constants.
+- **[MUST]** Booleans start with `is`, `has`, `should`, or `can`.
+- Files: components `PascalCase/PascalCase.tsx` · hooks `use-kebab-case.ts` · utils `camelCase.ts` · services `camelCase.service.ts` · types `camelCase.types.ts` · jobs `kebab-case.job.ts` · actions `kebab-case.action.ts` · tests `<source>.test.ts` · e2e `kebab-case.spec.ts`.
+
+## 16. Anti-Patterns
+
+Massive page components · deep prop drilling · business logic in JSX · global mutable state · ignoring loading and error states · `any` or suppressed TS errors · feature code inside `app/` · importing one feature from another · a `useEffect` that only calls `setState` · documenting intent as if it were current behaviour.
