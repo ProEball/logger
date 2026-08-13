@@ -23,17 +23,27 @@ export async function changePasswordAction(data: {
     const parsed = schema.safeParse(data);
     if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid input." };
 
+    const h = await headers();
+
     try {
         await auth.api.changePassword({
             body: {
                 currentPassword: parsed.data.currentPassword,
                 newPassword: parsed.data.newPassword,
-                revokeOtherSessions: true,
             },
-            headers: await headers(),
+            headers: h,
         });
-        return {};
     } catch {
         return { error: "Current password is incorrect." };
     }
+
+    // A separate call, rather than changePassword's own `revokeOtherSessions`
+    // body flag: that flag deletes every session (including the current one)
+    // and mints a fresh one, which requires the new session cookie to land
+    // correctly in the same response — unreliable in the Server Action
+    // context. This endpoint instead deletes only sessions other than the
+    // current one, so the current session and its cookie are untouched.
+    await auth.api.revokeOtherSessions({ headers: h });
+
+    return {};
 }

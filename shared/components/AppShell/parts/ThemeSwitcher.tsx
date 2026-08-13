@@ -17,9 +17,15 @@ export function ThemeSwitcher() {
     const dispatch = useDispatch();
     const current = useSelector((state: RootState) => state.theme.value);
 
-    const handleChange = (value: ThemeValue) => {
+    const handleChange = async (value: ThemeValue) => {
         dispatch(setTheme(value));
-        void updatePreferencesAction({ theme: value });
+        // Awaited (not fire-and-forget) so the save isn't dropped if the tab
+        // closes right after switching — the visible theme would then no
+        // longer match what's persisted for the next login.
+        const result = await updatePreferencesAction({ theme: value });
+        if (result.error) {
+            console.error("Failed to save theme preference:", result.error);
+        }
     };
 
     return (

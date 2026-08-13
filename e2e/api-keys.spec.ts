@@ -1,63 +1,64 @@
 import { expect, test } from "@playwright/test";
-import { Client } from "pg";
+import { randomUUID } from "crypto";
+import { withDb } from "@/e2e/support/db";
+import { resetDb } from "@/e2e/support/cleanup";
+import { bootstrapOrg, login } from "@/e2e/support/auth";
+import { labelFor } from "@/e2e/support/ui";
 
-const DB_URL = "postgresql://postgres:postgres@localhost:5432/logger";
+const ORG_SLUG = "api-keys-corp";
+const EMAIL = "alice@api-keys.test";
+const PASS = "AlicePass99!";
+const PROJECT_SLUG = "key-test-project";
 
-async function getOrgSlug(): Promise<string> {
-    const c = new Client({ connectionString: DB_URL });
-    await c.connect();
-    const { rows } = await c.query("SELECT slug FROM organizations LIMIT 1");
-    await c.end();
-    return rows[0]?.slug ?? "bootstrap-corp";
-}
+let orgId: string;
 
-async function ensureProject(orgSlug: string, projectSlug: string): Promise<void> {
-    const c = new Client({ connectionString: DB_URL });
-    await c.connect();
-    const { rows: orgs } = await c.query("SELECT id FROM organizations WHERE slug = $1", [orgSlug]);
-    const orgId = orgs[0]?.id;
-    if (!orgId) { await c.end(); return; }
-    await c.query(
-        `INSERT INTO projects (organization_id, name, slug)
-         VALUES ($1, $2, $3)
-         ON CONFLICT DO NOTHING`,
-        [orgId, "Key Test Project", projectSlug],
+async function cleanApiKeys(): Promise<void> {
+    await withDb((c) =>
+        c.query(
+            `DELETE FROM api_keys WHERE project_id IN (SELECT id FROM projects WHERE organization_id = $1)`,
+            [orgId],
+        ),
     );
-    await c.end();
 }
 
-async function cleanApiKeys(projectSlug: string, orgSlug: string): Promise<void> {
-    const c = new Client({ connectionString: DB_URL });
-    await c.connect();
-    await c.query(
-        `DELETE FROM api_keys WHERE project_id IN (
-            SELECT p.id FROM projects p
-            JOIN organizations o ON o.id = p.organization_id
-            WHERE p.slug = $1 AND o.slug = $2
-        )`,
-        [projectSlug, orgSlug],
-    );
-    await c.end();
-}
+test.describe.serial("API Keys", () => {
+    test.beforeAll(async ({ browser }) => {
+        await resetDb();
 
-test.describe("API Keys", () => {
-    const PROJECT_SLUG = "key-test-project";
+        const setupCtx = await browser.newContext();
+        const setupPage = await setupCtx.newPage();
+        await bootstrapOrg(setupPage, {
+            orgName: "Api Keys Corp",
+            ownerName: "Alice Owner",
+            email: EMAIL,
+            password: PASS,
+            orgSlug: ORG_SLUG,
+        });
+        await setupCtx.close();
+
+        const { rows } = await withDb((c) => c.query("SELECT id FROM organizations WHERE slug = $1", [ORG_SLUG]));
+        orgId = rows[0].id;
+        await withDb((c) =>
+            c.query(
+                `INSERT INTO projects (id, organization_id, name, slug) VALUES ($1, $2, $3, $4)`,
+                [randomUUID(), orgId, "Key Test Project", PROJECT_SLUG],
+            ),
+        );
+    });
 
     test.beforeEach(async () => {
-        const orgSlug = await getOrgSlug();
-        await ensureProject(orgSlug, PROJECT_SLUG);
-        await cleanApiKeys(PROJECT_SLUG, orgSlug);
+        await cleanApiKeys();
     });
 
     test("api-keys page shows empty state when no keys exist", async ({ page }) => {
-        const orgSlug = await getOrgSlug();
-        await page.goto(`/${orgSlug}/${PROJECT_SLUG}/settings/api-keys`);
+        await login(page, EMAIL, PASS, ORG_SLUG);
+        await page.goto(`/${ORG_SLUG}/${PROJECT_SLUG}/settings/api-keys`);
         await expect(page.getByText("No API keys")).toBeVisible();
     });
 
     test("create key → one-time reveal modal shows plain key", async ({ page }) => {
-        const orgSlug = await getOrgSlug();
-        await page.goto(`/${orgSlug}/${PROJECT_SLUG}/settings/api-keys`);
+        await login(page, EMAIL, PASS, ORG_SLUG);
+        await page.goto(`/${ORG_SLUG}/${PROJECT_SLUG}/settings/api-keys`);
 
         await page.click('button:has-text("Create API key")');
         await page.fill('input[placeholder="Production server"]', "CI key");
@@ -71,53 +72,54 @@ test.describe("API Keys", () => {
         expect(keyValue).toMatch(/^lgr_/);
 
         // Close button disabled until checkbox checked
-        const closeBtn = page.getByRole("button", { name: "Close" });
+        // The modal also has an icon-only "Close" (aria-label) button — scope to
+        // the visible-text footer button to avoid a strict-mode ambiguity.
+        const closeBtn = page.getByRole("button").filter({ hasText: "Close" });
         await expect(closeBtn).toBeDisabled();
 
-        // Check the checkbox
-        await page.getByLabel("I've saved this key in a secure location.").check();
+        // Check the checkbox (click the wrapping label — a decorative <span>
+        // overlays the native input and would intercept a direct click on it).
+        await labelFor(page, page.getByLabel("I've saved this key in a secure location.")).click();
         await expect(closeBtn).toBeEnabled();
         await closeBtn.click();
 
-        // Back on api-keys page — key appears in list as masked
-        await expect(page.getByText("CI key")).toBeVisible();
-        await expect(page.getByText(/lgr_\w{4}…/)).toBeVisible();
+        // Back on api-keys page — key appears in list as masked. "CI key" also
+        // appears in hidden revoke/delete/rate-limit dialog templates in the
+        // DOM, so scope to the table.
+        const table = page.getByRole("table");
+        await expect(table.getByText("CI key")).toBeVisible();
+        await expect(table.getByText(/lgr_\w{4}…/)).toBeVisible();
     });
 
     test("revoke key → row shows revoked badge", async ({ page }) => {
-        const orgSlug = await getOrgSlug();
-        await page.goto(`/${orgSlug}/${PROJECT_SLUG}/settings/api-keys`);
+        await login(page, EMAIL, PASS, ORG_SLUG);
+        await page.goto(`/${ORG_SLUG}/${PROJECT_SLUG}/settings/api-keys`);
 
         // Create key
         await page.click('button:has-text("Create API key")');
         await page.fill('input[placeholder="Production server"]', "Revoke Me");
         await page.click('button[type="submit"]:has-text("Create")');
-        await page.getByLabel("I've saved this key in a secure location.").check();
-        await page.getByRole("button", { name: "Close" }).click();
+        await labelFor(page, page.getByLabel("I've saved this key in a secure location.")).click();
+        await page.getByRole("button").filter({ hasText: "Close" }).click();
 
         // Revoke it
         await page.click('button:has-text("Revoke")');
         await expect(page.getByText("Revoke API key")).toBeVisible();
         await page.click('button:has-text("Revoke key")');
 
-        // Row should show revoked
-        await expect(page.getByText("revoked")).toBeVisible();
+        // Row should show revoked. A toast notification also says "revoked" —
+        // scope to the table to avoid a strict-mode ambiguity.
+        await expect(page.getByRole("table").getByText("revoked")).toBeVisible();
 
         // Verify in DB
-        const c = new Client({ connectionString: DB_URL });
-        await c.connect();
-        const { rows } = await c.query(
-            `SELECT ak.revoked_at FROM api_keys ak
-             JOIN projects p ON p.id = ak.project_id
-             WHERE p.slug = $1 AND ak.name = 'Revoke Me'`,
-            [PROJECT_SLUG],
+        const { rows } = await withDb((c) =>
+            c.query(
+                `SELECT ak.revoked_at FROM api_keys ak
+                 JOIN projects p ON p.id = ak.project_id
+                 WHERE p.slug = $1 AND ak.name = 'Revoke Me'`,
+                [PROJECT_SLUG],
+            ),
         );
-        await c.end();
         expect(rows[0]?.revoked_at).not.toBeNull();
-    });
-
-    test("revoked key cannot be used to create event (TODO: verify in feature 03)", async () => {
-        // Deferred to feature 03 ingest implementation
-        expect(true).toBe(true);
     });
 });

@@ -119,6 +119,16 @@ function IconWarning() {
     );
 }
 
+function IconHelp() {
+    return (
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="1.25" />
+            <path d="M6 6.2c0-1.1.9-1.9 2-1.9s2 .7 2 1.7c0 1.3-1.7 1.4-1.9 2.7" stroke="currentColor" strokeWidth="1.25" strokeLinecap="round" />
+            <circle cx="8" cy="11.3" r="0.6" fill="currentColor" />
+        </svg>
+    );
+}
+
 // ── Project nav definition ─────────────────────────────────────────────────────
 
 type ProjectNavItem = {
@@ -241,6 +251,13 @@ export function AppSidebar({
                         )}
                     </>
                 )}
+                <SidebarDivider />
+                <SidebarItem
+                    label="Help"
+                    href={`/${orgSlug}/help`}
+                    active={orgStartsWith("/help")}
+                    icon={<IconHelp />}
+                />
             </SidebarSection>
 
             <SidebarDivider />

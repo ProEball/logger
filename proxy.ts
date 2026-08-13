@@ -10,7 +10,12 @@ import { auth } from "@/core/auth/config";
 // freshly-created org immediately after the setup action redirects them.
 let setupDoneCache = false;
 let cacheExpiresAt = 0;
-const CACHE_TTL_MS = 5_000;
+// e2e resets the DB between spec files within a single long-lived server
+// process (see playwright.config.ts) — a cached "done" would then survive
+// past a reset and misroute the next file's setup flow. `next dev` hardcodes
+// NODE_ENV=development regardless of what's passed in, so a dedicated flag
+// is used instead of NODE_ENV to detect e2e mode.
+const CACHE_TTL_MS = process.env.E2E_MODE === "true" ? 0 : 5_000;
 
 async function checkSetupDone(): Promise<boolean> {
     if (setupDoneCache && Date.now() < cacheExpiresAt) return true;

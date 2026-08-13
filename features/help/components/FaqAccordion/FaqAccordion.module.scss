@@ -1,0 +1,17 @@
+.acc {
+    border: 1px solid var(--border-1);
+    border-radius: var(--radius-md);
+    background: var(--bg-sidebar);
+    overflow: hidden;
+}
+
+.groupLabel {
+    font-size: 10.5px;
+    font-weight: var(--weight-semibold);
+    letter-spacing: var(--tracking-wider);
+    text-transform: uppercase;
+    color: var(--fg-4);
+    padding: var(--space-3) var(--space-4) var(--space-1-5);
+    background: rgba(255, 255, 255, 0.015);
+    border-bottom: 1px solid var(--border-1);
+}
