@@ -145,8 +145,8 @@
     - E2E tests live in `e2e/` at the project root.
     - Each flow should have its own spec file: `e2e/auth.spec.ts`, `e2e/dashboard.spec.ts`, etc.
 - 11.3 General
-    - Every new feature must have tests before merging.
     - Aim for high coverage on business logic; do not chase 100% coverage on presentational components.
+    - **When** tests are required and what "covered" means is defined in `WORKFLOW.md` §2 — that is the binding rule. This section covers only *how* to write them.
 
 ## 12. Styling Rules
 - Use SCSS modules (`.module.scss`) — no global styles except in `app/globals.scss`.
