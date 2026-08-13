@@ -1,7 +1,9 @@
 // NOTE: NOT multi-instance safe. A multi-replica deployment requires a
 // Redis-backed limiter. See feature 08 open questions.
 
-const DEFAULT_LIMIT = parseInt(process.env.RATE_LIMIT_PER_MIN ?? "1000", 10);
+import { env } from "@/core/env";
+
+const DEFAULT_LIMIT = env.RATE_LIMIT_PER_MIN;
 const WINDOW_MS = 60_000;
 const CLEANUP_INTERVAL_MS = 5 * 60_000;
 

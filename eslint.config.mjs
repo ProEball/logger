@@ -12,9 +12,26 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // E2E build dir (see `distDir` in next.config.ts) — build output, not source.
+    ".next-e2e/**",
     // Design system handoff bundle from claude.ai/design — reference, not our code.
     "docs/designs/**",
   ]),
+  {
+    rules: {
+      // A leading underscore is the project's marker for "declared to satisfy a
+      // signature, deliberately unused" — test spies that only need their call
+      // arguments recorded, and props kept for API symmetry.
+      "@typescript-eslint/no-unused-vars": [
+        "warn",
+        {
+          argsIgnorePattern: "^_",
+          varsIgnorePattern: "^_",
+          caughtErrorsIgnorePattern: "^_",
+        },
+      ],
+    },
+  },
 ]);
 
 export default eslintConfig;

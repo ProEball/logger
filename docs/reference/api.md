@@ -7,7 +7,7 @@ There is no OpenAPI/Swagger spec in the repo — this document is the API contra
 
 ## Ingest API
 
-The primary public-facing API. Designed for SDKs/services to POST structured log events. Authenticated with a **Bearer API key** (see [security.md](security.md#api-key-security)), not cookies/sessions — so CORS is wide open (`Access-Control-Allow-Origin: *`) on these two routes specifically, which is intentional since there's no cookie-based session to leak via CSRF.
+The primary public-facing API. Designed for SDKs/services to POST structured log events. Authenticated with a **Bearer API key** (see [security.md](security.md#api-key-security-ingest-authentication)), not cookies/sessions — so CORS is wide open (`Access-Control-Allow-Origin: *`) on these two routes specifically, which is intentional since there's no cookie-based session to leak via CSRF.
 
 ### `POST /api/ingest` — single event
 

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect } from "vitest";
 
 // Pure state-machine logic extracted for unit testing without DB
 type AlertState = "ok" | "firing";

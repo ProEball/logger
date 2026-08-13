@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { ZodError } from "zod";
-import { batchEventSchema, eventSchema } from "@/features/ingest/utils/event-schema";
+import { eventSchema } from "@/features/ingest/utils/event-schema";
 import { EventTimestampOutOfRetentionError } from "@/features/ingest/utils/sanitize-timestamp";
 import { authenticateRequest, ApiKeyAuthError } from "@/features/ingest/services/api-key-auth.service";
 import { rateLimiter } from "@/features/ingest/services/rate-limit.service";

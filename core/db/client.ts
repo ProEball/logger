@@ -6,7 +6,6 @@ import { wrapWithSlowQueryLogger } from "@/core/db/middleware/slow-query-logger"
 // Singleton pattern: prevents connection pool explosion during Next.js hot reload.
 // Without this, each module re-evaluation creates a new pool (leaking connections).
 declare global {
-    // eslint-disable-next-line no-var
     var _pgClient: ReturnType<typeof postgres> | undefined;
 }
 

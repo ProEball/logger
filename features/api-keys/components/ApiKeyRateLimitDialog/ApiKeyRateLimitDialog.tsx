@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useState, useTransition } from "react";
 import { Button, FormField, Input, Modal } from "@/shared/components";
 import { useToast } from "@/shared/components/Toast/ToastProvider";
 import { updateApiKeyRateLimitAction } from "@/features/api-keys/actions/update-api-key-rate-limit.action";
@@ -30,12 +30,18 @@ export function ApiKeyRateLimitDialog({
     const [rateLimitPerMin, setRateLimitPerMin] = useState(String(currentRateLimitPerMin));
     const [error, setError] = useState<string | null>(null);
 
-    useEffect(() => {
+    // See InviteMemberDialog — reset during render, not from an effect. This one
+    // seeds *on open*, so it also re-runs when the key's saved limit changes
+    // while the dialog is open.
+    const [seededFor, setSeededFor] = useState<string | null>(null);
+    const seedKey = open ? String(currentRateLimitPerMin) : null;
+    if (seededFor !== seedKey) {
+        setSeededFor(seedKey);
         if (open) {
             setRateLimitPerMin(String(currentRateLimitPerMin));
             setError(null);
         }
-    }, [open, currentRateLimitPerMin]);
+    }
 
     const rateLimitValue = Number(rateLimitPerMin);
     const isRateLimitValid = Number.isInteger(rateLimitValue) && rateLimitValue >= 1 && rateLimitValue <= 100_000;

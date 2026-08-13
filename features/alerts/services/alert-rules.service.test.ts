@@ -1,5 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { Membership } from "@/shared/permissions/check";
+import { createAlertRuleSchema } from "@/features/alerts/utils/alert-schemas";
+
+/** Shape the `.set()` / `.values()` spies receive — a partial column patch. */
+type Patch = Record<string, unknown>;
 
 function makeChain(result: unknown) {
     const chain: Record<string, unknown> = {
@@ -98,11 +102,14 @@ describe("alert-rules.service", () => {
     });
 
     describe("createAlertRule", () => {
+        // The service takes already-parsed input, so every schema default is
+        // resolved by the time it is called — `notifyOnResolve` included.
         const input = {
             name: "New rule",
             filter: { range: { type: "preset" as const, value: "1h" as const } },
             condition: { type: "threshold" as const, count: 5, windowMinutes: 10 },
             channels: [{ type: "webhook" as const, url: "https://example.com" }],
+            notifyOnResolve: true,
         };
 
         it("asserts alerts.manage", async () => {
@@ -111,15 +118,20 @@ describe("alert-rules.service", () => {
             expect(assertPermissionMock).toHaveBeenCalledWith(MEMBERSHIP, "alerts.manage");
         });
 
-        it("defaults notifyOnResolve to true when not provided", async () => {
-            const valuesSpy = vi.fn(() => makeChain([BASE_RULE]));
+        it("defaults notifyOnResolve to true when the caller omits it", () => {
+            const { notifyOnResolve: _omitted, ...withoutFlag } = input;
+            expect(createAlertRuleSchema.parse(withoutFlag).notifyOnResolve).toBe(true);
+        });
+
+        it("forwards notifyOnResolve: true with version 1", async () => {
+            const valuesSpy = vi.fn((_values: Patch) => makeChain([BASE_RULE]));
             insertMock.mockReturnValue({ values: valuesSpy });
             await createAlertRule(PROJECT_ID, input, "user-1", MEMBERSHIP);
             expect(valuesSpy).toHaveBeenCalledWith(expect.objectContaining({ notifyOnResolve: true, version: 1 }));
         });
 
         it("respects an explicit notifyOnResolve: false", async () => {
-            const valuesSpy = vi.fn(() => makeChain([BASE_RULE]));
+            const valuesSpy = vi.fn((_values: Patch) => makeChain([BASE_RULE]));
             insertMock.mockReturnValue({ values: valuesSpy });
             await createAlertRule(PROJECT_ID, { ...input, notifyOnResolve: false }, "user-1", MEMBERSHIP);
             expect(valuesSpy).toHaveBeenCalledWith(expect.objectContaining({ notifyOnResolve: false }));
@@ -154,32 +166,32 @@ describe("alert-rules.service", () => {
         });
 
         it("resets state to ok when the filter changes, to avoid a stale firing state", async () => {
-            const setSpy = vi.fn(() => makeChain([BASE_RULE]));
+            const setSpy = vi.fn((_patch: Patch) => makeChain([BASE_RULE]));
             updateMock.mockReturnValue({ set: setSpy });
             await updateAlertRule(
                 PROJECT_ID,
                 { id: RULE_ID, filter: { range: { type: "preset", value: "1h" } } },
                 MEMBERSHIP,
             );
-            const patch = setSpy.mock.calls[0]![0] as Record<string, unknown>;
+            const patch = setSpy.mock.calls[0]![0];
             expect(patch.state).toBe("ok");
             expect(patch.stateChangedAt).toBeInstanceOf(Date);
         });
 
         it("does not touch state when only name/description change", async () => {
-            const setSpy = vi.fn(() => makeChain([BASE_RULE]));
+            const setSpy = vi.fn((_patch: Patch) => makeChain([BASE_RULE]));
             updateMock.mockReturnValue({ set: setSpy });
             await updateAlertRule(PROJECT_ID, { id: RULE_ID, name: "Renamed" }, MEMBERSHIP);
-            const patch = setSpy.mock.calls[0]![0] as Record<string, unknown>;
+            const patch = setSpy.mock.calls[0]![0];
             expect(patch).not.toHaveProperty("state");
             expect(patch).not.toHaveProperty("stateChangedAt");
         });
 
         it("always bumps version", async () => {
-            const setSpy = vi.fn(() => makeChain([BASE_RULE]));
+            const setSpy = vi.fn((_patch: Patch) => makeChain([BASE_RULE]));
             updateMock.mockReturnValue({ set: setSpy });
             await updateAlertRule(PROJECT_ID, { id: RULE_ID, name: "Renamed" }, MEMBERSHIP);
-            const patch = setSpy.mock.calls[0]![0] as Record<string, unknown>;
+            const patch = setSpy.mock.calls[0]![0];
             expect(patch.version).toBeDefined();
         });
     });
@@ -220,19 +232,19 @@ describe("alert-rules.service", () => {
         });
 
         it("resets state to ok when disabling, to avoid a spurious resolve on re-enable", async () => {
-            const setSpy = vi.fn(() => makeChain([BASE_RULE]));
+            const setSpy = vi.fn((_patch: Patch) => makeChain([BASE_RULE]));
             updateMock.mockReturnValue({ set: setSpy });
             await toggleAlertRule(PROJECT_ID, RULE_ID, false, MEMBERSHIP);
-            const patch = setSpy.mock.calls[0]![0] as Record<string, unknown>;
+            const patch = setSpy.mock.calls[0]![0];
             expect(patch.enabled).toBe(false);
             expect(patch.state).toBe("ok");
         });
 
         it("does not touch state when enabling", async () => {
-            const setSpy = vi.fn(() => makeChain([BASE_RULE]));
+            const setSpy = vi.fn((_patch: Patch) => makeChain([BASE_RULE]));
             updateMock.mockReturnValue({ set: setSpy });
             await toggleAlertRule(PROJECT_ID, RULE_ID, true, MEMBERSHIP);
-            const patch = setSpy.mock.calls[0]![0] as Record<string, unknown>;
+            const patch = setSpy.mock.calls[0]![0];
             expect(patch.enabled).toBe(true);
             expect(patch).not.toHaveProperty("state");
         });

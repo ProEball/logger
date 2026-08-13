@@ -35,6 +35,10 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+# ...except the template, which carries no secrets and is what a fresh clone
+# copies to .env.local. The blanket .env* rule had been swallowing it, so the
+# repo shipped with no env template at all despite the docs referencing one.
+!.env.example
 
 # vercel
 .vercel

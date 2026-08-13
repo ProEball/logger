@@ -561,6 +561,10 @@ Adding SMS later = adding a new provider, no changes to alert dispatch code.
 ### MVP scope
 - **Webhook** is the only fully implemented channel (covers Slack, Discord,
   Telegram bots, custom endpoints — all are HTTP POST under the hood).
+- Webhook targets pass an **SSRF guard** — syntactic checks at save time,
+  DNS resolution re-checked before every delivery, and redirects refused.
+  Any future channel that fetches a user-supplied URL must reuse it; see
+  `docs/reference/security.md#outbound-request-safety-ssrf`.
 - **Email**, **SMS**, **Slack** (the typed variant): registered in the type
   union, but their providers throw `NotImplementedError`. Wiring real providers
   is a follow-up task, no schema changes required.
@@ -590,6 +594,13 @@ logger.example.com {
     reverse_proxy app:3000
 }
 ```
+
+> **Two corrections before this is written for real** (noted 2026-08-13):
+> - The app listens on **port 80**, not 3000 (`next start -p 80`). `reverse_proxy app:3000` would not connect.
+> - Caddy must **not** add its own security headers. The app now emits the full
+>   set itself, including a per-request nonce-based CSP (see §17 and
+>   `docs/reference/security.md`); a duplicate `Content-Security-Policy` header
+>   from the proxy would be intersected with the app's and break every script.
 
 Switch to Nginx/Traefik only if we need fine-grained rate-limiting, complex
 routing, or multiple subdomains.
@@ -796,6 +807,13 @@ to start it, not all at once.
 | 2026-05-02 | `@floating-ui/react` for anchor-positioned overlays (Tooltip, Popover, future Combobox/Menu) | Industry standard, flip/shift/arrow/focus built in. Hand-rolling collision detection is the wrong tradeoff at this scope. ~10 KB gzip. |
 | 2026-05-02 | Modal uses native HTML `<dialog>` instead of custom portal/focus-trap | Browser handles focus trap, escape, top-layer stacking, `::backdrop`. No third-party focus-trap lib. See feature 'design-system'. |
 | 2026-05-02 | Toast state in Context (not Redux) for now | Foundation hasn't installed Redux yet; toast queue is isolated UI state, not domain data; refactor to Redux later if shared with other UI is straightforward. |
+| 2026-08-13 | Nonce-based CSP minted in `proxy.ts`; static headers in `next.config.ts` | Nonce + `strict-dynamic` is real XSS protection, unlike `script-src 'unsafe-inline'`. Splitting them keeps the per-request part where a per-request secret can be generated. |
+| 2026-08-13 | `style-src` keeps `'unsafe-inline'` and will not be tightened | Per the CSP spec a nonce in `style-src` makes the browser *ignore* `'unsafe-inline'`, and nonces never apply to inline `style` **attributes** — which Recharts emits on all its SVG. Nonce-ing styles blanks every dashboard chart. Scripts stay fully nonce-covered. |
+| 2026-08-13 | Accept a fully dynamic app as the price of the nonce | Root layout reads `headers()` for the nonce, opting the whole tree into dynamic rendering; `next build` reports zero static routes. Free for a self-hosted single-tenant app. Revisit only if CDN caching is ever wanted — the two are mutually exclusive without dropping the nonce. |
+| 2026-08-13 | Webhook SSRF guard in two layers, DNS re-checked per delivery | Save-time validation alone is bypassable: a hostname that resolves publicly when the rule is saved can be repointed at `169.254.169.254` later. Syntactic layer is isomorphic (runs in the editor form), DNS layer is server-only. Redirects are refused outright rather than followed. |
+| 2026-08-13 | Operational env vars moved into the validated schema (4 → 8) | `LOG_LEVEL`, `WORKER_IN_PROCESS`, `RATE_LIMIT_PER_MIN`, `ALLOW_PRIVATE_WEBHOOK_TARGETS` now fail fast at boot. `AUTH_SECRET` raised from `min(1)` to `min(32)`. Precipitated by `NEXT_PUBLIC_APP_URL` — an env var referenced in code but defined nowhere, which silently broke every alert webhook's deep link. |
+| 2026-08-13 | Mount gates use `useSyncExternalStore`, not `useState` + `useEffect` | `react-hooks/set-state-in-effect` correctly flags the old idiom as a cascading render. Extracted to `shared/hooks/use-is-hydrated.ts`. Dialog state resets moved to React's documented "adjust state during render" pattern for the same reason. |
+| 2026-08-13 | Unit tests stay colocated with their source; **rejected** a per-feature `tests/` folder | Colocation is what makes a missing test visible in the folder listing and the diff — the mechanism WORKFLOW.md §2 leans on — and it makes `git mv` carry a test along with its module instead of orphaning it. The perceived inconsistency was only that features keep logic in different subfolders (`auth` in `actions/`, `ingest` in `services/`+`utils/`); the rule was already uniform at 32/32. Revisit only if bulk `.test.tsx` component tests start cluttering per-component folders. See `PROJECT.md` §11. |
 
 ---
 

@@ -95,25 +95,29 @@ E2E tests do **not** run against this dev database — they need a one-time sepa
 
 ## Environment variables
 
-Only four variables are schema-validated (`core/env/index.ts`, via `@t3-oss/env-nextjs` + Zod, all server-only, fail-fast at boot if invalid):
+Eight variables are schema-validated (`core/env/index.ts`, via `@t3-oss/env-nextjs` + Zod, all server-only, fail-fast at boot if invalid). Expanded from four on 2026-08-13:
 
 | Variable | Zod rule | Default | Purpose |
 |---|---|---|---|
 | `DATABASE_URL` | `z.string().url()`, required | — | Postgres connection string |
-| `AUTH_SECRET` | `z.string().min(1)`, required | — | better-auth session/token signing secret (`openssl rand -base64 32`) |
-| `APP_URL` | `z.string().url()` | `http://localhost` | Base URL used for building links (password reset, invites) |
+| `AUTH_SECRET` | `z.string().min(32)`, required | — | better-auth session/token signing secret (`openssl rand -base64 32` yields 44 chars) |
+| `APP_URL` | `z.string().url()` | `http://localhost` | Base URL for every generated link — password reset, invites, **and the alert-webhook `events_url` deep link** |
 | `NODE_ENV` | `z.enum(["development","test","production"])` | `development` | Standard Node env |
+| `LOG_LEVEL` | `z.enum(["fatal","error","warn","info","debug","trace"])` | `info` | pino log level for the app logger |
+| `WORKER_IN_PROCESS` | `z.enum(["true","false"])` → `boolean` | `false` | If true, starts the pg-boss worker (partition maintenance, alert evaluation/delivery) inside the Next.js process — convenient for dev/single-instance, not the intended prod topology (see [architecture.md](architecture.md#background-jobs)) |
+| `RATE_LIMIT_PER_MIN` | `z.coerce.number().int().positive()` | `1000` | Fallback per-API-key ingest rate limit (events per 60s), for keys with no per-key override |
+| `ALLOW_PRIVATE_WEBHOOK_TARGETS` | `z.enum(["true","false"])` → `boolean` | `false` | Opt-out of the alert-webhook SSRF guard, permitting private/loopback targets. Only for self-hosted installs posting to a service on the same network — see [security.md](security.md#outbound-request-safety-ssrf) |
 
-The following variables are **used by the app but read directly via raw `process.env`, unvalidated** — worth knowing about since they're operationally important but won't fail the app at boot if malformed:
+**`isServer` is set explicitly** on `createEnv` rather than left to the library default. `@t3-oss/env-nextjs` probes `typeof window === "undefined"` to decide server vs. client; Vitest runs service and util suites under **jsdom**, where that probe reports "client" and the proxy then throws on any server-variable access. The override adds `|| process.env.NODE_ENV === "test"`, which is only ever true under the test runner. Without it, importing `@/core/env` anywhere in a module under test breaks the suite.
+
+The following are still read via raw, unvalidated `process.env` — build- and test-time concerns rather than runtime config, so a malformed value cannot break a running app:
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `WORKER_IN_PROCESS` | `false` | If `"true"`, starts the pg-boss worker (partition maintenance, alert evaluation/delivery jobs) inside the Next.js process itself — convenient for dev/single-instance, not intended for multi-replica prod (see [architecture.md](architecture.md#background-jobs)) |
-| `RATE_LIMIT_PER_MIN` | `1000` | Default per-API-key ingest rate limit (events per 60s); overridable per key in the UI |
-| `LOG_LEVEL` | `info` | pino log level for the app logger |
 | `NEXT_PUBLIC_BUILD_SHA` | — | Build SHA, set by CI, exposed via `GET /api/version` |
 | `NEXT_PUBLIC_BUILD_TIME` | — | Build timestamp, set by CI, exposed via `GET /api/version` |
-| `NEXT_PUBLIC_APP_URL` | `http://localhost:3000` | Used by the alert-webhook payload builder to construct a deep link back into the app; **distinct from and can drift out of sync with** the validated `APP_URL` — worth reconciling when configuring a real deployment |
 | `E2E_MODE` | unset | Set to `"true"` only by `playwright.config.ts`'s `webServer`. `next dev` hardcodes `NODE_ENV=development` regardless of what's passed in, so this app-specific flag exists to detect "running as the e2e server" where `NODE_ENV` can't be used: `next.config.ts` uses it to pick a separate build dir (`.next-e2e`, avoiding a lock conflict with the normal dev server's `.next`), and `proxy.ts` uses it to disable a 5s in-memory cache that would otherwise survive a test-database reset. See [misc.md#testing](misc.md#testing) |
+
+> **Removed 2026-08-13: `NEXT_PUBLIC_APP_URL`.** It was read only by the alert-webhook payload builder and was never defined in `.env.example` or the env schema, so every webhook shipped an `events_url` built from its `http://localhost:3000` fallback — broken in any real deployment, and silently so. That builder now reads the validated `APP_URL`.
 
 `.env.example` at the repo root documents the commonly-needed subset. Copy it to `.env.local` for local dev.

@@ -32,6 +32,38 @@ async function checkSetupDone(): Promise<boolean> {
     return count > 0;
 }
 
+const IS_DEV = process.env.NODE_ENV === "development";
+
+/**
+ * Builds the per-request CSP and the nonce it embeds.
+ *
+ * Next.js parses the `nonce-{value}` out of the request's own CSP header during
+ * SSR and stamps it onto every framework/page script tag it emits, so nothing
+ * needs to thread the nonce through the component tree by hand.
+ *
+ * `style-src` deliberately uses `'unsafe-inline'` rather than the nonce: recharts
+ * renders SVG with inline `style` attributes, and per the CSP spec a nonce in
+ * `style-src` makes the browser *ignore* `'unsafe-inline'` — nonces never apply
+ * to style attributes. Nonce-ing styles would blank every chart on the dashboard.
+ */
+function buildCsp(nonce: string): string {
+    return [
+        "default-src 'self'",
+        // 'unsafe-eval' is dev-only: React uses eval to rebuild server stacks.
+        `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'${IS_DEV ? " 'unsafe-eval'" : ""}`,
+        "style-src 'self' 'unsafe-inline'",
+        "img-src 'self' blob: data:",
+        "font-src 'self'",
+        "connect-src 'self'",
+        "object-src 'none'",
+        "base-uri 'self'",
+        "form-action 'self'",
+        "frame-ancestors 'none'",
+        // Would rewrite http://localhost to https:// and break the dev server.
+        ...(IS_DEV ? [] : ["upgrade-insecure-requests"]),
+    ].join("; ");
+}
+
 const PUBLIC_PATHS = new Set(["/login", "/forgot-password"]);
 
 function isPublicPath(pathname: string): boolean {
@@ -42,14 +74,22 @@ function isPublicPath(pathname: string): boolean {
     );
 }
 
-export async function proxy(request: NextRequest) {
+/** Passes the nonce down to the renderer so Next can stamp its script tags. */
+function forward(request: NextRequest, nonce: string, csp: string): NextResponse {
+    const requestHeaders = new Headers(request.headers);
+    requestHeaders.set("x-nonce", nonce);
+    requestHeaders.set("Content-Security-Policy", csp);
+    return NextResponse.next({ request: { headers: requestHeaders } });
+}
+
+async function resolveRoute(request: NextRequest, next: () => NextResponse): Promise<Response> {
     const { pathname } = request.nextUrl;
 
     const done = await checkSetupDone();
 
     if (pathname === "/setup") {
         if (done) return new Response(null, { status: 404 });
-        return NextResponse.next();
+        return next();
     }
 
     if (!done) {
@@ -63,14 +103,24 @@ export async function proxy(request: NextRequest) {
         if (session && pathname === "/login") {
             return NextResponse.redirect(new URL("/", request.url));
         }
-        return NextResponse.next();
+        return next();
     }
 
     if (!session) {
         return NextResponse.redirect(new URL("/login", request.url));
     }
 
-    return NextResponse.next();
+    return next();
+}
+
+export async function proxy(request: NextRequest) {
+    const nonce = Buffer.from(crypto.randomUUID()).toString("base64");
+    const csp = buildCsp(nonce);
+
+    const response = await resolveRoute(request, () => forward(request, nonce, csp));
+    response.headers.set("Content-Security-Policy", csp);
+
+    return response;
 }
 
 export const config = {

@@ -1,6 +1,10 @@
 import { eq, sql } from "drizzle-orm";
 import { db } from "@/core/db/client";
 import { alertNotifications } from "@/core/db/schema";
+import {
+    assertPublicWebhookTarget,
+    UnsafeWebhookTargetError,
+} from "@/features/alerts/services/webhook-target-guard.service";
 
 const WEBHOOK_TIMEOUT_MS = 5_000;
 
@@ -18,6 +22,15 @@ export async function deliverWebhook(
         customHeaders[key] = value;
     }
 
+    // Re-checked on every delivery rather than only at rule-creation time: DNS
+    // for a host that was public yesterday can be repointed inward today.
+    try {
+        await assertPublicWebhookTarget(url);
+    } catch (err) {
+        const reason = err instanceof UnsafeWebhookTargetError ? err.message : String(err);
+        return { ok: false, error: reason, shouldRetry: false };
+    }
+
     let status: number | undefined;
 
     try {
@@ -31,6 +44,9 @@ export async function deliverWebhook(
                 ...customHeaders,
             },
             body: JSON.stringify(payload),
+            // Following a 3xx would re-enter the request with a Location the
+            // guard above never vetted — the classic SSRF bypass.
+            redirect: "manual",
             signal: controller.signal,
         });
 
@@ -39,6 +55,10 @@ export async function deliverWebhook(
 
         if (res.ok) {
             return { ok: true, status };
+        }
+
+        if (status >= 300 && status < 400) {
+            return { ok: false, status, error: "Webhook redirected; refusing to follow", shouldRetry: false };
         }
 
         // 4xx — configuration error, no retry

@@ -59,10 +59,12 @@ export const SYSTEM_ROLE_DEFS: readonly SystemRoleDef[] = [
     },
 ];
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function seedSystemRoles(
     organizationId: string,
-    // PgDatabase<any, any, any> accepts both the db instance and transaction objects
+    // The three `any`s are Drizzle's own generics for query-result shape, schema,
+    // and full-schema maps. Naming them pins the parameter to one of the db
+    // instance *or* a transaction, and this function must accept either.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     database: PgDatabase<any, any, any> = db,
 ): Promise<SeededRoleIds> {
     const inserted = await database

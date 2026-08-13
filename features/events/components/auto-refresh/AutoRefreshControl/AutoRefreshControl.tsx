@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
+import { useIsHydrated } from "@/shared/hooks/use-is-hydrated";
 import { setAutoRefresh, selectAutoRefresh } from "@/core/store/slices/user";
 import { updatePreferencesAction } from "@/features/auth/actions/update-preferences.action";
 import { t } from "@/core/i18n/t";
@@ -27,8 +27,7 @@ export function AutoRefreshControl() {
     // org/project/theme hydrator pattern too, so treat as a separate task. The `mounted`
     // gate below is a quick fix: it renders no option as active until the real
     // preference has landed, so SSR and the first client paint always agree.
-    const [mounted, setMounted] = useState(false);
-    useEffect(() => setMounted(true), []);
+    const mounted = useIsHydrated();
     const isActive = (opt: AutoRefreshValue) => mounted && current === opt;
 
     useAutoRefresh(current);
