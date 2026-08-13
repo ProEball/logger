@@ -2,40 +2,52 @@
 
 > Single source of truth for "where are we right now". Update after every work session.
 
-**Last updated**: 2026-08-13 (production-readiness audit + hardening pass)
+**Last updated**: 2026-08-13 (Feature 08 — Docker packaging, complete + live-checked)
 
 ---
 
 ## Current Phase
 
-**Now: Feature 08 — Docker packaging** · `docs/features/08-docker-packaging.md`
-Status: 🟦 Planned — 0 / 30 checklist items. **This is the blocker for production.** Nothing in the repo can be deployed today: no app `Dockerfile`, no production `docker-compose.yml`, no `Caddyfile`, no standalone worker entrypoint, `output: 'standalone'` not set.
+**Feature 08 — Docker packaging is done** · `docs/features/08-docker-packaging.md` — 30 / 30, live-checked against a real stack on 2026-08-13. The app is deployable: multi-stage `Dockerfile`, production `docker-compose.yml` (proxy/app/worker/migrate/postgres/backup), `Caddyfile` with automatic HTTPS, standalone worker and migration entrypoints, backup/restore scripts, and CI + release workflows. Deployment procedures live in [`docs/OPERATIONS.md`](OPERATIONS.md).
 
-**Production readiness: features ~85–90%, operations ~30%.** The app is functionally close to complete; the gap is entirely in packaging, delivery, and operations. Full audit below.
+**Next: no feature is in progress.** The roadmap's numbered features are all complete. What remains is the gap list below, sequenced for a real launch in [`LAUNCH.md`](LAUNCH.md) — pick from there rather than starting something new.
+
+**Production readiness: features ~85–90%, operations ~75%.** Packaging, delivery and CI are closed. What is left is email, offsite-backup verification, and a real staging run.
 
 ### Blockers before production
 
 | # | Blocker | Where |
 |---|---|---|
-| 1 | No deployment artifacts at all | Feature 08, 0/30 |
-| 2 | No standalone worker process — `core/worker/worker.ts` is an in-process module started from `instrumentation.ts` via `WORKER_IN_PROCESS`; there is no entrypoint that can run as its own container | `core/worker/` |
-| 3 | **Password reset does not send email.** `sendResetPassword` writes the reset URL to the log and returns. A user who forgets their password cannot recover. (Invitations are copy-link by design — that decision stands; reset is a different case.) | `core/auth/config.ts` |
-| 4 | No backups — no script, no container, no restore procedure | Feature 08 §17–21 |
-| 5 | No CI — no `.github/` directory exists; nothing runs build/lint/test on push | — |
+| 1 | ~~No deployment artifacts~~ | **Closed 2026-08-13** — Feature 08, 30/30 |
+| 2 | ~~No standalone worker process~~ | **Closed 2026-08-13** — `core/worker/main.ts` → `dist/worker.js`, its own container |
+| 3 | **Password reset does not send email.** `sendResetPassword` writes the reset URL to the log and returns. A user who forgets their password cannot recover without an operator reading `docker compose logs app`. (Invitations are copy-link by design — that decision stands; reset is a different case.) **This is now the only hard blocker.** | `core/auth/config.ts` |
+| 4 | ~~No backups~~ | **Closed 2026-08-13** — `backup` service, rotation, `scripts/restore.sh`, both live-checked. ⚠️ **Offsite (`OFFSITE=true`) is still unverified** — no bucket was configured, so only the failure paths were exercised |
+| 5 | ~~No CI~~ | **Closed 2026-08-13** — `.github/workflows/ci.yml` (four gates + image build) and `release.yml` (tag → ghcr.io) |
 
 ### Known gaps, not blockers
 
-- **`projects.retention_days` is not enforced.** The column is read and exposed through the projects service, but partition retention is globally hardcoded to `'30 days'` in migration 0003. PLAN.md §14 already records this as a deliberate deferral — the open question is whether to implement it or stop exposing the value.
-- **Ingest rate limiter is single-instance in-memory** — documented in code; needs a Redis-backed replacement before multi-replica deployment.
-- **No rate limiting on `/api/auth/*`** — login and password-reset requests are not throttled. Note the actions themselves are now test-covered for enumeration-safety, but throttling is a separate, still-missing control.
-- **`features/overview/` has no tests** — the last feature with zero coverage after the `features/auth/` debt was closed on 2026-08-13.
+- **No staging run.** Everything was verified against local Docker. Real ACME certificate issuance (`DOMAIN=:80` skips it) and behaviour under real ingest load are unproven. Do a staging deploy before the first tagged release.
+- **`projects.retention_days` is not enforced.** The column is read and exposed through the projects service, but partition retention is globally hardcoded to `'30 days'` in migration 0003 — confirmed again during the Feature 08 live check (`part_config.retention = '30 days'` on a freshly migrated database). PLAN.md §14 records this as a deliberate deferral; the open question is whether to implement it or stop exposing the value.
+- **Ingest rate limiter is single-instance in-memory** — needs a shared store before running more than one `app` replica.
+- **No rate limiting on `/api/auth/*`** — login and password-reset requests are not throttled. The actions are test-covered for enumeration-safety, but throttling is a separate, still-missing control.
+- **Secrets live in one `.env` on the host**, protected only by `chmod 600`. No secret manager, no rotation procedure. Backups are unencrypted at rest.
+- **`features/overview/` has no tests** — the last feature with zero coverage.
 - **`scripts/seed-events.mjs` is broken** — resolves a project by the hardcoded slug `"some"` while its error message says `"test"`.
+- **`scripts/apply-migrations.mjs` is unsafe** — it writes migration *names* into `drizzle.__drizzle_migrations` where drizzle expects content *hashes*, so a database it has touched will not agree with either real migrator. Not used by any supported path; a candidate for deletion.
 
 ---
 
 ## Post-Feature-07 work (not tracked as numbered features)
 
-Five commits landed after Feature 07 without their own feature docs. Recorded here so the roadmap table isn't the only history.
+Recorded here so the roadmap table isn't the only history.
+
+**2026-08-13 — Feature 08: Docker packaging.** See the feature doc for the full checklist. Beyond the artifacts, three latent defects were found by running the stack rather than reading it, each fixed with a regression test that fails against the old code:
+
+1. **pg-boss 12 requires `createQueue` before `schedule`/`work`.** The worker crash-looped on any fresh database with `Queue partman-maintenance not found`. Invisible in dev, where the queue rows already existed from an older pg-boss.
+2. **Every failed query raised an `unhandledRejection`.** `slow-query-logger.ts` forked a promise with no rejection handler, so a caller's `try/catch` could not suppress it. Next traps the event; the plain-`node` worker would have terminated on it.
+3. **`/api/health/ready`'s migration check had never run.** It queried `"__drizzle_migrations"` unqualified, resolving to `public` instead of the `drizzle` schema, and reported the resulting error as `"unavailable"` — so an app on a half-migrated database still passed its healthcheck.
+
+Also corrected: `/api/version` reported `""` rather than `"dev"` for an unset build SHA (`??` where `||` was needed, exposed by the new empty-string build arg), and `docs/reference/*.md` — which the help centre reads off disk at runtime — would not have shipped in the standalone output without an explicit `outputFileTracingIncludes`. Tests 293 → **332**; gates all green.
 
 **2026-08-13 — Production-readiness hardening.** Security headers (`X-Frame-Options`, `nosniff`, `Referrer-Policy`, `Permissions-Policy`, `X-DNS-Prefetch-Control`, prod-only HSTS) in `next.config.ts`; **nonce-based CSP** minted per request in `proxy.ts` (`style-src` deliberately keeps `'unsafe-inline'` — Recharts emits inline style attributes and a nonce in `style-src` would void it; the whole app is consequently dynamically rendered); **webhook SSRF guard** in two layers (`webhook-url.ts` syntactic + isomorphic, `webhook-target-guard.service.ts` DNS-resolving + server-only) plus `redirect: "manual"`; env schema widened 4 → 8 validated vars with `AUTH_SECRET` raised to `min(32)`; **fixed: alert webhooks built `events_url` from a nonexistent `NEXT_PUBLIC_APP_URL`**, so every webhook ever sent carried a `localhost:3000` link; `shared/hooks/use-is-hydrated.ts` replaces the `useState`+`useEffect` mount-gate idiom in 3 components, dialog resets moved to render-time state adjustment in 4 more. Gates went from 13 TS errors / 1032 lint errors to **0 / 0**; tests 192 → **225**; e2e **53 passing**; build clean. See PLAN.md §17 for the decisions.
 
@@ -87,7 +99,7 @@ Each feature has its own implementation doc with a status block, decisions, sche
 | 05 | Dashboard | ✅ Done | [features/05-dashboard.md](features/05-dashboard.md) |
 | 06 | Alerts | ✅ Done | [features/06-alerts.md](features/06-alerts.md) |
 | 07 | Polish | ✅ Done | [features/07-polish.md](features/07-polish.md) |
-| 08 | Docker packaging | 🟦 Planned | [features/08-docker-packaging.md](features/08-docker-packaging.md) |
+| 08 | Docker packaging | ✅ Done | [features/08-docker-packaging.md](features/08-docker-packaging.md) |
 
 Status legend:
 - ⬜ Not started — no work yet

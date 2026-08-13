@@ -1,0 +1,21 @@
+# This repo is developed on Windows with `core.autocrlf=true`, which rewrites
+# checked-out files to CRLF. That is harmless for source Git never hands to a
+# shell — but fatal for anything a Linux container executes or parses.
+#
+# `scripts/*.sh` are bind-mounted into the `backup` container and run there. A
+# CRLF shebang makes the kernel look for an interpreter literally named
+# "/bin/sh\r", and the container dies with an unhelpful "no such file or
+# directory" naming a path that plainly exists. Same class of problem for the
+# Dockerfile and Caddyfile, which are parsed inside Linux images.
+#
+# Forcing LF on checkout for these paths costs nothing on Windows — no editor
+# in use here needs CRLF — and removes the failure entirely.
+*.sh text eol=lf
+Dockerfile text eol=lf
+*.Dockerfile text eol=lf
+Caddyfile text eol=lf
+docker-compose*.yml text eol=lf
+.env.production.example text eol=lf
+
+# Generated bundles; never diffed by hand.
+dist/** -diff

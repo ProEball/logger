@@ -1,9 +1,7 @@
 import { NextResponse } from "next/server";
 import { pgClient } from "@/core/db/client";
 import { getBoss } from "@/core/worker/worker";
-import journal from "@/core/db/migrations/meta/_journal.json";
-
-const EXPECTED_MIGRATION_COUNT = journal.entries.length;
+import { getMigrationStatus } from "@/core/db/migration-status";
 
 export async function GET() {
     const checks: Record<string, string> = {};
@@ -53,17 +51,17 @@ export async function GET() {
 
     // ── Migrations up to date ─────────────────────────────────────────────────
     try {
-        const [row] = await pgClient`
-            SELECT COUNT(*) AS cnt FROM "__drizzle_migrations"
-        `;
-        const applied = parseInt(String(row.cnt), 10);
-        if (applied < EXPECTED_MIGRATION_COUNT) {
-            checks.migrations = `behind: applied=${applied}, expected=${EXPECTED_MIGRATION_COUNT}`;
-            isHealthy = false;
-        } else {
+        const { applied, expected, isUpToDate } = await getMigrationStatus(pgClient);
+        if (isUpToDate) {
             checks.migrations = "ok";
+        } else {
+            checks.migrations = `behind: applied=${applied}, expected=${expected}`;
+            isHealthy = false;
         }
     } catch {
+        // Reaching the table can fail legitimately — the database is up but has
+        // never been migrated. Not fatal on its own; the `db` check above is
+        // what decides whether Postgres itself is reachable.
         checks.migrations = "unavailable";
     }
 

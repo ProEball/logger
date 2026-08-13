@@ -4,12 +4,12 @@
 
 | Requirement | Version / detail |
 |---|---|
-| Node.js | Version matching `next: 16.2.4` / `react: 19.2.4` requirements (Node 20+ recommended; `@types/node` targets `^20`) |
+| Node.js | `next` declares `engines.node >= 20.9.0`; `@types/node` targets `^20`. **Production runs Node 22** — the Docker image is `node:22-alpine` and CI pins Node 22 to match. Bump the Dockerfile, `ci.yml`, and the esbuild `target` in `scripts/build-worker.mjs` together |
 | PostgreSQL | **16**, with the **`pg_partman`** extension installed (see [architecture.md](architecture.md#events-partitioning)) |
 | OS | Any (dev instructions assume Windows/PowerShell per this repo's environment, but the app itself is platform-agnostic) |
 | Package manager | npm (`package-lock.json` present) |
 
-The app binds to **port 80** directly in both `dev` and `start` scripts (`next dev -p 80`, `next start -p 80`) — not the Next.js default 3000. Keep this in mind when writing reverse-proxy config or Docker port mappings.
+**Two different ports, and the distinction matters.** Locally the app binds **port 80**: both `dev` and `start` use `-p 80`, not the Next.js default 3000. **In the container it binds 3000** — the image runs `.next/standalone/server.js`, which reads `PORT` from the environment (`ENV PORT=3000`), and never runs `next start`. Reverse-proxy config and healthchecks in the production stack therefore target 3000; see [misc.md#deployment](misc.md#deployment).
 
 ## Framework & language
 
@@ -61,12 +61,17 @@ Database migrations are managed by Drizzle Kit from `core/db/schema/index.ts`, o
 | `@playwright/test` (`^1.59.1`) | End-to-end tests |
 | `jsdom` | Vitest DOM environment |
 
+## Build tooling
+
+- **esbuild** (`^0.28.2`, dev) — bundles the two Node entrypoints `next build` does not produce: `core/worker/main.ts` → `dist/worker.js` and `core/db/migrate.ts` → `dist/migrate.js`. Driven by `scripts/build-worker.mjs`; see [misc.md#deployment](misc.md#deployment). Not used for anything the browser loads — that is entirely Next's own (Turbopack) pipeline.
+
 ## npm scripts
 
 ```bash
 npm run dev          # next dev -p 80
-npm run build         # next build
-npm run start         # next start -p 80
+npm run build         # next build && node scripts/build-worker.mjs
+npm run build:worker   # just the esbuild step — worker.js + migrate.js into dist/
+npm run start         # next start -p 80  (local only; the container runs standalone server.js on 3000)
 npm run lint           # eslint
 npm run db:generate    # drizzle-kit generate
 npm run db:migrate     # drizzle-kit migrate
@@ -91,7 +96,9 @@ E2E tests do **not** run against this dev database — they need a one-time sepa
 
 `docker-compose.dev.yml` builds `db/Dockerfile` (`postgres:16` + `postgresql-16-partman` apt package) and mounts `db/init/01-extensions.sql` (runs `CREATE EXTENSION IF NOT EXISTS pg_partman;` at container init) plus a named volume for data persistence. It defines **only** the `postgres` service — no app/worker containers in dev; you run those with `npm run dev` / the worker toggle below.
 
-> **Note:** a full production Docker packaging (multi-stage app image, separate worker container, Caddy reverse proxy, backup container) is *planned* (`docs/features/08-docker-packaging.md`) but **not yet implemented** — only `db/Dockerfile` and `docker-compose.dev.yml` exist today. See [misc.md](misc.md#deployment) for the current vs. planned state.
+`docker-compose.dev.yml` deliberately keeps the **default** project name (the folder name, `logger`), while the production `docker-compose.yml` declares `name: logger-prod`. Without that split both files share one namespace and running the production stack in a developer checkout recreates the dev Postgres container and points production at the dev data volume.
+
+> **Production packaging exists as of 2026-08-13** (Feature 08): multi-stage `Dockerfile`, production `docker-compose.yml` (six services), `Caddyfile`, backup/restore scripts, and two GitHub Actions workflows. See [misc.md#deployment](misc.md#deployment) for what each artifact does and [`docs/OPERATIONS.md`](../OPERATIONS.md) for how to run it.
 
 ## Environment variables
 
@@ -114,8 +121,11 @@ The following are still read via raw, unvalidated `process.env` — build- and t
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `NEXT_PUBLIC_BUILD_SHA` | — | Build SHA, set by CI, exposed via `GET /api/version` |
-| `NEXT_PUBLIC_BUILD_TIME` | — | Build timestamp, set by CI, exposed via `GET /api/version` |
+| `NEXT_PUBLIC_BUILD_SHA` | — | Build SHA, exposed via `GET /api/version`. Inlined by `next build`; set as a Docker build arg by `release.yml`. Setting it at run time has no effect |
+| `NEXT_PUBLIC_BUILD_TIME` | — | Build timestamp, same mechanics |
+| `PORT` | `3000` (baked into the image) | Port the Next.js standalone server binds. Read by `server.js` itself, not by our code, so it is not in the Zod schema. Referenced by the compose healthcheck and must match `reverse_proxy app:3000` in the `Caddyfile` |
+| `HOSTNAME` | `0.0.0.0` (baked into the image) | Interface the standalone server binds. The default is localhost, which inside a container means the proxy cannot reach it |
+| `MIGRATIONS_DIR` | `core/db/migrations`, `/app/migrations` in the image | Where `core/db/migrate.ts` looks for migration SQL |
 | `E2E_MODE` | unset | Set to `"true"` only by `playwright.config.ts`'s `webServer`. `next dev` hardcodes `NODE_ENV=development` regardless of what's passed in, so this app-specific flag exists to detect "running as the e2e server" where `NODE_ENV` can't be used: `next.config.ts` uses it to pick a separate build dir (`.next-e2e`, avoiding a lock conflict with the normal dev server's `.next`), and `proxy.ts` uses it to disable a 5s in-memory cache that would otherwise survive a test-database reset. See [misc.md#testing](misc.md#testing) |
 
 > **Removed 2026-08-13: `NEXT_PUBLIC_APP_URL`.** It was read only by the alert-webhook payload builder and was never defined in `.env.example` or the env schema, so every webhook shipped an `events_url` built from its `http://localhost:3000` fallback — broken in any real deployment, and silently so. That builder now reads the validated `APP_URL`.

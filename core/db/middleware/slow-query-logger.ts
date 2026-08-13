@@ -20,19 +20,31 @@ export function wrapWithSlowQueryLogger(client: PgSql): PgSql {
 
             const [strings, ...values] = args as [TemplateStringsArray, ...unknown[]];
 
-            void Promise.resolve(result).then(() => {
-                const duration_ms = Math.round(performance.now() - start);
-                if (duration_ms >= SLOW_THRESHOLD_MS) {
-                    logger.warn(
-                        {
-                            sql: Array.from(strings).join("?").trim().replace(/\s+/g, " "),
-                            duration_ms,
-                            params_count: values.length,
-                        },
-                        "slow query",
-                    );
-                }
-            });
+            // The second argument is not optional. `.then(onFulfilled)` alone
+            // forks a promise with no rejection handler, so every failing query
+            // raised an unhandledRejection in addition to rejecting normally to
+            // its caller — a caller's own try/catch could not suppress it,
+            // because this branch is a separate promise chain. Errors are the
+            // caller's to report; all this branch owes them is silence.
+            void Promise.resolve(result).then(
+                () => {
+                    const duration_ms = Math.round(performance.now() - start);
+                    if (duration_ms >= SLOW_THRESHOLD_MS) {
+                        logger.warn(
+                            {
+                                sql: Array.from(strings).join("?").trim().replace(/\s+/g, " "),
+                                duration_ms,
+                                params_count: values.length,
+                            },
+                            "slow query",
+                        );
+                    }
+                },
+                () => {
+                    // Timing a failed query is meaningless — it measures how
+                    // long Postgres took to reject, not how long work took.
+                },
+            );
 
             return result;
         },

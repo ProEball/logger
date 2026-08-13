@@ -7,11 +7,16 @@ app/            Next.js App Router ONLY — layouts, pages, route handlers. No b
 core/           App-wide, cross-cutting concerns (see below)
 features/       One folder per feature, self-contained
 shared/         Reusable library code used across features
-db/             Postgres Docker build context (not application code)
-docs/           Planning docs, design docs, and (now) this reference
+db/             Postgres + backup Docker build contexts (not application code)
+docs/           Planning docs, design docs, OPERATIONS.md, and (now) this reference
 e2e/            Playwright end-to-end specs
-scripts/        One-off/operational scripts (demo seeding, migration apply)
+scripts/        Build and operational scripts (worker bundling, backup/restore, demo seeding)
+.github/        CI and release workflows
 ```
+
+Deployment artifacts sit at the repo root: `Dockerfile`, `.dockerignore`, `docker-compose.yml` (production), `docker-compose.dev.yml` (Postgres only), `Caddyfile`, `.env.production.example`. See [misc.md#deployment](misc.md#deployment).
+
+`docs/reference/` is also **runtime data**, not just documentation: the in-app help centre reads those eight markdown files off disk. `next.config.ts` declares them via `outputFileTracingIncludes` and `.dockerignore` exempts the directory from its `docs` exclusion — remove either and every help page 500s in production while working in dev.
 
 **Rule enforced by project convention** (`.claude/rules/PROJECT.md`): features must never import from another feature; anything needed by more than one feature must move to `shared/`. All imports use the `@/` alias mapped to the repo root (`@/core/...`, `@/shared/...`, `@/features/...`).
 
@@ -20,13 +25,13 @@ scripts/        One-off/operational scripts (demo seeding, migration apply)
 | Subfolder | Responsibility |
 |---|---|
 | `core/auth/` | better-auth server config (`config.ts`) and session helpers (`server.ts`: `getSession()`, `getCurrentUser()`) |
-| `core/db/` | Drizzle schema (`schema/`), migrations (`migrations/`), Postgres client singleton + slow-query-logging middleware (`middleware/`) |
+| `core/db/` | Drizzle schema (`schema/`), migrations (`migrations/`), Postgres client singleton + slow-query-logging middleware (`middleware/`), the migration-status check used by `/api/health/ready` (`migration-status.ts`), and the standalone migration runner entrypoint (`migrate.ts`) |
 | `core/env/` | Validated environment variables (`@t3-oss/env-nextjs` + Zod) |
 | `core/i18n/` | Typed dictionary lookup (`t(key)`), English-only today, falls back to returning the key itself rather than throwing if a key is missing |
 | `core/logger.ts` | App-wide pino logger — see [misc.md](misc.md#app-logger) for an important dead-code note (two other logger files exist and are unused) |
 | `core/store/` | Redux Toolkit store: `theme`, `org`, `project`, `user` slices, plus client-side hydrator components that seed Redux from server-fetched data |
 | `core/theme/` | Theme resolution (`dark`/`light`/`system`), cookie persistence, no-flash inline script, `ThemeProvider` |
-| `core/worker/` | pg-boss process bootstrap — see [Background jobs](#background-jobs) below |
+| `core/worker/` | pg-boss bootstrap (`worker.ts`), the standalone worker container's entrypoint (`main.ts`), its liveness file-touch (`health-touch.ts`) and signal handling (`shutdown.ts`) — see [Background jobs](#background-jobs) below |
 
 ### `features/` — one folder per feature
 
@@ -195,9 +200,11 @@ See [logging.md](logging.md#the-events-table) for the full column list and [Even
 
 ## Background jobs
 
-`core/worker/worker.ts` owns a module-level `pg-boss` singleton (`getBoss()`/`startWorker()`). It is started either:
-- **In-process**, inside the Next.js server, when `WORKER_IN_PROCESS=true` — wired via `instrumentation.ts`'s Next.js `register()` hook (only runs when `NEXT_RUNTIME === "nodejs"`); convenient for dev/single-instance deployments.
-- As a **separate worker container** in production (planned architecture per `docs/features/08-docker-packaging.md`, not yet built as an actual Dockerfile — see [misc.md](misc.md#deployment)).
+`core/worker/worker.ts` owns a module-level `pg-boss` singleton (`getBoss()` / `startWorker()` / `stopWorker()`). It is started either:
+- **In-process**, inside the Next.js server, when `WORKER_IN_PROCESS=true` — wired via `instrumentation.ts`'s Next.js `register()` hook (only runs when `NEXT_RUNTIME === "nodejs"`). A dev convenience.
+- As a **separate worker container** in production: `core/worker/main.ts`, bundled to `dist/worker.js` and run as `node worker.js`. See [misc.md](misc.md#deployment).
+
+Both paths call the same `startWorker()`, so a job registered once is picked up by both. That is the point of the split — `main.ts` adds only process concerns (health-touch, signal handling), never job registration.
 
 Three jobs are registered (`registerXJob(boss)` calls, in this order):
 
@@ -207,8 +214,20 @@ Three jobs are registered (`registerXJob(boss)` calls, in this order):
 | `alert-evaluation` | Cron `* * * * *` (every minute), `singletonKey` | Calls `evaluateAllEnabled(boss)` — evaluates every enabled alert rule, updates state, enqueues `alert-delivery` jobs for state transitions |
 | `alert-delivery` | On-demand (`boss.work`, no cron — enqueued by the evaluator) | Delivers one webhook notification, `retryLimit: 3, retryDelay: 30, retryBackoff: true` |
 
-Because `singletonKey` alone isn't bulletproof under a rolling deploy with `WORKER_IN_PROCESS=true` on every app replica, the planned production topology pins the dedicated worker container to `replicas: 1` as a second safeguard (per `docs/PLAN.md`) — not yet expressed in any compose file today.
+**Every registrar calls `boss.createQueue(name)` before `schedule()`/`work()`.** pg-boss 12 dropped implicit queue creation; without it both calls violate the foreign key from `pgboss.schedule` to `pgboss.queue` and the worker crashes on startup. `createQueue` is `INSERT … ON CONFLICT DO NOTHING`, so it runs unconditionally on every start.
+
+> **Fixed 2026-08-13.** This was missing, and could only ever fail against a database whose `pgboss.queue` rows did not already exist — i.e. never in a long-lived dev database, and always on a fresh production one. The worker crash-looped on first boot of the new Docker stack; `core/worker/worker.test.ts` now pins both the creation and its ordering relative to `work`/`schedule`.
+
+**Graceful shutdown.** `main.ts` installs SIGTERM/SIGINT handlers (`core/worker/shutdown.ts`) that drain in-flight jobs via `stopWorker()` and exit. The drain is capped at 20s, deliberately under the 30s `stop_grace_period` in compose — past that, Docker SIGKILLs mid-drain. A second signal arriving during the drain is logged and ignored; a drain that throws exits non-zero rather than hanging.
+
+**Liveness.** `core/worker/health-touch.ts` advances the mtime of `/tmp/worker-alive` every 30s from inside the worker process, which the container healthcheck probes. It lives in the process, not a wrapper script, precisely so a dead process cannot keep reporting healthy.
+
+Because `singletonKey` alone isn't bulletproof under a rolling deploy, the `worker` service is pinned to `deploy.replicas: 1` in `docker-compose.yml` as a second safeguard.
 
 ## Query performance / observability
 
-`core/db/middleware/slow-query-logger.ts` wraps the raw `postgres.js` client in a `Proxy` that times every query and logs (`logger.warn({ sql, duration_ms, params_count }, "slow query")`) any query taking **≥ 500ms**. Wired in once, in `core/db/client.ts`, ahead of the Drizzle instance — every query issued through `db`, anywhere in the app, is covered. The Postgres client itself is a `global`-cached singleton outside production to avoid connection-pool exhaustion across Next.js hot-reloads (`postgres(url, { max: 10, idle_timeout: 20, connect_timeout: 10 })`).
+`core/db/middleware/slow-query-logger.ts` wraps the raw `postgres.js` client in a `Proxy` that times every query and logs (`logger.warn({ sql, duration_ms, params_count }, "slow query")`) any query taking **≥ 500ms**. The timing branch attaches a **rejection handler as well as a fulfilment one** — see the note below. Wired in once, in `core/db/client.ts`, ahead of the Drizzle instance — every query issued through `db`, anywhere in the app, is covered. The Postgres client itself is a `global`-cached singleton outside production to avoid connection-pool exhaustion across Next.js hot-reloads (`postgres(url, { max: 10, idle_timeout: 20, connect_timeout: 10 })`). That "outside production" test reads `NODE_ENV`, which is one reason the Docker image bakes `NODE_ENV=production` in rather than leaving it to the env file — the `worker` and `migrate` containers are plain `node` and have no framework to default it.
+
+> **Fixed 2026-08-13: every failed query raised an unhandled rejection.** The timing branch was `void Promise.resolve(result).then(onFulfilled)` with no second argument, which forks a promise nobody owns. A caller's own `try/catch` could not suppress it — it is a separate chain — so any query error was reported twice: once to the caller, once as an `unhandledRejection`. Next traps the event and logs it, so in the app it looked like noise; a bare Node process (the worker) would terminate on it. Found when the containerised app logged `⨯ unhandledRejection: relation "__drizzle_migrations" does not exist` on every readiness probe. Covered by `slow-query-logger.test.ts`, which asserts no `unhandledRejection` fires and that the caller still sees the rejection.
+
+The migration runner (`core/db/migrate.ts`) deliberately opens its **own** `postgres(url, { max: 1 })` connection rather than reusing this singleton: migrations run one at a time and the process exits immediately afterwards, so a pool of ten would just leave nine idle connections to time out.

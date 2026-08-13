@@ -2,6 +2,20 @@
 
 A self-hosted structured event logging service.
 
+## Documentation
+
+| Doc | For |
+|---|---|
+| [`docs/LAUNCH.md`](docs/LAUNCH.md) | **Going live the first time** — what to buy, in what order, and what breaks if you skip a step |
+| [`docs/OPERATIONS.md`](docs/OPERATIONS.md) | **Running it** — deployments, updates, backups and restore, logs, health, certificates |
+| [`docs/reference/`](docs/reference/README.md) | What the code does today — stack, architecture, HTTP API, roles, logging, security |
+| [`docs/PROGRESS.md`](docs/PROGRESS.md) | Current state and the remaining gaps |
+
+Running it in production is `cp .env.production.example .env`, fill it in, then
+`docker compose up -d`. See [`docs/OPERATIONS.md`](docs/OPERATIONS.md) for the
+full procedure. For local development see
+[`docs/reference/stack.md`](docs/reference/stack.md#local-development-environment).
+
 ## Sending Events
 
 ### Prerequisites

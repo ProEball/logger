@@ -4,6 +4,21 @@ import type { NextConfig } from "next";
 const isProd = process.env.NODE_ENV === "production";
 
 const nextConfig: NextConfig = {
+    // Emits `.next/standalone/server.js` plus a pruned `node_modules` containing
+    // only what the traced server code actually imports. The Docker runner stage
+    // copies that folder instead of installing dependencies (see `Dockerfile`).
+    // `server.js` reads PORT/HOSTNAME from the environment — the container sets
+    // both; `npm run start` (port 80) is unaffected and stays the local path.
+    output: "standalone",
+    // The help centre reads its articles from `docs/reference/*.md` at runtime
+    // via `path.join(process.cwd(), …)` (see `help-content.service.ts`). Next's
+    // file tracer only follows static imports, so it cannot see that read and
+    // the standalone output would ship without the articles — every help page
+    // would 500 in production while working perfectly in dev. Declaring the
+    // dependency here fixes it for any deployment target, not just our image.
+    outputFileTracingIncludes: {
+        "/*": ["docs/reference/**/*.md"],
+    },
     // Without this, Next only trusts whichever host the dev server first saw
     // a request from; any other host (e.g. switching from `localhost` to
     // `127.0.0.1`, or vice versa) gets its HMR/dev-resource requests blocked

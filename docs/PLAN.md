@@ -595,12 +595,29 @@ logger.example.com {
 }
 ```
 
-> **Two corrections before this is written for real** (noted 2026-08-13):
-> - The app listens on **port 80**, not 3000 (`next start -p 80`). `reverse_proxy app:3000` would not connect.
-> - Caddy must **not** add its own security headers. The app now emits the full
->   set itself, including a per-request nonce-based CSP (see §17 and
->   `docs/reference/security.md`); a duplicate `Content-Security-Policy` header
->   from the proxy would be intersected with the app's and break every script.
+> **Resolved 2026-08-13 — the real `Caddyfile` now exists.** Two corrections
+> were noted against the sketch above; here is how each landed.
+>
+> - **Port.** The concern was that the app listens on **80**, not 3000
+>   (`next start -p 80`), so `reverse_proxy app:3000` would not connect. True of
+>   the repo's npm scripts, but **not** of the container: the image runs
+>   `.next/standalone/server.js`, which reads `PORT` from the environment and
+>   never runs `next start`. The port was pinned explicitly at **3000**
+>   (`ENV PORT=3000`), so `app:3000` is correct — but for a reason the sketch
+>   never stated. 80 was rejected because a backend behind a proxy gains nothing
+>   from a privileged port while adding a dependency on Docker's
+>   `net.ipv4.ip_unprivileged_port_start=0` default, which the non-root `node`
+>   user would otherwise need `CAP_NET_BIND_SERVICE` to work around. Reopen only
+>   if the container has to be reachable on 80 without a proxy in front.
+>   `npm run start`'s port 80 is unchanged and remains a local-only concern.
+> - **Headers.** Confirmed and acted on. Caddy adds **no** security headers; the
+>   app is the single source. A browser enforces every CSP header it receives,
+>   and the proxy cannot know the per-request nonce, so a policy added there
+>   blocks the nonced inline scripts Next uses to boot the client — a page that
+>   renders but is inert. The `Caddyfile` carries this reasoning inline, at the
+>   point where someone would be tempted to add a `header` block.
+>
+> See `docs/reference/security.md` and `docs/OPERATIONS.md`.
 
 Switch to Nginx/Traefik only if we need fine-grained rate-limiting, complex
 routing, or multiple subdomains.
@@ -651,6 +668,25 @@ log shipper in MVP — `docker logs` is enough for an internal tool.
 - Optional Grafana stack as a separate compose file.
 
 ### 15.4 Compose layout
+
+> **Superseded 2026-08-13 by the real `docker-compose.yml`.** The sketch below
+> is kept for its intent; where it disagrees with the file, the file wins.
+> Notable differences, all discovered while making it actually run:
+> - `app`/`worker`/`migrate` share one image via a YAML anchor, and `migrate`
+>   is a real service (the sketch omitted it from the yaml despite §15.5
+>   deciding on it).
+> - Healthchecks target port **3000** (see §15.1), and the worker's is a
+>   file-mtime probe, not HTTP.
+> - `postgres` publishes **no** ports — the sketch's `5432` would be exposed to
+>   the internet on most VPS firewall setups.
+> - The stack declares `name: logger-prod`. Without it, both compose files
+>   default to the folder name and running production in a developer checkout
+>   recreates the dev Postgres container against the dev data volume.
+> - `backup` needs its own image (`db/backup.Dockerfile`): `postgres:16-alpine`
+>   plus `rclone`, since the stock postgres image has no rclone. Its remote is
+>   configured through `RCLONE_CONFIG_*` environment variables rather than a
+>   bind-mounted `rclone.conf` — a bind mount of a file that does not exist yet
+>   is silently created by Docker as an empty *directory*.
 
 ```yaml
 services:
@@ -813,6 +849,13 @@ to start it, not all at once.
 | 2026-08-13 | Webhook SSRF guard in two layers, DNS re-checked per delivery | Save-time validation alone is bypassable: a hostname that resolves publicly when the rule is saved can be repointed at `169.254.169.254` later. Syntactic layer is isomorphic (runs in the editor form), DNS layer is server-only. Redirects are refused outright rather than followed. |
 | 2026-08-13 | Operational env vars moved into the validated schema (4 → 8) | `LOG_LEVEL`, `WORKER_IN_PROCESS`, `RATE_LIMIT_PER_MIN`, `ALLOW_PRIVATE_WEBHOOK_TARGETS` now fail fast at boot. `AUTH_SECRET` raised from `min(1)` to `min(32)`. Precipitated by `NEXT_PUBLIC_APP_URL` — an env var referenced in code but defined nowhere, which silently broke every alert webhook's deep link. |
 | 2026-08-13 | Mount gates use `useSyncExternalStore`, not `useState` + `useEffect` | `react-hooks/set-state-in-effect` correctly flags the old idiom as a cascading render. Extracted to `shared/hooks/use-is-hydrated.ts`. Dialog state resets moved to React's documented "adjust state during render" pattern for the same reason. |
+| 2026-08-13 | App container listens on **3000**, not the 80 used by `npm run start` | The image runs `.next/standalone/server.js`, which reads `PORT` — it never runs `next start`, so the npm scripts' `-p 80` does not apply. A privileged port buys a proxied backend nothing while making the non-root `node` user depend on Docker's `ip_unprivileged_port_start=0` default. Pinned in one place (`ENV PORT`) and referenced by the Caddyfile and the compose healthcheck. See §15.1. |
+| 2026-08-13 | Caddy adds **no** security headers; the app is the single source | A browser enforces every CSP header it receives, and the proxy cannot know the nonce (generated inside the app, after forwarding). Any proxy-side policy blocks the nonced inline scripts Next uses to boot the client — a page that renders but is inert. The `Caddyfile` states this where someone would add a `header` block. See §15.1. |
+| 2026-08-13 | `NODE_ENV=production` baked into the image, not left to `env_file` | `next build` bakes production behaviour into the app bundle, but `worker` and `migrate` are plain `node` with no framework to default it — unset, they take development branches (the pooled-client global in `core/db/client.ts` among them). One image-level `ENV` covers all three processes; an env-file entry would be one more thing to forget. |
+| 2026-08-13 | Worker and migrate bundled with esbuild, dependencies **inlined** | `next build` only compiles what is reachable from `app/`, so neither entrypoint exists in `.next/standalone`. `--packages=external` would have made them depend on Next's file trace happening to include their dependencies — a worker-only dependency added later would then fail at runtime, in production, with no build-time signal. Inlining costs ~2.5 MB and removes the failure mode. |
+| 2026-08-13 | Migrations run via drizzle-orm's programmatic migrator, not `drizzle-kit migrate` | Keeps dev dependencies out of the runtime image: drizzle-kit carries its own esbuild and TypeScript, and reads `drizzle.config.ts`, which wants `dotenv` and a `.env.local` no container has. Both write the same `drizzle.__drizzle_migrations` table, so they stay interchangeable. Deviates from feature 08 step 9. |
+| 2026-08-13 | Restore drops and recreates the database rather than `pg_restore --clean` | `events` is declaratively partitioned and each partition's primary key is an *inherited* constraint Postgres refuses to drop directly; `--clean` aborts partway through the drop phase. Found by actually running a restore, which is the only way this surfaces. The dump carries the `drizzle`/`pgboss` schemas and the pg_partman extension, so an empty target needs no hand-preparation. |
+| 2026-08-13 | Production compose declares `name: logger-prod`; the dev file keeps the default | Both otherwise default to the folder name and share a namespace — running production in a developer checkout recreates the dev Postgres container and points production at the dev data volume (observed, not theorised). The dev file is left unnamed so existing checkouts keep their `logger_postgres_data`. |
 | 2026-08-13 | Unit tests stay colocated with their source; **rejected** a per-feature `tests/` folder | Colocation is what makes a missing test visible in the folder listing and the diff — the mechanism WORKFLOW.md §2 leans on — and it makes `git mv` carry a test along with its module instead of orphaning it. The perceived inconsistency was only that features keep logic in different subfolders (`auth` in `actions/`, `ingest` in `services/`+`utils/`); the rule was already uniform at 32/32. Revisit only if bulk `.test.tsx` component tests start cluttering per-component folders. See `PROJECT.md` §11. |
 
 ---

@@ -1,0 +1,82 @@
+# Publishes the application image to GitHub Container Registry on a version tag.
+#
+#   git tag v0.2.0 && git push origin v0.2.0
+#
+# One image serves all three application containers (app, worker, migrate) —
+# see the Dockerfile header. Deploy it by setting IMAGE in the production .env
+# to the tag this workflow prints, then `docker compose pull && up -d`
+# (docs/OPERATIONS.md).
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    permissions:
+      contents: read
+      # Required for GITHUB_TOKEN to push to ghcr.io.
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          # No separate secret needed: the job's own token has packages:write.
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          # Three tags per release: the exact version, the major.minor line, and
+          # `latest`. `latest` only moves for real releases — the pattern below
+          # excludes pre-release tags such as v1.0.0-rc1.
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha
+            type=raw,value=latest,enable=${{ !contains(github.ref_name, '-') }}
+
+      - id: build-time
+        run: echo "value=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          # Surfaced by GET /api/version. These are NEXT_PUBLIC_ and inlined at
+          # build time, so they can only be set here — not in the deployed .env.
+          build-args: |
+            NEXT_PUBLIC_BUILD_SHA=${{ github.sha }}
+            NEXT_PUBLIC_BUILD_TIME=${{ steps.build-time.outputs.value }}
+
+      - name: Summary
+        run: |
+          {
+            echo "### Published"
+            echo ""
+            echo '```'
+            echo "${{ steps.meta.outputs.tags }}"
+            echo '```'
+            echo ""
+            echo "Deploy: set \`IMAGE\` in the production \`.env\`, then"
+            echo "\`docker compose pull && docker compose up -d\`."
+          } >> "$GITHUB_STEP_SUMMARY"

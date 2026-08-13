@@ -11,6 +11,12 @@ export const PARTMAN_JOB_NAME = "partman-maintenance";
  * pg_partman is installed in the public schema.
  */
 export async function registerPartmanMaintenanceJob(boss: PgBoss): Promise<void> {
+    // pg-boss 12 no longer creates queues implicitly: `schedule`/`work` on an
+    // unknown queue violate the foreign key from pgboss.schedule to
+    // pgboss.queue. Idempotent (INSERT … ON CONFLICT DO NOTHING), so it runs on
+    // every worker start.
+    await boss.createQueue(PARTMAN_JOB_NAME);
+
     await boss.schedule(
         PARTMAN_JOB_NAME,
         "0 * * * *", // every hour

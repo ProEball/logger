@@ -14,6 +14,10 @@ const eslintConfig = defineConfig([
     "next-env.d.ts",
     // E2E build dir (see `distDir` in next.config.ts) — build output, not source.
     ".next-e2e/**",
+    // esbuild bundles for the worker and migrate entrypoints (npm run
+    // build:worker). Generated, and every inlined dependency in them would
+    // otherwise be linted as if it were ours.
+    "dist/**",
     // Design system handoff bundle from claude.ai/design — reference, not our code.
     "docs/designs/**",
   ]),

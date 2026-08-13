@@ -22,6 +22,8 @@
 
 # production
 /build
+# esbuild output for the worker + migrate entrypoints (npm run build:worker)
+/dist
 
 # misc
 .DS_Store
@@ -39,6 +41,8 @@ yarn-error.log*
 # copies to .env.local. The blanket .env* rule had been swallowing it, so the
 # repo shipped with no env template at all despite the docs referencing one.
 !.env.example
+# Same reasoning for the production template — it is documentation, not secrets.
+!.env.production.example
 
 # vercel
 .vercel

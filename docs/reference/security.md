@@ -41,7 +41,7 @@ Implemented 2026-08-13. Static headers live in `next.config.ts`'s `headers()` an
 | `Referrer-Policy` | `strict-origin-when-cross-origin` | |
 | `X-DNS-Prefetch-Control` | `off` | |
 | `Permissions-Policy` | `camera=(), microphone=(), geolocation=(), interest-cohort=()` | |
-| `Strict-Transport-Security` | `max-age=63072000; includeSubDomains; preload` | **Production only** — gated on `NODE_ENV === "production"` so a dev server never emits it |
+| `Strict-Transport-Security` | `max-age=63072000; includeSubDomains; preload` | **Production only** — gated on `NODE_ENV === "production"` so a dev server never emits it. Note the gate is evaluated when `next build` runs (`headers()` is resolved into the routes manifest), and `next build` sets `NODE_ENV=production` itself — so the header is baked into the image, not decided at container start |
 
 ### Content-Security-Policy (nonce-based)
 
@@ -64,7 +64,15 @@ Three consequences worth understanding before touching this:
 
 Hand-rolled, applied **only** to the two ingest routes: `Access-Control-Allow-Origin: *`, methods `POST, OPTIONS`, headers `Content-Type, Authorization`. Intentional and low-risk for those specific routes (bearer-token auth, no cookies involved, so wildcard CORS doesn't expose session-based CSRF). No other route defines a CORS policy.
 
-TLS/HTTPS termination is not handled by the app itself — it's expected to sit behind a reverse proxy (Caddy, per the planned deployment architecture — see [misc.md](misc.md#deployment)), which is not yet built. Until then `Strict-Transport-Security` is emitted but has nothing to enforce.
+### The reverse proxy must not add security headers
+
+TLS/HTTPS termination is handled by the `proxy` service (Caddy, automatic Let's Encrypt) — implemented 2026-08-13, see [misc.md](misc.md#deployment). The app remains the **single** source of security headers, and the `Caddyfile` carries a long comment at the point of temptation saying so.
+
+The reason is specific to the nonce. A browser enforces **every** `Content-Security-Policy` header it receives, and a resource must satisfy all of them — a second policy intersects with the first rather than replacing it. The proxy cannot know a request's nonce, because it is generated inside the app after Caddy has already forwarded the request. So any policy written in Caddy necessarily blocks the nonced **inline** scripts Next uses to ship the RSC payload and boot the client. The failure mode is a page that renders but is completely inert — easy to misdiagnose as a hydration bug.
+
+The same reasoning in milder form applies to the rest of the set: duplicated headers resolve to whichever value the browser takes first, so the app's real policy quietly stops being the one in effect.
+
+Verified against the running stack on 2026-08-13: exactly one `Content-Security-Policy` header reaches the client, with a different nonce per request, and the rendered `<script>` tags carry the matching value. Caddy adds only `Via: 1.1 Caddy`.
 
 ## Outbound request safety (SSRF)
 
@@ -98,7 +106,10 @@ As of 2026-08-13, **8** variables are schema-validated and fail the app at boot 
 | No rate limiting on `/api/auth/*` | Login/reset endpoints are brute-forceable | better-auth config |
 | Ingest rate limiter is single-instance, in-memory | Ineffective aggregate limit under horizontal scaling | `features/ingest/services/rate-limit.service.ts` |
 | `style-src` requires `'unsafe-inline'` | Inline-style injection is not blocked by CSP; scripts *are* fully covered by nonce + `strict-dynamic` | `proxy.ts` — forced by Recharts, see above |
-| No TLS terminator yet | `Strict-Transport-Security` is emitted in production but nothing serves HTTPS | Caddy, planned in feature 08 |
+| ~~No TLS terminator yet~~ | **Closed 2026-08-13.** The `proxy` service (Caddy, automatic Let's Encrypt) terminates TLS in the production stack | `Caddyfile`, `docker-compose.yml` |
+| Secrets live in a single `.env` on the host | Anything that can read the file gets `AUTH_SECRET`, the database password, and the offsite-backup credentials. Mitigated only by `chmod 600`; no secret manager, no rotation procedure | `.env.production.example`, compose `env_file:` |
+| Backups are not encrypted at rest | `pg_dump` output goes to a Docker volume and, if offsite is enabled, to the bucket as-is. Bucket-side encryption is the only protection | `scripts/backup.sh` |
+| Postgres superuser is the app's database user | The app connects as the same role that owns the schema; no least-privilege split between migration and runtime credentials | `docker-compose.yml`, `DATABASE_URL` |
 | `last_used_at` debounce is per-process | Cosmetic only (staleness of a display timestamp), not a security issue | `features/ingest/services/api-key-auth.service.ts` |
 | No FK-level DB constraint on `attributeKeyTypes.type` values | App-level-only enforcement of the 3 allowed type strings | `core/db/schema/attributeKeyTypes.ts` |
 
