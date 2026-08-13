@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "permissions": {
+    "allow": [
+      "Bash(npm run *)",
+      "Bash(npm ls *)",
+      "Bash(npx tsc *)",
+      "Bash(npx vitest *)",
+      "Bash(npx eslint *)",
+      "Bash(npx playwright *)",
+      "Bash(npx drizzle-kit *)",
+      "Bash(git status *)",
+      "Bash(git diff *)",
+      "Bash(git log *)",
+      "Bash(git show *)",
+      "Bash(git branch *)",
+      "Bash(docker compose *)"
+    ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/doc-sync-reminder.mjs\"",
+            "timeout": 10,
+            "statusMessage": "Checking doc-sync rules"
+          }
+        ]
+      }
+    ]
+  }
+}

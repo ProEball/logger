@@ -20,6 +20,8 @@ These are gates, not suggestions. A change is finished when all of them pass, in
 | Finished a feature-doc checklist item | that doc's status block **+** `docs/PROGRESS.md` |
 | A decision affecting more than one feature | `PLAN.md` §17, **with the rationale, not just the outcome** |
 
+A `PostToolUse` hook (`.claude/hooks/doc-sync-reminder.mjs`, wired in `.claude/settings.json`) prints the matching row when you edit one of the high-cost paths above. It **advises and never blocks**, it covers only some of the table, and it cannot tell a behaviour change from a refactor — so it is a safety net, not the rule. The table is the rule.
+
 Rules for the writing itself:
 
 - **Record why, not just what.** A decision without its reasoning gets re-litigated by the next session. When you reject an alternative, say what you rejected and what would change your mind.
