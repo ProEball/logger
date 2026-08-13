@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useId, useState, useTransition } from "react";
+import { useId, useState, useTransition } from "react";
 import { GForm, GInput, GValidator } from "gform-react";
 import type { GValidators } from "gform-react";
 import { Button, FormField, Input, Modal, Select } from "@/shared/components";
@@ -37,12 +37,17 @@ export function InviteMemberDialog({
     const uid = useId();
     const ids = { email: `${uid}-email` };
 
-    useEffect(() => {
+    // Reset on close via React's "adjust state during render" pattern rather
+    // than an effect: the reset lands in the same render as the prop change,
+    // so the dialog never paints its old error on the way out.
+    const [wasOpen, setWasOpen] = useState(open);
+    if (wasOpen !== open) {
+        setWasOpen(open);
         if (!open) {
             setServerError(null);
             setRoleId(roles[0]?.id ?? "");
         }
-    }, [open, roles]);
+    }
 
     return (
         <Modal open={open} onClose={onClose} title="Invite member" size="sm">

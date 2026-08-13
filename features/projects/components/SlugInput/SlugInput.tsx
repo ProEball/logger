@@ -28,9 +28,13 @@ export function SlugInput({ name, value, onChange, orgSlug, disabled, error }: S
         onChange(generated);
     }, [name, locked, onChange]);
 
-    useEffect(() => {
+    // Mirror the controlled `value` prop into local state during render rather
+    // than from an effect, so a parent-driven change never renders stale text.
+    const [prevValue, setPrevValue] = useState(value);
+    if (prevValue !== value) {
+        setPrevValue(value);
         setInternalValue(value);
-    }, [value]);
+    }
 
     const handleUnlock = () => setLocked(false);
 

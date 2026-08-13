@@ -1,7 +1,8 @@
 'use client';
 
-import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react';
+import { useEffect, useRef, type MouseEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
+import { useIsHydrated } from '@/shared/hooks/use-is-hydrated';
 import { cx } from '@/shared/utils/cx';
 import styles from './Modal.module.scss';
 
@@ -34,11 +35,8 @@ export function Modal({
     // must be ignored, otherwise callers whose onClose resets state would
     // overwrite any concurrent state transitions (e.g. "invite" → "created").
     const isProgrammaticClose = useRef(false);
-    const [mounted, setMounted] = useState(false);
-
-    useEffect(() => {
-        setMounted(true);
-    }, []);
+    // createPortal needs a DOM target, which does not exist during SSR.
+    const mounted = useIsHydrated();
 
     useEffect(() => {
         const node = dialogRef.current;

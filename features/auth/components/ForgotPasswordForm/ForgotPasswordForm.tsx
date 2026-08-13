@@ -1,5 +1,6 @@
 "use client";
 import { useRef, useEffect, useId, useState, useTransition } from "react";
+import Link from "next/link";
 import { GForm, GInput, GValidator } from "gform-react";
 import type { GValidators } from "gform-react";
 import { Button, FormField, Input } from "@/shared/components";
@@ -43,9 +44,9 @@ export function ForgotPasswordForm({ action }: ForgotPasswordFormProps) {
                         If that email is registered, you&apos;ll find a reset link waiting for you.
                     </p>
                 </header>
-                <a href="/login" className={styles.backLink}>
+                <Link href="/login" className={styles.backLink}>
                     Back to sign in
-                </a>
+                </Link>
             </div>
         );
     }
@@ -112,9 +113,9 @@ export function ForgotPasswordForm({ action }: ForgotPasswordFormProps) {
                             >
                                 {isPending ? "Sending…" : "Send reset link"}
                             </Button>
-                            <a href="/login" className={styles.backLink}>
+                            <Link href="/login" className={styles.backLink}>
                                 Back to sign in
-                            </a>
+                            </Link>
                         </div>
                     </>
                 )}

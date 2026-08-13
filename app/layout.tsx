@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
+import { headers } from "next/headers";
 import { Geist, JetBrains_Mono } from "next/font/google";
-import Script from "next/script";
 import { ToastProvider } from "@/shared/components";
 import ReduxProvider from "@/core/store/Provider";
 import ThemeProvider from "@/core/theme/ThemeProvider";
@@ -32,11 +32,17 @@ const noFlashScript = `
 })();
 `.trim();
 
-export default function RootLayout({
+export default async function RootLayout({
     children,
 }: Readonly<{
     children: React.ReactNode;
 }>) {
+    // Passed to <Script> explicitly rather than left to Next's automatic nonce
+    // stamping: that only runs server-side, so the client render reconstructs
+    // the tag without a nonce and React reports a hydration mismatch.
+    // See proxy.ts for where the nonce is minted.
+    const nonce = (await headers()).get("x-nonce") ?? undefined;
+
     return (
         <html
             lang="en"
@@ -44,7 +50,19 @@ export default function RootLayout({
             suppressHydrationWarning
         >
             <body>
-                <Script id="theme-init" strategy="beforeInteractive" dangerouslySetInnerHTML={{ __html: noFlashScript }} />
+                {/* A raw tag, not next/script: `beforeInteractive` buys nothing
+                    for an inline snippet that already sits first in <body>.
+
+                    suppressHydrationWarning is required, not cosmetic. Per the
+                    CSP spec browsers *hide* the nonce attribute once the document
+                    is parsed — reading it back from the DOM yields "" — so React's
+                    hydration check compares its real nonce against "" and reports
+                    a mismatch on every load. The script itself runs fine. */}
+                <script
+                    nonce={nonce}
+                    suppressHydrationWarning
+                    dangerouslySetInnerHTML={{ __html: noFlashScript }}
+                />
                 <ReduxProvider>
                     <ThemeProvider>
                         <ToastProvider>{children}</ToastProvider>

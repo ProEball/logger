@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import styles from './ErrorBoundary.module.scss';
 
 export function NotFoundPage() {
@@ -9,7 +10,7 @@ export function NotFoundPage() {
                 The page you&#39;re looking for doesn&#39;t exist or has been moved.
             </p>
             <div className={styles.actions}>
-                <a href="/" className={styles.link}>Back to dashboard</a>
+                <Link href="/" className={styles.link}>Back to dashboard</Link>
             </div>
         </div>
     );

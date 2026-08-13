@@ -14,8 +14,6 @@ interface PaginationControlsProps {
     cursor: Cursor | undefined;
 }
 
-const PAGE_SIZE = 50;
-
 export function PaginationControls({ events, hasMore, cursor }: PaginationControlsProps) {
     const router = useRouter();
     const pathname = usePathname();

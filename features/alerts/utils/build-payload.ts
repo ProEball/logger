@@ -1,5 +1,6 @@
 import { and, desc, eq, gte, inArray, lt } from "drizzle-orm";
 import { db } from "@/core/db/client";
+import { env } from "@/core/env";
 import { events } from "@/core/db/schema";
 import type { AlertRule } from "@/core/db/schema";
 import type { AlertCondition } from "@/features/alerts/utils/alert-schemas";
@@ -53,8 +54,7 @@ export async function buildPayload(
         : await fetchSampleEvents(rule.projectId, filter, condition);
 
     const filterParams = serializeFilters(filter);
-    const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
-    const eventsUrl = `${baseUrl}/${orgSlug}/${projectSlug}/events?${filterParams.toString()}`;
+    const eventsUrl = `${env.APP_URL}/${orgSlug}/${projectSlug}/events?${filterParams.toString()}`;
 
     return {
         rule_id: rule.id,

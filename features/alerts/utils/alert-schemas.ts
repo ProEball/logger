@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { eventFiltersSchema } from "@/shared/utils/event-filters.schema";
+import { checkWebhookUrl } from "@/features/alerts/utils/webhook-url";
 
 export { eventFiltersSchema };
 export type { EventFilters } from "@/shared/utils/event-filters.schema";
@@ -14,7 +15,17 @@ export type AlertCondition = z.infer<typeof conditionSchema>;
 
 export const webhookChannelSchema = z.object({
     type: z.literal("webhook"),
-    url: z.string().url("Invalid webhook URL"),
+    // Syntactic SSRF check only — it runs in the browser too, so it cannot
+    // resolve DNS. `assertPublicWebhookTarget` re-checks before each delivery.
+    url: z
+        .string()
+        .url("Invalid webhook URL")
+        .superRefine((value, ctx) => {
+            const result = checkWebhookUrl(value);
+            if (!result.ok) {
+                ctx.addIssue({ code: "custom", message: result.reason });
+            }
+        }),
     headers: z
         .array(z.object({ key: z.string().min(1), value: z.string() }))
         .optional(),

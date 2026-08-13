@@ -17,7 +17,9 @@ vi.mock("@/core/db/client", () => ({
     },
 }));
 
-vi.mock("@/core/env", () => ({ env: { APP_URL: "http://localhost:3000" } }));
+// LOG_LEVEL is here because the action pulls in `@/core/auth/config` → the pino
+// singleton, which reads it at import time and rejects an undefined level.
+vi.mock("@/core/env", () => ({ env: { APP_URL: "http://localhost:3000", LOG_LEVEL: "silent" } }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("@/core/auth/server");
 vi.mock("@/features/organizations/services/organizations.service");

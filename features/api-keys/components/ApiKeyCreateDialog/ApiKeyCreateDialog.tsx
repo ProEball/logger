@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition, useEffect } from "react";
+import { useState, useTransition } from "react";
 import { Button, FormField, Input, Modal } from "@/shared/components";
 import { createApiKeyAction } from "@/features/api-keys/actions/create-api-key.action";
 import { ApiKeyCreatedDialog } from "../ApiKeyCreatedDialog/ApiKeyCreatedDialog";
@@ -52,14 +52,17 @@ export function ApiKeyCreateDialog({ open, onClose, orgSlug, projectSlug }: ApiK
         });
     };
 
-    useEffect(() => {
+    // See InviteMemberDialog — reset during render, not from an effect.
+    const [wasOpen, setWasOpen] = useState(open);
+    if (wasOpen !== open) {
+        setWasOpen(open);
         if (!open) {
             setCreatedKey(null);
             setName("");
             setRateLimitPerMin(String(DEFAULT_RATE_LIMIT));
             setError(null);
         }
-    }, [open]);
+    }
 
     const handleRevealClose = () => {
         setCreatedKey(null);

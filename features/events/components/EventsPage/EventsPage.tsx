@@ -1,8 +1,9 @@
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
+import { Suspense } from "react";
 import { t } from "@/core/i18n/t";
 import { useSelector } from "react-redux";
+import { useIsHydrated } from "@/shared/hooks/use-is-hydrated";
 import { selectAutoRefresh } from "@/core/store/slices/user";
 import { useEventFilters } from "@/features/events/hooks/use-event-filters";
 import { EventsFilterBar } from "../filters/EventsFilterBar/EventsFilterBar";
@@ -51,8 +52,7 @@ export function EventsPage({
     // OrgHydrator's mount effect dispatches the real preference (see the same note in
     // AutoRefreshControl.tsx), so SSR and the first client paint disagree. Render the
     // SSR-safe default until mounted so hydration always agrees.
-    const [mounted, setMounted] = useState(false);
-    useEffect(() => setMounted(true), []);
+    const mounted = useIsHydrated();
 
     const {
         filters,

@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { Button } from '@/shared/components/Button/Button';
 import styles from './ErrorBoundary.module.scss';
 
@@ -33,7 +34,7 @@ export function GlobalErrorPage({ reset }: GlobalErrorPageProps) {
             </p>
             <div className={styles.actions}>
                 <Button variant="primary" onClick={reset}>Try again</Button>
-                <a href="/" className={styles.link}>Go to home</a>
+                <Link href="/" className={styles.link}>Go to home</Link>
             </div>
         </div>
     );

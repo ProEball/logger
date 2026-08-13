@@ -1,4 +1,5 @@
 import { and, eq, isNull } from "drizzle-orm";
+import Link from "next/link";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { auth } from "@/core/auth/config";
@@ -46,9 +47,9 @@ export default async function InvitePage({ params }: InvitePageProps) {
                         </p>
                     </header>
                     <div className={styles.body}>
-                        <a href="/login" className={styles.link}>
+                        <Link href="/login" className={styles.link}>
                             Go to sign in
-                        </a>
+                        </Link>
                     </div>
                 </div>
             </AuthSplitLayout>
