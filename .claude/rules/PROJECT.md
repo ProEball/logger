@@ -119,7 +119,11 @@ components/
 - **[MUST]** *When* tests are required is defined in `WORKFLOW.md` §2. This section is only *how*.
 - **[MUST]** Test behaviour, not implementation — query by role and label, never class or id.
 - **[MUST]** Mock only at real system boundaries: database, external HTTP, DNS, clock. Never mock an internal module.
-- Unit tests sit next to their source: `thing.test.ts`. E2E specs live in `e2e/`, one per flow, `kebab-case.spec.ts`.
+- **[MUST]** Unit tests sit **next to their source**: `thing.ts` → `thing.test.ts` in the same folder. All 32 do today. E2E specs are the exception and live in `e2e/`, one per flow, `kebab-case.spec.ts`.
+
+  Not a stylistic preference — it is what makes a missing test visible. `features/auth/actions/` holds nine actions beside nine tests; add a tenth action without one and the gap shows in the folder listing and in the diff, which is what WORKFLOW.md §2 relies on. Colocation also means `git mv` on a module carries its test along, so renames do not leave orphans behind.
+
+  *Rejected 2026-08-13: a per-feature `features/*/tests/` folder.* The motivation was that tests appear under different subfolder names across features — but that only reflects where each feature keeps its logic (`auth` in `actions/`, `ingest` in `services/` and `utils/`); the rule itself is already uniform. It would cost the two properties above and rewrite 32 import paths. Reopen only if component tests (`.test.tsx`) arrive in bulk and genuinely clutter the per-component folders.
 - **Reality check:** 32 unit test files, all `.test.ts` — there are currently **no** component tests, and `features/overview/` has none at all. Do not read the existing layout as the target.
 
 ## 12. Styling
@@ -151,7 +155,7 @@ components/
 
 - `camelCase` — variables, functions, hooks, methods. `PascalCase` — components, types, interfaces, classes. `UPPER_SNAKE_CASE` — constants.
 - **[MUST]** Booleans start with `is`, `has`, `should`, or `can`.
-- Files: components `PascalCase/PascalCase.tsx` · hooks `use-kebab-case.ts` · utils `camelCase.ts` · services `camelCase.service.ts` · types `camelCase.types.ts` · jobs `kebab-case.job.ts` · actions `kebab-case.action.ts` · tests `<source>.test.ts` · e2e `kebab-case.spec.ts`.
+- Files: components `PascalCase/PascalCase.tsx` · hooks `use-kebab-case.ts` · utils `camelCase.ts` · services `camelCase.service.ts` · types `camelCase.types.ts` · jobs `kebab-case.job.ts` · actions `kebab-case.action.ts` · tests `<source>.test.ts` **in the source's own folder** (§11) · e2e `kebab-case.spec.ts` in `e2e/`.
 
 ## 16. Anti-Patterns
 
