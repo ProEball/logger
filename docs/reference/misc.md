@@ -2,7 +2,13 @@
 
 ## Testing
 
-- **Unit/service tests**: Vitest (`vitest.config.ts` — jsdom environment, `@` alias to repo root, excludes `e2e/**` and `.next-e2e/**`). 22 test files, `npm run test`. All are for **services/utils/business logic** — there are currently **no `*.test.tsx` component tests** despite `@testing-library/react` and `jest-dom` being installed. Coverage concentrates on the security/data-integrity-critical modules: `features/ingest` (6 files: API key auth, rate limiting, attribute-type registry, event schema, timestamp sanitization) and `features/alerts` (evaluator, dispatcher, **and CRUD/version/state-transition logic in `alert-rules.service.test.ts`**), plus `shared/permissions/check.test.ts`. Db-touching services are unit-tested by mocking `@/core/db/client` with a small chainable stub (`db.select().from().where()...` returns a `.then`-able) and keeping the real `@/core/db/schema` import — see `alert-rules.service.test.ts` for the pattern.
+- **Unit/service tests**: Vitest (`vitest.config.ts` — jsdom environment, `@` alias to repo root, excludes `e2e/**` and `.next-e2e/**`). **23 test files / 225 tests**, `npm run test`. All are for **services/utils/business logic** — there are currently **no `*.test.tsx` component tests** despite `@testing-library/react` and `jest-dom` being installed. Coverage concentrates on the security/data-integrity-critical modules: `features/ingest` (6 files: API key auth, rate limiting, attribute-type registry, event schema, timestamp sanitization) and `features/alerts` (evaluator, dispatcher, **CRUD/version/state-transition logic in `alert-rules.service.test.ts`**, and the SSRF URL guard in `webhook-url.test.ts`), plus `shared/permissions/check.test.ts`. Db-touching services are unit-tested by mocking `@/core/db/client` with a small chainable stub (`db.select().from().where()...` returns a `.then`-able) and keeping the real `@/core/db/schema` import — see `alert-rules.service.test.ts` for the pattern.
+
+  **`vitest.config.ts` sets `test.env`** with throwaway `DATABASE_URL` / `AUTH_SECRET` / `APP_URL` values. This is required, not cosmetic: `@/core/env` validates the entire server schema the moment it is imported, so any module under test that transitively reaches it (e.g. `rate-limit.service.ts`, `core/logger.ts`) fails to load without them. Nothing here connects to a real database. See also the `isServer` override in [stack.md](stack.md#environment-variables) — the companion half of making `@/core/env` importable under jsdom.
+
+  Two mocking notes that bite when adding tests near these modules:
+  - Mock at the **real** boundary. The webhook SSRF guard resolves DNS, so `alert-dispatcher.service.test.ts` mocks `node:dns/promises` — not the guard module itself, which is internal (per `.claude/rules/PROJECT.md` §11.1). Vitest needs a `default` export in that mock factory alongside the named `lookup`.
+  - A hand-written `vi.mock("@/core/env", ...)` factory must include **every** key its importers read. `invite-member.test.ts` supplies `LOG_LEVEL` purely because the action transitively pulls in the pino singleton, which throws on an undefined level.
 
 - **E2E tests**: Playwright (`playwright.config.ts`), 11 spec files in `e2e/`: `alerts`, `api-keys`, `auth`, `auth-bootstrap`, `dashboard`, `events`, `ingest`, `invite`, `projects`, `role-management`, `theme` — 53 tests total, run with `npm run test:e2e`. As of 2026-08-13, every spec logs in and exercises the real UI/API rather than asserting against seeded rows directly (the one exception — `ingest.spec.ts` — is intentionally API-only, since it's testing the ingest HTTP endpoint itself, not a page).
 
@@ -23,7 +29,7 @@
 
 ## Deployment
 
-**Current actual state as of 2026-08-12: production Docker packaging is planned but not yet built.**
+**Current actual state as of 2026-08-13: production Docker packaging is planned but not yet built.** There is also **no CI of any kind** — no `.github/` directory exists, so nothing runs `build`/`lint`/`test` on push.
 
 What exists today:
 - `db/Dockerfile` — `postgres:16` + `postgresql-16-partman` apt package. This is the **only** Dockerfile in the repo.
@@ -34,6 +40,7 @@ The **planned** architecture (`docs/features/08-docker-packaging.md`, 0/30 check
 
 What actually works today for running the app "in production mode":
 - `npm run build && npm run start` — runs on **port 80** directly (both `dev` and `start` scripts use `-p 80`, not the Next.js default 3000 — relevant if/when the planned Caddy config is written, since a naive `reverse_proxy app:3000` would be wrong).
+- **Every route is server-rendered on demand** — `next build` reports no `○ (Static)` routes at all. This is a consequence of the nonce-based CSP: the root layout reads `headers()` to get the per-request nonce, which opts the whole route tree into dynamic rendering (see [security.md](security.md#content-security-policy-nonce-based)). Any future CDN/edge-caching plan has to account for this; it is not an accident to be "optimized away" without also dropping the nonce.
 - **Worker toggle**: set `WORKER_IN_PROCESS=true` to run the pg-boss worker (partition maintenance + alert evaluation/delivery) inside the same Next.js process, via `instrumentation.ts`'s `register()` hook. This is a stopgap for single-instance deployments — it is **not** the intended production topology (a dedicated worker container is planned; running in-process on every replica of a horizontally-scaled app risks duplicate cron execution beyond what `singletonKey` alone guards against).
 - **Migrations**: `npm run db:migrate` (`drizzle-kit migrate`), or `scripts/apply-migrations.mjs` (an ad hoc script). No init-container wiring exists yet — migrations must be applied manually before/during a deploy.
 - **Health checks**: `GET /api/health` (liveness) and `GET /api/health/ready` (readiness — checks DB, pg-boss, ingest freshness, migration status; see [api.md](api.md#operational-endpoints)) are both fully implemented today, ahead of the rest of the Docker packaging work. Use `/api/health/ready` as your container orchestrator's readiness probe.
@@ -46,15 +53,23 @@ What actually works today for running the app "in production mode":
 
 ## App logger
 
-There are currently **three** logger definitions in the codebase, which is worth knowing so you don't accidentally use the wrong (dead) one:
+**`core/logger.ts` is the only logger.** `pino({ level: env.LOG_LEVEL })` — plain JSON to stdout, always, in every environment. It reads the **validated** env (since 2026-08-13), so an invalid level fails at boot rather than reaching pino.
 
-| File | Status | Behavior |
-|---|---|---|
-| `core/logger.ts` | **Active** — this is what `@/core/logger` actually resolves to (a sibling `.ts` file wins over a same-named directory's `index.ts` in module resolution) | `pino({ level: process.env.LOG_LEVEL ?? "info" })`, plain JSON output always, level configurable via `LOG_LEVEL` |
-| `core/logger/index.ts` | **Orphaned dead code** — unreachable due to the resolution rule above | `pino({ level: "info" })`, hardcoded level, no env override |
-| `shared/services/logger.ts` | **Unused dead code** — zero importers anywhere in the app | Uses `pino-pretty` in non-production for colorized dev output, plain JSON in production |
+Consumers: `core/auth/config.ts`, `core/db/middleware/slow-query-logger.ts`, `features/ingest/jobs/partman-maintenance.job.ts`. All import `@/core/logger`.
 
-Every real consumer (`core/auth/config.ts`, `core/db/middleware/slow-query-logger.ts`, `features/ingest/jobs/partman-maintenance.job.ts`, etc.) imports from `core/logger.ts`. This app logger is entirely separate from the product's own event-ingestion feature — `core/logger` writes structured JSON to the process's stdout for operators; `features/ingest` persists *customer-submitted* log events into Postgres. Don't confuse "the app's own logs" with "the logs this product stores for its users."
+> Until 2026-08-13 there were **three** logger definitions — `core/logger/index.ts` (unreachable: a sibling `.ts` file wins over a same-named directory's `index.ts` in module resolution) and `shared/services/logger.ts` (zero importers). Both deleted.
+
+### Why there is no `pino-pretty` in development
+
+The deleted `shared/services/logger.ts` was the only place configuring a `pino-pretty` transport. Folding it into `core/logger.ts` gated on `NODE_ENV !== "production"` was tried and **deliberately rejected** — it works under `next dev`, but the risk/benefit is bad:
+
+- `pino-pretty` is a **devDependency**, and feature 08's planned `deps` stage runs `npm ci --omit=dev` — so it will not exist in the runtime image.
+- pino constructs its transport worker **eagerly**, at `pino()` call time. `proxy.ts` → `core/auth/config.ts` → the logger, so a construction failure is not a degraded log line; it is **every request failing at boot**.
+- The gate is a single env var. `next start` sets `NODE_ENV=production` itself, but the **planned worker container runs plain `node dist/worker.js`**, where nothing sets it — and `.env.production.example` (feature 08 step 22) does not list `NODE_ENV`. That is a concrete path to a worker that crash-loops with an obscure worker-thread module-resolution error.
+
+The upside — colorized output for an app that logs roughly three things (password-reset URLs, slow queries, partman job errors) — does not justify that. If pretty dev logging is ever wanted, do it safely: move `pino-pretty` to `dependencies`, or gate on a dedicated `LOG_PRETTY` env flag defaulting to `false`, rather than on `NODE_ENV`.
+
+This app logger is entirely separate from the product's own event-ingestion feature — `core/logger` writes structured JSON to the process's stdout for operators; `features/ingest` persists *customer-submitted* log events into Postgres. Don't confuse "the app's own logs" with "the logs this product stores for its users."
 
 ## Internationalization
 

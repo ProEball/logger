@@ -2,20 +2,52 @@
 
 > Single source of truth for "where are we right now". Update after every work session.
 
-**Last updated**: 2026-05-11 (DS v0.3 update started)
+**Last updated**: 2026-08-13 (production-readiness audit + hardening pass)
 
 ---
 
 ## Current Phase
 
-**Now: Design System v0.3.0 Update (side track)** · `docs/features/ds-v03-update.md`
-Status: 🟨 In progress — Phase 1 (Tokens + Fonts) started
+**Now: Feature 08 — Docker packaging** · `docs/features/08-docker-packaging.md`
+Status: 🟦 Planned — 0 / 30 checklist items. **This is the blocker for production.** Nothing in the repo can be deployed today: no app `Dockerfile`, no production `docker-compose.yml`, no `Caddyfile`, no standalone worker entrypoint, `output: 'standalone'` not set.
 
-**Paused: Feature 08 — Docker packaging** · `docs/features/08-docker-packaging.md`
-Status: 🟦 Planned (resumes after DS update)
+**Production readiness: features ~85–90%, operations ~30%.** The app is functionally close to complete; the gap is entirely in packaging, delivery, and operations. Full audit below.
+
+### Blockers before production
+
+| # | Blocker | Where |
+|---|---|---|
+| 1 | No deployment artifacts at all | Feature 08, 0/30 |
+| 2 | No standalone worker process — `core/worker/worker.ts` is an in-process module started from `instrumentation.ts` via `WORKER_IN_PROCESS`; there is no entrypoint that can run as its own container | `core/worker/` |
+| 3 | **Password reset does not send email.** `sendResetPassword` writes the reset URL to the log and returns. A user who forgets their password cannot recover. (Invitations are copy-link by design — that decision stands; reset is a different case.) | `core/auth/config.ts` |
+| 4 | No backups — no script, no container, no restore procedure | Feature 08 §17–21 |
+| 5 | No CI — no `.github/` directory exists; nothing runs build/lint/test on push | — |
+
+### Known gaps, not blockers
+
+- **`projects.retention_days` is not enforced.** The column is read and exposed through the projects service, but partition retention is globally hardcoded to `'30 days'` in migration 0003. PLAN.md §14 already records this as a deliberate deferral — the open question is whether to implement it or stop exposing the value.
+- **Ingest rate limiter is single-instance in-memory** — documented in code; needs a Redis-backed replacement before multi-replica deployment.
+- **No rate limiting on `/api/auth/*`** — login and password-reset requests are not throttled.
+- **`scripts/seed-events.mjs` is broken** — resolves a project by the hardcoded slug `"some"` while its error message says `"test"`.
+
+---
+
+## Post-Feature-07 work (not tracked as numbered features)
+
+Five commits landed after Feature 07 without their own feature docs. Recorded here so the roadmap table isn't the only history.
+
+**2026-08-13 — Production-readiness hardening.** Security headers (`X-Frame-Options`, `nosniff`, `Referrer-Policy`, `Permissions-Policy`, `X-DNS-Prefetch-Control`, prod-only HSTS) in `next.config.ts`; **nonce-based CSP** minted per request in `proxy.ts` (`style-src` deliberately keeps `'unsafe-inline'` — Recharts emits inline style attributes and a nonce in `style-src` would void it; the whole app is consequently dynamically rendered); **webhook SSRF guard** in two layers (`webhook-url.ts` syntactic + isomorphic, `webhook-target-guard.service.ts` DNS-resolving + server-only) plus `redirect: "manual"`; env schema widened 4 → 8 validated vars with `AUTH_SECRET` raised to `min(32)`; **fixed: alert webhooks built `events_url` from a nonexistent `NEXT_PUBLIC_APP_URL`**, so every webhook ever sent carried a `localhost:3000` link; `shared/hooks/use-is-hydrated.ts` replaces the `useState`+`useEffect` mount-gate idiom in 3 components, dialog resets moved to render-time state adjustment in 4 more. Gates went from 13 TS errors / 1032 lint errors to **0 / 0**; tests 192 → **225**; e2e **53 passing**; build clean. See PLAN.md §17 for the decisions.
+
+**2026-08-13 — In-app help center, e2e isolation, dev-origin fix** (`cf57619`). `features/help` + `app/[org]/(org-shell)/help` with search palette and markdown articles. E2E suite moved to an isolated server + database (port 3100, `logger_test`, `E2E_MODE`) instead of the shared dev instance; ad-hoc live-check scripts replaced by `e2e/support/` helpers. Fixed missing `allowedDevOrigins` in `next.config.ts` — without it Next blocked HMR for any host other than the first one seen, breaking hydration, which made the login form fall back to a native GET submit **leaking the password into the URL and server logs**. Fixed change-password revoking its own session cookie. Theme-preference save is now awaited rather than fire-and-forget.
+
+**2026-08-12 — Attribute-type enforcement, auth UI redesign, roles/events overhaul** (`67ff454`). Ingest validates attribute values against a per-project registered type (`attribute_key_types` + `attribute-type-registry.service`), rejecting conflicting types on later writes. Auth screens rebuilt on a shared `AuthSplitLayout`/`BrandPanel` with a new `PasswordField`. Roles visual pass (`PermissionMatrix`, `RoleEditor`, `RolesList`) plus an assignable-permissions util scoping what a role may grant. Events filter bar refactored from per-field dropdowns into a single `FiltersPopover`, with facet counts moved from client-side computation into the query service.
+
+**2026-08-12 — Dashboard chart fixes** (`0987983`). Events-over-time buckets are zero-filled (a gap in logs rendered as a missing period instead of a drop to zero) and bucket width is tied to the range filter (1h→1m, 24h→1h, 7d→12h, 30d→1d). Decluttered x-axis ticks, date labels for 7d/30d, widget redesign, KPI values matched to sparkline colors.
+
+**2026-08-12 — Per-key rate limits, API key delete, simplified nav** (`8695a9b`). Configurable rate limit per API key (new migration; ingest routes enforce per-key instead of one global limit), delete for revoked keys. Dropped `OrgRail`/`OrgSwitcher` for a single-org sidebar; account/sessions/sign-out moved into `UserMenu`. Sessions list redesign, setup-wizard confirm-password field, two-step empty project state.
 
 **Last completed: Feature 07 — Polish (2026-05-09)**
-Toast system (central `ToastProvider` + `useToast` hook, Redux-free reducer, ARIA live region `role="region" aria-live="polite"`, per-toast `role="alert"/"status"`); migrated all inline `alert()` / `saved` state to `toast.push()`; 5 skeleton components (`TableSkeleton`, `WidgetSkeleton`, `CardSkeleton`, `ListSkeleton`, `PageSkeleton`) with design-system tokens; `dynamic()` lazy-loading for recharts widgets (EventsPerMinute, LevelBreakdown, EnvironmentBreakdown) and EventDrawer; error boundary components (`GlobalErrorPage`, `NotFoundPage`, `ForbiddenPage`); 12 `error.tsx` / `not-found.tsx` / `loading.tsx` boundary files across all route segments; session revocation on password change (`revokeOtherSessions: true`); E2E test for session revocation (`e2e/auth.spec.ts`); `/api/version` and extended `/api/health/ready` (db, pgboss, ingest, migrations checks); `core/logger.ts` (pino singleton); `slow-query-logger.ts` wraps postgres.js client, WARN at ≥500 ms; `partman-maintenance.job.ts` wrapped in try/catch with ERROR logging; ForbiddenPage wiring — `revokeInvitationAction` returns `{ error? }`, `InvitationsList` converted to client component, `alerts/new/page.tsx` renders `ForbiddenPage` instead of redirect; `EmptyMembers` component for team page; README monitoring endpoints + self-monitoring alert guide; Decision log (10 entries). Manual items deferred: keyboard nav (27), contrast audit (28), EXPLAIN ANALYZE (32). TypeScript clean.
+Toast system (central `ToastProvider` + `useToast` hook, Redux-free reducer, ARIA live region `role="region" aria-live="polite"`, per-toast `role="alert"/"status"`); migrated all inline `alert()` / `saved` state to `toast.push()`; 5 skeleton components (`TableSkeleton`, `WidgetSkeleton`, `CardSkeleton`, `ListSkeleton`, `PageSkeleton`) with design-system tokens; `dynamic()` lazy-loading for recharts widgets (EventsPerMinute, LevelBreakdown, EnvironmentBreakdown) and EventDrawer; error boundary components (`GlobalErrorPage`, `NotFoundPage`, `ForbiddenPage`); 12 `error.tsx` / `not-found.tsx` / `loading.tsx` boundary files across all route segments; session revocation on password change (originally the `revokeOtherSessions: true` body flag — **superseded 2026-08-13** by a separate `auth.api.revokeOtherSessions` call, because the flag also killed the caller's own session and the cookie rotation was unreliable inside a Server Action); E2E test for session revocation (`e2e/auth.spec.ts`); `/api/version` and extended `/api/health/ready` (db, pgboss, ingest, migrations checks); `core/logger.ts` (pino singleton); `slow-query-logger.ts` wraps postgres.js client, WARN at ≥500 ms; `partman-maintenance.job.ts` wrapped in try/catch with ERROR logging; ForbiddenPage wiring — `revokeInvitationAction` returns `{ error? }`, `InvitationsList` converted to client component, `alerts/new/page.tsx` renders `ForbiddenPage` instead of redirect; `EmptyMembers` component for team page; README monitoring endpoints + self-monitoring alert guide; Decision log (10 entries). Manual items deferred: keyboard nav (27), contrast audit (28), EXPLAIN ANALYZE (32). TypeScript clean.
 
 **Last completed: Feature 06 — Alerts (2026-05-09)**
 Schema (`alert_rules` + `alert_notifications`, migration 0004), Zod schemas (`shared/utils/event-filters.schema.ts` + `features/alerts/utils/alert-schemas.ts`), `alert-rules.service.ts` (CRUD + `listEnabled` + `listAlertHistory`), `alert-evaluator.service.ts` (evaluateOne with optimistic concurrency on `version`, evaluateAllEnabled with cap-10 concurrency), `build-payload.ts` (webhook JSON with sample events + events_url), `alert-dispatcher.service.ts` (HTTP POST, 2xx/4xx/5xx classification), `alert-evaluation.job.ts` (pg-boss cron `* * * * *`, singletonKey), `alert-delivery.job.ts` (retry options on `send()`), 5 server actions, `alerts.*` i18n namespace, 14 components (`AlertStateBadge`, `AlertRow`, `AlertsList`, `AlertRuleEditor`, `AlertRuleEditorTabs`, `FilterBuilder`, `ConditionEditor`, `WebhookChannelForm`, `ChannelsEditor`, `NotificationOptions`, `SaveBar`, `AlertHistoryTable`, `AlertNotificationRow`, `DeliveryStatusBadge`), 3 routes (`/alerts`, `/alerts/new`, `/alerts/[id]`), 25 unit tests (evaluator state machine, dispatcher HTTP classification, payload builder), 5 DB-level E2E tests (insert, cascade delete, version increment, optimistic concurrency, disabled filter). `serializeFilters` moved to `shared/utils/`. Build clean, TypeScript clean, 147 unit tests.
@@ -45,7 +77,7 @@ Each feature has its own implementation doc with a status block, decisions, sche
 | # | Feature | Status | Doc |
 |---|---|---|---|
 | — | Design System + UI kit v0.1 (side track) | ✅ Done | [features/design-system.md](features/design-system.md) |
-| — | Design System v0.3.0 Update (side track) | 🟨 In progress | [features/ds-v03-update.md](features/ds-v03-update.md) |
+| — | Design System v0.3.0 Update (side track) | ✅ Done | [features/ds-v03-update.md](features/ds-v03-update.md) |
 | 00 | Foundation | ✅ Done | [features/00-foundation.md](features/00-foundation.md) |
 | 01 | Auth + Organizations + Roles | ✅ Done | [features/01-auth-organizations-roles.md](features/01-auth-organizations-roles.md) |
 | 02 | Projects + API keys | ✅ Done | [features/02-projects-api-keys.md](features/02-projects-api-keys.md) |
@@ -76,6 +108,8 @@ Status legend:
 
 If the feature doc says "planning pending" — stop and ask the user to detail the feature before implementation.
 
+For "what does the code actually do right now", prefer `docs/reference/` over the planning docs — it is regenerated from the codebase and calls out where PLAN.md and the feature docs have drifted.
+
 ---
 
 ## Conventions
@@ -83,4 +117,5 @@ If the feature doc says "planning pending" — stop and ask the user to detail t
 - **Doc updates**: when a feature is touched, update its status block (`Last touched`, `Progress: X/Y`). Update PROGRESS.md row.
 - **Decisions made mid-implementation**: log them in the feature doc's "Decision log (local)" section. If the decision affects more than one feature → also append to PLAN.md §17.
 - **New permission added**: register in `shared/permissions/registry.ts` AND list in PLAN.md §5 AND mention in the feature doc that introduced it.
-- **New env variable**: add to `.env.example` AND the feature doc.
+- **New env variable**: add to the Zod schema in `core/env/index.ts` AND `.env.example` AND `docs/reference/stack.md` AND the feature doc. Reading `process.env` directly is reserved for build-time metadata and test-only flags — anything read at runtime goes through the schema so a malformed value fails at boot rather than at the call site. (A var referenced in code but present in none of these is exactly how `NEXT_PUBLIC_APP_URL` silently broke every alert webhook for months.)
+- **Anything that fetches a user-supplied URL server-side**: route it through the SSRF guard (`features/alerts/services/webhook-target-guard.service.ts`) — don't hand-roll a second check.

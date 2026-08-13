@@ -106,7 +106,7 @@ The aggregation query only returns buckets that had at least one event (sparse r
 An **alert rule** (`alert_rules`, scoped to one project) consists of:
 - **`filter`** — the exact same `EventFilters` shape used by the events list (minus pagination).
 - **`condition`** — `{ type: "threshold", count: <positive int>, windowMinutes: 1–1440 }`: fire if at least `count` matching events occur within the trailing `windowMinutes`.
-- **`channels`** — array (≥1) of webhook channels: `{ type: "webhook", url, headers?: [{key, value}] }`. Webhook is currently the **only** channel type implemented.
+- **`channels`** — array (≥1) of webhook channels: `{ type: "webhook", url, headers?: [{key, value}] }`. Webhook is currently the **only** channel type implemented. `url` is additionally checked by an SSRF guard at save time *and* at every delivery — see [Delivery](#delivery).
 - **`notifyOnResolve`** — whether transitioning back to `ok` also sends a notification (default `true`).
 
 ### Evaluation (every minute, via the `alert-evaluation` pg-boss job)
@@ -119,7 +119,21 @@ For every enabled rule (across all projects, evaluated in parallel batches of 10
 
 ### Delivery
 
-`alert-delivery` job: POSTs the JSON payload to the webhook URL with a 5-second timeout. Response classification: 2xx → delivered; 4xx → failed, **not retried** (treated as a permanent config error); 5xx or network/timeout → failed, **retried** (pg-boss `retryLimit: 3, retryDelay: 30s, retryBackoff: true`).
+`alert-delivery` job: POSTs the JSON payload to the webhook URL with a 5-second timeout.
+
+Before the request goes out, `assertPublicWebhookTarget()` re-validates the target — scheme, credentials, IP literals, and a fresh DNS resolution checked against private/reserved ranges. This runs on **every** delivery, not just at rule-creation time, because a hostname that resolved publicly when the rule was saved can be repointed inward later. See [security.md](security.md#outbound-request-safety-ssrf) for the full ranges and the `ALLOW_PRIVATE_WEBHOOK_TARGETS` opt-out.
+
+Response classification:
+
+| Outcome | Result | Retried? |
+|---|---|---|
+| 2xx | delivered | — |
+| 3xx | failed — `"Webhook redirected; refusing to follow"` | **No** |
+| 4xx | failed | **No** — permanent config error |
+| 5xx, network error, timeout | failed | **Yes** — pg-boss `retryLimit: 3, retryDelay: 30s, retryBackoff: true` |
+| SSRF guard rejection | failed, no request ever sent | **No** |
+
+The fetch sets **`redirect: "manual"`**, which is why 3xx surfaces as a failure rather than silently resolving: auto-following would re-enter the request with a `Location` the SSRF guard never vetted.
 
 Webhook payload shape (`build-payload.ts`):
 ```json
@@ -134,6 +148,7 @@ Webhook payload shape (`build-payload.ts`):
   "test": false
 }
 ```
+`events_url` is built from the validated **`APP_URL`**. Until 2026-08-13 it read a `NEXT_PUBLIC_APP_URL` that was defined nowhere, so every webhook ever sent carried a `http://localhost:3000/...` link — see [stack.md](stack.md#environment-variables).
 `sample_events` only re-applies the rule's `levels` filter when picking sample rows — not the full filter (environments/sources/attributes/etc. are ignored for sample selection, though they *are* applied when computing the actual match count for the threshold). Test-fire requests (from the "Test" button in the UI) use a hardcoded fake event instead of querying the DB.
 
 ### Rule mutation side effects
