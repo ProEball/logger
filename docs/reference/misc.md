@@ -29,29 +29,74 @@
 
 - Project convention (`.claude/rules/PROJECT.md`): unit/integration tests live next to the source file (`ComponentName.test.tsx`), test behavior via role/label queries not implementation details, and mock only at system boundaries.
 
+## Continuous integration
+
+Two workflows in `.github/`, both added 2026-08-13 (before that, nothing ran on push — every merge was verified by hand):
+
+- **`ci.yml`** — runs on push to `main` and on every pull request. Job `gates` runs the four checks from `WORKFLOW.md` §3 in order (`tsc --noEmit`, `lint`, `test`, `build`), each with `if: always()` so one red gate does not hide the others. Job `image` builds the Docker image in parallel without pushing it, so a Dockerfile break is caught by CI rather than at deploy time. Both use Node 22, matching the image's base. `DATABASE_URL`/`AUTH_SECRET` are set to throwaway values because `npm run build` imports `core/env`, which validates the whole schema on import; no database is contacted.
+- **`release.yml`** — runs on a `v*` tag. Builds and pushes to `ghcr.io/<owner>/logger` tagged with the exact version, the `major.minor` line, the commit SHA, and `latest` (skipped for pre-release tags containing `-`). Passes `NEXT_PUBLIC_BUILD_SHA`/`NEXT_PUBLIC_BUILD_TIME` as build args, which is the only point at which they can be set.
+
+`npm run test:e2e` is **not** in CI — it needs the isolated `logger_test` database and a running app instance (see [Testing](#testing) above). Run it locally for changes touching routing, auth or a user flow.
+
 ## Deployment
 
-**Current actual state as of 2026-08-13: production Docker packaging is planned but not yet built.** There is also **no CI of any kind** — no `.github/` directory exists, so nothing runs `build`/`lint`/`test` on push.
+**Implemented and live-checked 2026-08-13** (Feature 08). Operational procedures — first deploy, updates, backup/restore, certificate troubleshooting — live in [`docs/OPERATIONS.md`](../OPERATIONS.md); this section is the reference for *what exists*.
 
-What exists today:
-- `db/Dockerfile` — `postgres:16` + `postgresql-16-partman` apt package. This is the **only** Dockerfile in the repo.
-- `docker-compose.dev.yml` — builds the Postgres image above, mounts `db/init/01-extensions.sql` (creates the `pg_partman` extension) and a data volume. **No app or worker service is defined** — you run those with `npm run dev`/`npm run start` directly.
-- No root-level application `Dockerfile`, no production `docker-compose.yml`, no `Caddyfile`, no backup scripts.
+### Artifacts
 
-The **planned** architecture (`docs/features/08-docker-packaging.md`, 0/30 checklist items done as of this writing) describes: a 3-stage app Dockerfile (`deps → builder → runner`, Next.js `output: "standalone"` — not currently set in `next.config.ts`), a separate **worker container** (same image, different entrypoint, pinned to `replicas: 1` as a backstop for pg-boss singleton cron jobs), a **Caddy** reverse proxy with automatic HTTPS, a one-shot **migrate** init container gating app/worker startup (`depends_on: service_completed_successfully`), and a nightly `pg_dump` + offsite-backup container. Treat this section of the planning doc as a roadmap, not current state.
+| File | Role |
+|---|---|
+| `Dockerfile` | 3-stage app image: `deps` (`npm ci`) → `builder` (`npm run build`) → `runner` (`node:22-alpine`, non-root `node` user) |
+| `.dockerignore` | Excludes `node_modules`, build output, tests, secrets, `.github`, docs — **except `docs/reference`**, which the help centre reads at runtime |
+| `docker-compose.yml` | Production stack, `name: logger-prod` |
+| `docker-compose.dev.yml` | Postgres only, default project name (`logger`) |
+| `Caddyfile` | Reverse proxy, `{$DOMAIN}` placeholder, `reverse_proxy app:3000` |
+| `db/Dockerfile` | `postgres:16` + `postgresql-16-partman` |
+| `db/backup.Dockerfile` | `postgres:16-alpine` + `rclone` — needs both `pg_dump` and `rclone` in one image |
+| `scripts/backup.sh` | `pg_dump -Fc` loop, rotation, optional `rclone copy` |
+| `scripts/restore.sh` | Drop-and-recreate restore, with an archive-readability precheck |
+| `scripts/build-worker.mjs` | esbuild bundling for the two non-Next entrypoints |
+| `.env.production.example` | Annotated template for the production `.env` |
 
-What actually works today for running the app "in production mode":
-- `npm run build && npm run start` — runs on **port 80** directly (both `dev` and `start` scripts use `-p 80`, not the Next.js default 3000 — relevant if/when the planned Caddy config is written, since a naive `reverse_proxy app:3000` would be wrong).
+### Topology
+
+Six services. `app`, `worker` and `migrate` are **the same image with different `command:`s**, so all three necessarily run the same application code — a separately-built worker could drift a commit behind the app and evaluate alerts against a stale schema.
+
+Boot order is enforced: `postgres` healthy → `migrate` exits 0 (`condition: service_completed_successfully`) → `app` and `worker` → `proxy` once `app` is healthy.
+
+- **`output: "standalone"`** is set in `next.config.ts`. The runner copies `.next/standalone` (which carries its own pruned `node_modules`), plus `.next/static` and `public`, which standalone does not include automatically.
+- **`outputFileTracingIncludes: { "/*": ["docs/reference/**/*.md"] }`** is also set, and is not optional. `features/help/services/help-content.service.ts` reads those eight files via `path.join(process.cwd(), "docs", "reference")` at runtime; Next's file tracer only follows static imports, so without the declaration the standalone output ships without them and every help page 500s in production while working perfectly in dev.
+- **The app listens on 3000 inside the container**, not 80. It runs `.next/standalone/server.js`, which reads `PORT`/`HOSTNAME` from the environment (`ENV PORT=3000`, `HOSTNAME=0.0.0.0` in the Dockerfile). The `-p 80` in `npm run dev`/`npm run start` governs local development only — the container never runs `next start`. The Caddyfile, the compose healthcheck and `ENV PORT` must agree.
+- **`NODE_ENV=production` is baked into the image**, not left to `env_file`. `next build` already hardcodes production behaviour into the app bundle, but `worker` and `migrate` are plain `node` processes with no framework to default it — unset, they silently take development branches, including the pooled-client global in `core/db/client.ts`.
+- **Caddy adds no security headers.** The app emits the full set including a per-request nonce CSP; a browser enforces every CSP header it receives and the proxy cannot know the nonce, so any policy added there blocks the nonced inline scripts Next uses to boot the client. See [security.md](security.md#content-security-policy-nonce-based).
+- **Image size ≈ 306 MB** (linux/amd64). The Node 22 binary alone is 123 MB; application content is ~56 MB (`.next` 18 MB, standalone `node_modules` 35 MB of which `@img`/`sharp` is 17 MB, worker + migrate bundles 2.5 MB). Feature 08's original `< 250 MB` target was set without measuring and is not reachable on `node:*-alpine`.
+
+### The two non-Next entrypoints
+
+`next build` only compiles what is reachable from `app/`, so the worker and the migration runner are bundled separately by `scripts/build-worker.mjs` (esbuild, CJS, `target: node22`, dependencies inlined, `@` alias mirroring tsconfig). `npm run build` runs both steps; `npm run build:worker` runs just the esbuild one. Output goes to `dist/` (gitignored, eslint-ignored).
+
+- **`core/worker/main.ts` → `worker.js`.** Starts pg-boss via the shared `startWorker()`, starts the health-touch, installs SIGTERM/SIGINT handlers. Graceful shutdown drains in-flight jobs with a 20s cap, below the 30s compose `stop_grace_period`.
+- **`core/db/migrate.ts` → `migrate.js`.** Uses drizzle-orm's programmatic migrator, **not** `drizzle-kit migrate`: the CLI would pull dev dependencies into the runtime image and reads `drizzle.config.ts`, which wants `dotenv` and a `.env.local` that does not exist in a container. Both write the same `drizzle.__drizzle_migrations` table, so they are interchangeable against an existing database. Migrations are copied to `/app/migrations` and located via `MIGRATIONS_DIR`.
+
+Dependencies are inlined rather than left external on purpose. Relying on Next's file trace to have happened to include a worker-only dependency would fail at runtime, in production, with no build-time signal.
+
+### Worker liveness
+
+The worker exposes no HTTP. `core/worker/health-touch.ts` advances the mtime of `/tmp/worker-alive` every 30s from inside the Node process; the compose healthcheck asserts `find /tmp/worker-alive -mmin -1` matches. The touch lives in the worker process, never in a wrapper script — a shell loop would keep reporting healthy after Node had died. A failed touch is logged and swallowed, so a full `/tmp` degrades the health signal instead of killing a worker that is otherwise draining jobs.
+
+### Still true of the running app
+
 - **Every route is server-rendered on demand** — `next build` reports no `○ (Static)` routes at all. This is a consequence of the nonce-based CSP: the root layout reads `headers()` to get the per-request nonce, which opts the whole route tree into dynamic rendering (see [security.md](security.md#content-security-policy-nonce-based)). Any future CDN/edge-caching plan has to account for this; it is not an accident to be "optimized away" without also dropping the nonce.
-- **Worker toggle**: set `WORKER_IN_PROCESS=true` to run the pg-boss worker (partition maintenance + alert evaluation/delivery) inside the same Next.js process, via `instrumentation.ts`'s `register()` hook. This is a stopgap for single-instance deployments — it is **not** the intended production topology (a dedicated worker container is planned; running in-process on every replica of a horizontally-scaled app risks duplicate cron execution beyond what `singletonKey` alone guards against).
-- **Migrations**: `npm run db:migrate` (`drizzle-kit migrate`), or `scripts/apply-migrations.mjs` (an ad hoc script). No init-container wiring exists yet — migrations must be applied manually before/during a deploy.
-- **Health checks**: `GET /api/health` (liveness) and `GET /api/health/ready` (readiness — checks DB, pg-boss, ingest freshness, migration status; see [api.md](api.md#operational-endpoints)) are both fully implemented today, ahead of the rest of the Docker packaging work. Use `/api/health/ready` as your container orchestrator's readiness probe.
-- **CI build metadata**: set `NEXT_PUBLIC_BUILD_SHA` and `NEXT_PUBLIC_BUILD_TIME` at build time so `/api/version` reports something meaningful:
+- **`WORKER_IN_PROCESS=true`** still runs pg-boss inside the Next.js process via `instrumentation.ts`. It is a **dev convenience** — production uses the `worker` container, and both paths share `startWorker()` so a job registered once is picked up by both. Setting it true in production would give the alert evaluator a second scheduler racing the first.
+- **Migrations** in development: `npm run db:migrate` (`drizzle-kit migrate`). In production the `migrate` container does it, gated by compose. `scripts/apply-migrations.mjs` is an ad hoc script that writes migration *names* where drizzle expects content *hashes* — it is not a supported path and should not be used against any database you care about.
+- **Health checks**: `GET /api/health` (liveness) and `GET /api/health/ready` (readiness — DB, pg-boss, ingest freshness, migration status; see [api.md](api.md#operational-endpoints)). `/api/health/ready` is the compose readiness probe for `app`.
+- **Build metadata**: `NEXT_PUBLIC_BUILD_SHA` / `NEXT_PUBLIC_BUILD_TIME` are inlined by `next build` and surface at `/api/version`. `release.yml` passes them as build args; a manual build can too:
   ```bash
-  NEXT_PUBLIC_BUILD_SHA=$(git rev-parse --short HEAD) \
-  NEXT_PUBLIC_BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ) \
-  npm run build
+  docker compose build \
+    --build-arg NEXT_PUBLIC_BUILD_SHA=$(git rev-parse --short HEAD) \
+    --build-arg NEXT_PUBLIC_BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)
   ```
+  Setting them in `.env` after the fact has no effect.
 
 ## App logger
 

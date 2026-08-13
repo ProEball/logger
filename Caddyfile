@@ -1,0 +1,50 @@
+# Caddy reverse proxy. Chosen over Nginx for one reason: zero-config Let's
+# Encrypt with automatic renewal (PLAN.md §15.1).
+#
+# `{$DOMAIN}` is substituted from the environment — compose passes it from the
+# env file. Set it to the public hostname; Caddy provisions a certificate for
+# exactly that name on first request. For a local test with no public DNS, set
+# DOMAIN to `:80` and Caddy serves plain HTTP without attempting ACME.
+{$DOMAIN} {
+	# The app listens on the port baked into the image as PORT (3000). This
+	# is NOT the port `npm run start` uses locally — that is 80, which only
+	# governs a local `next start`. The container never runs `next start`; it
+	# runs `.next/standalone/server.js`, which reads PORT/HOSTNAME from the
+	# environment. Changing it means changing all three of: the Dockerfile
+	# `ENV PORT`, the compose healthcheck, and this line.
+	reverse_proxy app:3000
+
+	# ── Deliberately NO security headers here ────────────────────────────
+	# It is tempting to add Caddy's usual `header` block with CSP, HSTS,
+	# X-Frame-Options and friends. Do not.
+	#
+	# The app emits the whole set itself: the static headers come from
+	# `next.config.ts` and the Content-Security-Policy is minted per request
+	# in `proxy.ts`, carrying a fresh nonce that Next stamps onto the script
+	# tags it renders.
+	#
+	# A second CSP header does not replace the app's. Per the CSP spec a
+	# browser enforces *every* policy it receives and a resource must pass
+	# all of them, so adding one here yields the intersection. The proxy
+	# cannot know the request's nonce — it is generated inside the app after
+	# Caddy has already forwarded the request — so any policy written here
+	# necessarily blocks the nonced *inline* scripts Next uses to ship the
+	# RSC payload and boot the client. Hydration dies, and the failure looks
+	# like "the app renders but nothing is interactive".
+	#
+	# The rest of the set has the same problem in milder form: duplicated
+	# headers produce whichever value the browser picks first, so the app's
+	# real policy silently stops being the one in effect. Configure headers
+	# in one place — the app. See docs/reference/security.md for the
+	# inventory of what it already sends.
+
+	# Compression is a proxy concern, not an app concern — safe to add here.
+	encode zstd gzip
+
+	# Structured access logs to stdout, so `docker logs proxy` matches the
+	# JSON the app and worker already emit via pino.
+	log {
+		output stdout
+		format json
+	}
+}

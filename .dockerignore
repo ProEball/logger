@@ -1,0 +1,55 @@
+# Everything the build does not need. Keeping this tight matters twice over:
+# a smaller context uploads faster, and anything listed here can never end up
+# baked into a layer by accident.
+
+# Installed fresh inside the image by `npm ci`.
+node_modules
+npm-debug.log*
+
+# Build output — regenerated in the builder stage. A stale local `.next` copied
+# in would be silently served instead of the one just built.
+.next
+.next-e2e
+dist
+out
+build
+*.tsbuildinfo
+
+# Secrets. `.env.example` / `.env.production.example` are excluded too: the
+# image reads its configuration from the environment at runtime, and a template
+# inside the image is one more place for someone to fill in and forget.
+.env
+.env.*
+
+# Version control and tooling
+.git
+.gitignore
+.github
+.idea
+.vscode
+.claude
+
+# Tests and their artifacts — not run inside the image.
+e2e
+test-results
+playwright-report
+playwright.config.ts
+vitest.config.ts
+vitest.setup.ts
+coverage
+**/*.test.ts
+**/*.test.tsx
+
+# Docs. `docs/reference` is the exception — the in-app help centre reads those
+# eight markdown files off disk at runtime, so they are part of the app, not
+# documentation about it (see `outputFileTracingIncludes` in next.config.ts).
+docs
+!docs/reference
+*.md
+
+# Compose and deployment files: read by the Docker daemon on the host, never
+# needed inside the image.
+docker-compose*.yml
+Caddyfile
+Dockerfile
+.dockerignore

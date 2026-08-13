@@ -1,0 +1,177 @@
+# Production stack. `docker-compose.dev.yml` is the dev counterpart and runs
+# Postgres only — see docs/OPERATIONS.md for the deployment procedure.
+#
+# Boot order is enforced, not hoped for: postgres must report healthy, then
+# `migrate` runs to completion and exits 0, and only then do `app` and `worker`
+# start. An app that starts against an un-migrated database would serve 500s
+# until somebody noticed.
+
+# Without this both compose files default their project name to the directory
+# name (`logger`) and share one namespace: running this file on a developer
+# machine recreates the dev Postgres container and points the production stack
+# at the dev data volume. Named explicitly so the two can never collide.
+name: logger-prod
+
+x-app-image: &app-image
+  # All three application services run the same image — see the Dockerfile
+  # header. Built once; the `worker` and `migrate` services reuse the tag
+  # rather than rebuilding, so they cannot drift from the app.
+  # Defaults to a locally built `logger:latest`. Point IMAGE at a published tag
+  # (ghcr.io/<owner>/logger:v1.2.3) to deploy a prebuilt image; `docker compose
+  # pull` then fetches it and `build` is only used if it is missing locally.
+  image: ${IMAGE:-logger:latest}
+  build:
+    context: .
+    dockerfile: Dockerfile
+    args:
+      NEXT_PUBLIC_BUILD_SHA: ${NEXT_PUBLIC_BUILD_SHA:-}
+      NEXT_PUBLIC_BUILD_TIME: ${NEXT_PUBLIC_BUILD_TIME:-}
+  env_file: [.env]
+  restart: unless-stopped
+
+services:
+  proxy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      # QUIC/HTTP3. Harmless if the host firewall drops it.
+      - "443:443/udp"
+    environment:
+      DOMAIN: ${DOMAIN:?DOMAIN is required — see .env.production.example}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # Certificates and ACME account keys. Losing this volume means
+      # re-issuing certificates, which Let's Encrypt rate-limits.
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      app:
+        condition: service_healthy
+    healthcheck:
+      # Caddy's admin API on the loopback interface; up means the config
+      # parsed and loaded.
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:2019/config/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  app:
+    <<: *app-image
+    command: ["node", "server.js"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      # PORT is baked into the image (3000) — the same value the Caddyfile
+      # proxies to. Read from the environment here so there is one number to
+      # change, not three. NOT port 80: that is what `npm run start` uses for
+      # local development and it has never been the container's port.
+      test:
+        [
+          "CMD-SHELL",
+          'wget -q --spider "http://127.0.0.1:${PORT:-3000}/api/health/ready"',
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      # The readiness probe checks Postgres, pg-boss and migration state; give
+      # the first render room before counting failures.
+      start_period: 40s
+
+  worker:
+    <<: *app-image
+    command: ["node", "worker.js"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    # Backstop for the pg-boss singleton schedules (alert evaluation, partman
+    # maintenance). `singletonKey` already prevents double execution at the
+    # queue level; pinning replicas also removes the brief overlap window when
+    # `docker compose up -d` replaces the container.
+    deploy:
+      replicas: 1
+    # Must exceed SHUTDOWN_TIMEOUT_MS in core/worker/worker.ts (20s) or Docker
+    # SIGKILLs the worker mid-drain and in-flight jobs are left running.
+    stop_grace_period: 30s
+    healthcheck:
+      # The worker has no HTTP surface. `core/worker/health-touch.ts` advances
+      # this file's mtime every 30s; if the Node process dies or wedges, the
+      # file goes stale within a minute. The touch lives in the worker process
+      # itself precisely so that a dead worker cannot keep reporting healthy.
+      test: ["CMD-SHELL", 'test -n "$$(find /tmp/worker-alive -mmin -1)"']
+      interval: 30s
+      timeout: 5s
+      retries: 2
+      start_period: 30s
+
+  migrate:
+    <<: *app-image
+    command: ["node", "migrate.js"]
+    # One-shot: runs, exits 0, and stays exited. `restart: unless-stopped` from
+    # the anchor would restart it forever, so it is overridden here.
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  postgres:
+    build:
+      context: ./db
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?required}
+      POSTGRES_USER: ${POSTGRES_USER:?required}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?required}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      # Runs only on an empty data directory — this is what installs
+      # pg_partman on first boot.
+      - ./db/init:/docker-entrypoint-initdb.d:ro
+    # No `ports:` on purpose. Postgres is reachable only from the compose
+    # network; publishing 5432 to the host would expose it to the internet on
+    # most VPS firewall setups. Use `docker compose exec postgres psql`.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  backup:
+    build:
+      context: ./db
+      dockerfile: backup.Dockerfile
+    restart: unless-stopped
+    env_file: [.env]
+    environment:
+      # pg_dump reads these directly, so the script needs no connection flags.
+      PGHOST: postgres
+      PGUSER: ${POSTGRES_USER:?required}
+      PGPASSWORD: ${POSTGRES_PASSWORD:?required}
+      PGDATABASE: ${POSTGRES_DB:?required}
+    volumes:
+      - backups:/backups
+      - ./scripts:/scripts:ro
+    # The offsite remote is configured through rclone's own RCLONE_CONFIG_*
+    # environment variables (see .env.production.example), not an rclone.conf
+    # file. Two reasons: it keeps every secret in the one mode-600 .env, and a
+    # bind-mounted config file that does not exist yet gets silently created by
+    # Docker as an empty *directory*, which rclone then fails to parse.
+    entrypoint: ["/bin/sh", "/scripts/backup.sh"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+  backups:
+  caddy_data:
+  caddy_config:

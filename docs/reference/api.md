@@ -114,9 +114,13 @@ No auth. Real readiness probe, checks four things and returns `200` (all healthy
 | `db` | `SELECT 1` | fails health (503) on error |
 | `pgboss` | queries `pgboss.version` if the in-process worker is running; else reports `not_running_in_process` | `not_running_in_process` does **not** fail health |
 | `ingest` | any `events` row with `timestamp > now() - 1h`? | `"stale"` if none — **warning only**, adds an `X-Health-Warn` response header, does **not** fail health |
-| `migrations` | compares applied migration count (`__drizzle_migrations`) against the count of entries in `core/db/migrations/meta/_journal.json` | behind → fails health (503) — usually indicates a failed/incomplete deploy |
+| `migrations` | `core/db/migration-status.ts` compares the applied count in `drizzle."__drizzle_migrations"` against the entries in `core/db/migrations/meta/_journal.json` | fewer applied than expected → fails health (503) — usually a failed or incomplete deploy. Unreadable table → `"unavailable"`, which does **not** fail health (the `db` check owns "is Postgres reachable") |
 
-Use this endpoint (not `/api/health`) as your container's readiness/liveness probe.
+More applied than expected is deliberately **not** a failure: an app rolled back one version runs against a database migrated by its successor, which is normal during a staged deploy.
+
+> **Fixed 2026-08-13.** The query was `FROM "__drizzle_migrations"` — unqualified, so it resolved to `public` and raised `relation does not exist` on every call. The route caught that and reported `migrations: "unavailable"`, so the check silently never ran and an app pointed at a half-migrated database still passed its healthcheck. The table has always lived in the `drizzle` schema.
+
+Use this endpoint (not `/api/health`) as your container's readiness/liveness probe. The production compose stack does exactly that for `app`.
 
 ### `GET /api/version`
 
@@ -124,7 +128,9 @@ No auth.
 ```json
 { "sha": "abc1234", "builtAt": "2026-05-09T12:00:00.000Z", "nodeVersion": "v22.0.0", "nextVersion": "16.2.4" }
 ```
-`sha`/`builtAt` come from `NEXT_PUBLIC_BUILD_SHA`/`NEXT_PUBLIC_BUILD_TIME`, set by CI at build time (`sha` falls back to `"dev"` if unset).
+`sha`/`builtAt` come from `NEXT_PUBLIC_BUILD_SHA`/`NEXT_PUBLIC_BUILD_TIME`, inlined by `next build` and passed as Docker build args by `release.yml`. `sha` falls back to `"dev"` and `builtAt` to `null`.
+
+> **Fixed 2026-08-13.** The fallbacks used `??`, which only catches `undefined`. The Dockerfile declares `ARG NEXT_PUBLIC_BUILD_SHA=""`, so a build without `--build-arg` inlines an *empty string* — and the endpoint reported `"sha": ""` rather than `"dev"`. Now `||`, which covers both.
 
 ### `POST/GET/PUT/PATCH/DELETE /api/auth/[...all]`
 

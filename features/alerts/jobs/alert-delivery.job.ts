@@ -52,6 +52,11 @@ async function processDelivery(data: DeliveryJobData): Promise<void> {
 }
 
 export async function registerAlertDeliveryJob(boss: PgBoss): Promise<void> {
+    // See registerPartmanMaintenanceJob — pg-boss 12 requires the queue to
+    // exist before it can be worked, and before the alert evaluator can
+    // `send()` a delivery onto it. Idempotent.
+    await boss.createQueue(ALERT_DELIVERY_JOB);
+
     await boss.work<DeliveryJobData>(ALERT_DELIVERY_JOB, async (jobs) => {
         await Promise.all(
             jobs.map((job) =>

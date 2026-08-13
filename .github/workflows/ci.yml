@@ -1,0 +1,72 @@
+# The four gates from .claude/rules/WORKFLOW.md §3, enforced on every push and
+# pull request. Until this existed nothing ran them automatically — every merge
+# up to and including the production-hardening pass was verified by hand.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A second push to the same branch makes the first run's result irrelevant.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gates:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    env:
+      # `npm run build` imports core/env, which validates the whole server
+      # schema. No database is contacted; these only have to satisfy the schema.
+      DATABASE_URL: postgresql://ci:ci@localhost:5432/ci
+      AUTH_SECRET: ci-placeholder-secret-at-least-32-characters
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # Matches the Dockerfile's base image. Bump both together.
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # Ordered cheapest-first so an obvious failure reports in under a minute.
+      # `if: always()` on the rest so one red gate does not hide the others —
+      # a single run should report every problem, not just the first.
+      - name: Type check
+        run: npx tsc --noEmit
+
+      - name: Lint
+        if: always()
+        run: npm run lint
+
+      - name: Unit tests
+        if: always()
+        run: npm run test
+
+      # Also exercises scripts/build-worker.mjs, so a broken worker or migrate
+      # bundle fails here rather than at deploy time.
+      - name: Build
+        if: always()
+        run: npm run build
+
+  # Building the image is a separate job: it needs no npm cache and is the
+  # slowest gate, so it runs alongside the others rather than after them.
+  # Not pushed anywhere — that is release.yml's job.
+  image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

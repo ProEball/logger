@@ -1,3 +1,9 @@
+# No explicit `name:` here on purpose. This stack keeps the default project
+# name (the folder name, `logger`) so existing checkouts keep their
+# `logger_postgres_data` volume — naming it now would silently point every
+# developer at a new, empty database. The production compose file declares
+# `name: logger-prod` instead, which is what keeps the two from colliding.
+
 services:
   postgres:
     build:
