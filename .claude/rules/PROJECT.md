@@ -120,7 +120,7 @@ components/
 - **[MUST]** Test behaviour, not implementation — query by role and label, never class or id.
 - **[MUST]** Mock only at real system boundaries: database, external HTTP, DNS, clock. Never mock an internal module.
 - Unit tests sit next to their source: `thing.test.ts`. E2E specs live in `e2e/`, one per flow, `kebab-case.spec.ts`.
-- **Reality check:** 23 unit test files, all `.test.ts` — there are currently **no** component tests, and `features/auth/` (9 Server Actions) and `features/overview/` have none at all. Do not read the existing layout as the target.
+- **Reality check:** 32 unit test files, all `.test.ts` — there are currently **no** component tests, and `features/overview/` has none at all. Do not read the existing layout as the target.
 
 ## 12. Styling
 

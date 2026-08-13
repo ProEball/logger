@@ -27,7 +27,8 @@ Status: 🟦 Planned — 0 / 30 checklist items. **This is the blocker for produ
 
 - **`projects.retention_days` is not enforced.** The column is read and exposed through the projects service, but partition retention is globally hardcoded to `'30 days'` in migration 0003. PLAN.md §14 already records this as a deliberate deferral — the open question is whether to implement it or stop exposing the value.
 - **Ingest rate limiter is single-instance in-memory** — documented in code; needs a Redis-backed replacement before multi-replica deployment.
-- **No rate limiting on `/api/auth/*`** — login and password-reset requests are not throttled.
+- **No rate limiting on `/api/auth/*`** — login and password-reset requests are not throttled. Note the actions themselves are now test-covered for enumeration-safety, but throttling is a separate, still-missing control.
+- **`features/overview/` has no tests** — the last feature with zero coverage after the `features/auth/` debt was closed on 2026-08-13.
 - **`scripts/seed-events.mjs` is broken** — resolves a project by the hardcoded slug `"some"` while its error message says `"test"`.
 
 ---
