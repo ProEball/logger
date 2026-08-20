@@ -125,9 +125,30 @@ docker compose up -d
 `migrate` re-runs on every `up`, applies anything new, and exits 0 — `app` and
 `worker` do not start until it does.
 
+> **`git pull` first if the release touches anything outside the app image.**
+> `docker compose pull` fetches images; it does not update the files on the
+> host. `docker-compose.yml`, the `Caddyfile`, `db/Dockerfile` and `db/init/`
+> are read from the checkout at `/opt/logger`, and `postgres` and `backup` are
+> **built locally** — `docker compose config --images` shows them as
+> `logger-prod-postgres` and `logger-prod-backup` rather than registry
+> references.
+>
+> Skipping it fails in a way that does not look like a stale file: the new
+> containers start against the old compose definition, and whatever the release
+> added there is simply absent. Check with
+> `git diff --name-only <old-tag>..<new-tag> -- docker-compose.yml Caddyfile db/`
+> and `git pull` when it prints anything. Rebuild only if `db/Dockerfile` or
+> `db/backup.Dockerfile` is among them.
+
 ### Deploying the read-path release (2026-08-20)
 
-Three things about this particular update are worth knowing before running it.
+Four things about this particular update are worth knowing before running it.
+
+**It needs `git pull` on the host.** The release changes `docker-compose.yml`
+(the `command:` for Postgres) and `db/init/01-extensions.sql`, neither of which
+travels in the app image. `db/Dockerfile` is untouched, so nothing needs
+rebuilding. Order: `git pull`, then set `IMAGE`, then `docker compose pull &&
+docker compose up -d`.
 
 **Postgres is recreated, not just restarted.** `docker-compose.yml` now passes a
 `command:` (for `shared_preload_libraries=pg_stat_statements` and the tuning
