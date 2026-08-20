@@ -137,18 +137,37 @@ docker compose up -d
 > containers start against the old compose definition, and whatever the release
 > added there is simply absent. Check with
 > `git diff --name-only <old-tag>..<new-tag> -- docker-compose.yml Caddyfile db/`
-> and `git pull` when it prints anything. Rebuild only if `db/Dockerfile` or
-> `db/backup.Dockerfile` is among them.
+> and update the checkout when it prints anything. Rebuild only if
+> `db/Dockerfile` or `db/backup.Dockerfile` is among them.
+>
+> **Use the tag, not `git pull`.** Deploying from a tag leaves the checkout in
+> detached HEAD, so `git pull` answers *"You are not currently on a branch"* and
+> does nothing — which is what happened on 2026-08-20, after which
+> `CREATE EXTENSION pg_stat_statements` succeeded while
+> `SHOW shared_preload_libraries` came back empty. Checking out the tag is also
+> the correct thing on its own terms: it is the commit the image was built from,
+> so the compose file cannot drift from the application.
+>
+> ```bash
+> git fetch --tags && git checkout v0.2.0
+> ```
 
 ### Deploying the read-path release (2026-08-20)
 
 Four things about this particular update are worth knowing before running it.
 
-**It needs `git pull` on the host.** The release changes `docker-compose.yml`
-(the `command:` for Postgres) and `db/init/01-extensions.sql`, neither of which
-travels in the app image. `db/Dockerfile` is untouched, so nothing needs
-rebuilding. Order: `git pull`, then set `IMAGE`, then `docker compose pull &&
-docker compose up -d`.
+**The host checkout has to move to the tag.** The release changes
+`docker-compose.yml` (the `command:` for Postgres) and
+`db/init/01-extensions.sql`, neither of which travels in the app image.
+`db/Dockerfile` is untouched, so nothing needs rebuilding.
+
+```bash
+git fetch --tags && git checkout v0.2.0
+```
+
+then set `IMAGE`, then `docker compose pull && docker compose up -d`. Not
+`git pull`: a host deployed from a tag sits on a detached HEAD, where it
+reports *"You are not currently on a branch"* and changes nothing.
 
 **Postgres is recreated, not just restarted.** `docker-compose.yml` now passes a
 `command:` (for `shared_preload_libraries=pg_stat_statements` and the tuning
