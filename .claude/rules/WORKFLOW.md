@@ -14,6 +14,7 @@ These are gates, not suggestions. A change is finished when all of them pass, in
 | An HTTP route, status code, or response body | `docs/reference/api.md` |
 | Auth, authorization, API keys, headers, CSP, rate limits, outbound requests | `docs/reference/security.md` — including its known-gaps table |
 | Event model, filters, dashboard widgets, alert evaluation or delivery | `docs/reference/logging.md` |
+| Added, removed or re-pointed a widget — anything that changes which query backs a read surface | `docs/reference/widgets.md` |
 | Folder layout or a layering rule | `docs/reference/architecture.md` **+** `PROJECT.md` §2 |
 | Dependencies, npm scripts, test or deploy setup | `docs/reference/stack.md` / `docs/reference/misc.md` |
 | A background job | `docs/reference/architecture.md` (jobs table) |
@@ -44,6 +45,19 @@ Every added or changed piece of logic ships with tests **in the same change**.
 - **Cover the edges, not just the happy path** — the empty case, the boundary value, the just-outside-the-range value, the failure branch.
 - E2E (`e2e/*.spec.ts`) covers whole user flows and runs against its own isolated database. Unit tests cover logic. Do not use E2E as a substitute for a unit test that is cheaper and more precise.
 - If something genuinely cannot be tested, say so explicitly and explain why. Do not quietly skip it.
+
+### The gate that enforces this
+
+`.claude/hooks/test-coverage-gate.mjs` runs on **Stop** — the moment the whole change is visible; a per-edit hook would fire while a test is still being written and get tuned out. It checks two mechanical properties against `git status`:
+
+1. A changed `.ts` under `core/`, `features/` or `shared/` has a sibling `X.test.ts` or `X.itest.ts`.
+2. A changed `X.test.ts` actually **imports `X`**. This is not pedantry: `aggregations.service.test.ts` never imported the service it was named for, so a 9.5 kB SQL module read as covered in the folder listing while having no tests at all.
+
+**It blocks once per turn**, guarded by `stop_hook_active` so a disagreement between the hook and reality can never trap a turn in a loop. `.tsx` is exempt (§2 does not require covering presentational components, and firing on every UI edit is how a hook becomes noise), as are type-only modules, barrels, schema and migration files, and authored content.
+
+A file opts out with a **`test-exempt: <reason>`** comment. Same shape as the rule for suppressions: the escape lives next to the code and its justification is in the diff.
+
+**Know what a green hook means.** It sees that a file exists and what it imports — not whether it asserts anything true. On 2026-08-20 three tests in this repository passed against broken code (a top-N ordering bug, an environment name split in two, and a test asserting on text that CSS had uppercased); every one of them would have satisfied this hook. It closes the "nobody wrote a test" gap and none of the others.
 
 ## 3. Gates before declaring done
 
