@@ -14,69 +14,8 @@
     flex: 1;
 }
 
-// ── KPI row ────────────────────────────────────────────────────────────
-.kpiRow {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 14px;
-}
-
-.statCard {
-    position: relative;
-    background: var(--bg-raised);
-    border: 1px solid var(--border-1);
-    border-radius: 8px;
-    padding: 18px 20px 16px;
-    display: flex;
-    flex-direction: column;
-    gap: 5px;
-    overflow: hidden;
-    transition: border-color var(--duration-fast) var(--ease-out);
-}
-
-.statCardCritical {
-    background: var(--red-soft);
-    border-color: rgba(255, 85, 85, 0.3);
-}
-
-.statCardWarn {
-    background: var(--orange-soft);
-    border-color: rgba(255, 184, 108, 0.3);
-}
-
-.statLabel {
-    font-size: 10px;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.07em;
-    color: var(--fg-3);
-}
-
-.statValue {
-    font-family: var(--font-mono);
-    font-size: 30px;
-    font-weight: 600;
-    color: var(--fg);
-    line-height: 1;
-    letter-spacing: -0.02em;
-}
-
-.valueRed    { color: var(--lvl-error); }
-.valueOrange { color: var(--orange); }
-
-.statSub {
-    font-size: 11px;
-    font-family: var(--font-mono);
-    color: var(--fg-4);
-    margin-top: 2px;
-}
-
-.sparkline {
-    position: absolute;
-    right: 16px;
-    bottom: 14px;
-    pointer-events: none;
-}
+// KPI row styles moved to OverviewKpiRow.module.scss when the page was split
+// into streaming sections (2026-08-20).
 
 // ── Bottom two-column row ──────────────────────────────────────────────
 .bottomRow {
@@ -84,4 +23,11 @@
     grid-template-columns: 1fr 1fr;
     gap: 16px;
     align-items: start;
+}
+
+// Holds the filter bar's height while its environment list streams in, so the
+// content below does not jump when it arrives.
+.filterBarFallback {
+    height: 45px;
+    border-bottom: 1px solid var(--border-1);
 }

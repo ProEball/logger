@@ -1,6 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { getFacetCountsAction } from "@/features/events/actions/get-facet-counts.action";
 import { Popover } from "@/shared/components/Popover/Popover";
 import { Button } from "@/shared/components/Button/Button";
 import { Input } from "@/shared/components/Input/Input";
@@ -30,7 +32,8 @@ interface FacetDraft {
 
 interface FiltersPopoverProps {
     filters: EventFilters;
-    facetCounts: FacetCounts;
+    orgSlug: string;
+    projectSlug: string;
     onApply: (next: NonRangeFilters) => void;
 }
 
@@ -96,15 +99,57 @@ const EMPTY_DRAFT: FacetDraft = {
     attributes: [],
 };
 
-export function FiltersPopover({ filters, facetCounts, onApply }: FiltersPopoverProps) {
+const NO_FACETS: FacetCounts = {
+    levels: [],
+    environments: [],
+    sources: [],
+    releases: [],
+    errorTypes: [],
+};
+
+export function FiltersPopover({ filters, orgSlug, projectSlug, onApply }: FiltersPopoverProps) {
     const [open, setOpen] = useState(false);
     const [query, setQuery] = useState("");
     const [draft, setDraft] = useState<FacetDraft>(() => draftFromFilters(filters));
+
+    // Counts are loaded when the panel opens, not with the page. They are five
+    // aggregations over the whole filtered range, and nobody can see them while
+    // the panel is shut — which is almost every page load. See
+    // `get-facet-counts.action.ts`.
+    const [facetCounts, setFacetCounts] = useState<FacetCounts>(NO_FACETS);
+    const [isLoadingFacets, setIsLoadingFacets] = useState(false);
+    const [facetError, setFacetError] = useState<string | null>(null);
+    const searchParams = useSearchParams();
+
+    const loadFacets = useCallback(
+        async (search: string) => {
+            setIsLoadingFacets(true);
+            setFacetError(null);
+            try {
+                const result = await getFacetCountsAction(orgSlug, projectSlug, search);
+                if ("error" in result) {
+                    setFacetError(result.error);
+                    setFacetCounts(NO_FACETS);
+                } else {
+                    setFacetCounts(result.facetCounts);
+                }
+            } catch {
+                setFacetError(t("events.filters.countsUnavailable"));
+                setFacetCounts(NO_FACETS);
+            } finally {
+                setIsLoadingFacets(false);
+            }
+        },
+        [orgSlug, projectSlug],
+    );
 
     const handleOpenChange = (next: boolean) => {
         if (next) {
             setQuery("");
             setDraft(draftFromFilters(filters));
+            // Refetched on every open rather than cached: the counts are scoped
+            // by the active filters, and those change between openings.
+            void loadFacets(searchParams.toString());
         }
         setOpen(next);
     };
@@ -185,12 +230,18 @@ export function FiltersPopover({ filters, facetCounts, onApply }: FiltersPopover
                     onChange={(e) => setQuery(e.target.value)}
                 />
             </div>
+            {facetError ? (
+                <div role="status" className={styles.facetError}>
+                    {facetError}
+                </div>
+            ) : null}
             <div className={styles.columns}>
                 <FacetColumn<EventLevel>
                     title={t("events.filters.level")}
                     options={facetCounts.levels}
                     selected={draft.levels}
                     query={query}
+                    isLoading={isLoadingFacets}
                     isLevel
                     onToggle={toggleLevel}
                 />
@@ -199,6 +250,7 @@ export function FiltersPopover({ filters, facetCounts, onApply }: FiltersPopover
                     options={facetCounts.environments}
                     selected={draft.environments}
                     query={query}
+                    isLoading={isLoadingFacets}
                     onToggle={toggleField("environments")}
                 />
                 <FacetColumn<string>
@@ -206,6 +258,7 @@ export function FiltersPopover({ filters, facetCounts, onApply }: FiltersPopover
                     options={facetCounts.sources}
                     selected={draft.sources}
                     query={query}
+                    isLoading={isLoadingFacets}
                     onToggle={toggleField("sources")}
                 />
                 <FacetColumn<string>
@@ -213,6 +266,7 @@ export function FiltersPopover({ filters, facetCounts, onApply }: FiltersPopover
                     options={facetCounts.releases}
                     selected={draft.releases}
                     query={query}
+                    isLoading={isLoadingFacets}
                     onToggle={toggleField("releases")}
                 />
                 <FacetColumn<string>
@@ -220,6 +274,7 @@ export function FiltersPopover({ filters, facetCounts, onApply }: FiltersPopover
                     options={facetCounts.errorTypes}
                     selected={draft.errorTypes}
                     query={query}
+                    isLoading={isLoadingFacets}
                     onToggle={toggleField("errorTypes")}
                 />
             </div>

@@ -131,6 +131,17 @@ export function IconAlert() {
     );
 }
 
+export function IconGrid() {
+    return (
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <rect x="1.5" y="1.5" width="5.5" height="5.5" rx="0.75" stroke="currentColor" strokeWidth="1.25" />
+            <rect x="9" y="1.5" width="5.5" height="5.5" rx="0.75" stroke="currentColor" strokeWidth="1.25" />
+            <rect x="1.5" y="9" width="5.5" height="5.5" rx="0.75" stroke="currentColor" strokeWidth="1.25" />
+            <rect x="9" y="9" width="5.5" height="5.5" rx="0.75" stroke="currentColor" strokeWidth="1.25" />
+        </svg>
+    );
+}
+
 export const CATEGORY_ICONS: Record<HelpIconKey, () => React.ReactElement> = {
     "book-open": IconBookOpen,
     layers: IconLayers,
@@ -140,6 +151,7 @@ export const CATEGORY_ICONS: Record<HelpIconKey, () => React.ReactElement> = {
     activity: IconActivity,
     shield: IconShield,
     settings: IconSettings,
+    grid: IconGrid,
 };
 
 export function CategoryIcon({ icon }: { icon: HelpIconKey }) {

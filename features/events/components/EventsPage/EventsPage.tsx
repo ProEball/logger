@@ -18,7 +18,7 @@ const EventDrawer = dynamic(
 import { AutoRefreshControl } from "../auto-refresh/AutoRefreshControl/AutoRefreshControl";
 import { TableSkeleton } from "@/shared/components/Skeletons/TableSkeleton";
 import type { Event } from "@/core/db/schema";
-import type { EventFilters, Cursor, FacetCounts } from "@/features/events/utils/event-filters.types";
+import type { EventFilters, Cursor } from "@/features/events/utils/event-filters.types";
 import type { AutoRefreshValue } from "@/shared/types/user-preferences.types";
 import styles from "./EventsPage.module.scss";
 
@@ -27,7 +27,6 @@ interface EventsPageProps {
     hasMore: boolean;
     cursor: Cursor | undefined;
     filters: EventFilters;
-    facetCounts: FacetCounts;
     selectedEvent: Event | null;
     activeTab: string;
     orgSlug: string;
@@ -43,9 +42,10 @@ export function EventsPage({
     events,
     hasMore,
     cursor,
-    facetCounts,
     selectedEvent,
     activeTab,
+    orgSlug,
+    projectSlug,
 }: EventsPageProps) {
     const refresh = useSelector(selectAutoRefresh);
     // `refresh` is seeded from Redux's default state and only corrected after
@@ -82,7 +82,8 @@ export function EventsPage({
             <Suspense>
                 <EventsFilterBar
                     filters={filters}
-                    facetCounts={facetCounts}
+                    orgSlug={orgSlug}
+                    projectSlug={projectSlug}
                     onApplyFilters={applyFilters}
                     onSetTimeRange={setTimeRange}
                     onRemoveAttribute={removeAttribute}

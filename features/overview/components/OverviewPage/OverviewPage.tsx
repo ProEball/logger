@@ -1,65 +1,75 @@
 import { Suspense } from "react";
+import { CardSkeleton, WidgetSkeleton } from "@/shared/components";
 import { OverviewFilterBar } from "@/features/overview/components/OverviewFilterBar/OverviewFilterBar";
-import { OrgVolumeChart } from "@/features/overview/components/OrgVolumeChart/OrgVolumeChart";
-import { ProjectsSection } from "@/features/overview/components/ProjectsSection/ProjectsSection";
-import { OrgTopErrors } from "@/features/overview/components/OrgTopErrors/OrgTopErrors";
-import { OrgLevelBreakdown } from "@/features/overview/components/OrgLevelBreakdown/OrgLevelBreakdown";
+import { OverviewKpiRow } from "@/features/overview/components/OverviewKpiRow/OverviewKpiRow";
+import { OverviewVolumeSection } from "@/features/overview/components/OverviewVolumeSection/OverviewVolumeSection";
+import { OverviewProjectsPanel } from "@/features/overview/components/OverviewProjectsPanel/OverviewProjectsPanel";
+import { OverviewTopErrorsPanel } from "@/features/overview/components/OverviewTopErrorsPanel/OverviewTopErrorsPanel";
+import { OverviewLevelBreakdownPanel } from "@/features/overview/components/OverviewLevelBreakdownPanel/OverviewLevelBreakdownPanel";
 import type {
-    OrgTopError,
-    OrgLevelCount,
     OrgEventBucket,
-    ProjectRow,
+    OrgLevelCount,
+    OrgTopError,
+    ProjectEventSummary,
 } from "@/features/overview/services/overview.service";
+import type { AlertRuleFlags, OverviewProject } from "@/features/overview/utils/build-project-rows";
+import type { TopErrorsWindow } from "@/features/overview/utils/top-errors-window";
 import styles from "./OverviewPage.module.scss";
 
-interface Project {
-    id: string;
-    slug: string;
-    name: string;
-}
+/**
+ * The organization overview, split into independently streaming sections
+ * (2026-08-20, `PLAN.md` §16.1 Stage D).
+ *
+ * Before this, the route awaited a `Promise.all` of every aggregation and
+ * rendered nothing until the slowest returned — so the measured 1.4 s on the
+ * staging data was time-to-first-pixel, not time-to-last-widget. `Suspense`
+ * was imported here and had nothing to do.
+ *
+ * **Every data prop is a promise, deliberately.** The route starts each query
+ * and passes it down unawaited; each section awaits only what it draws. Two
+ * sections needing the same query share one promise rather than issuing it
+ * twice — which is what would have happened had each section called the
+ * service itself, turning a streaming change into a slower page. It also keeps
+ * the cross-feature composition (projects, alert rules) in the route, where
+ * `PROJECT.md` §2.3 allows data loading, instead of pulling `features/projects`
+ * and `features/alerts` into `features/overview` against §2.1.
+ *
+ * This reduces no database work at all. It changes when the first pixel
+ * arrives, which on this page is the largest thing a person notices.
+ */
 
 interface OverviewPageProps {
     orgSlug: string;
-    projects: Project[];
+    projects: OverviewProject[];
     range: string;
     levels: string[];
     environment: string;
-    environments: string[];
+    environmentsPromise: Promise<string[]>;
     searchString: string;
-    projectRows: ProjectRow[];
-    topErrors: OrgTopError[];
-    levelBreakdown: OrgLevelCount[];
-    buckets: OrgEventBucket[];
+    summariesPromise: Promise<Map<string, ProjectEventSummary>>;
+    alertRulesPromise: Promise<Map<string, AlertRuleFlags[]>>;
+    topErrorsPromise: Promise<OrgTopError[]>;
+    topErrorsWindow: TopErrorsWindow;
+    levelBreakdownPromise: Promise<OrgLevelCount[]>;
+    bucketsPromise: Promise<OrgEventBucket[]>;
 }
 
-function sparklinePath(data: number[], W: number, H: number): string {
-    if (data.length < 2) return "";
-    const max = Math.max(...data, 1);
-    const step = W / (data.length - 1);
-    return data
-        .map((v, i) => {
-            const x = (i * step).toFixed(1);
-            const y = (H - (v / max) * H).toFixed(1);
-            return i === 0 ? `M ${x},${y}` : `L ${x},${y}`;
-        })
-        .join(" ");
-}
-
-function KpiSparkline({ data, color }: { data: number[]; color: string }) {
-    if (data.length < 2) return null;
-    const W = 56;
-    const H = 22;
-    const d = sparklinePath(data, W, H);
+/** The filter bar needs the environment list, which is now a registry lookup. */
+async function FilterBarSection({
+    range,
+    levels,
+    environment,
+    environmentsPromise,
+    searchString,
+}: Pick<OverviewPageProps, "range" | "levels" | "environment" | "environmentsPromise" | "searchString">) {
     return (
-        <svg
-            width={W}
-            height={H}
-            viewBox={`0 0 ${W} ${H}`}
-            className={styles.sparkline}
-            aria-hidden="true"
-        >
-            <path d={d} fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" opacity="0.6" />
-        </svg>
+        <OverviewFilterBar
+            range={range}
+            levels={levels}
+            environment={environment}
+            environments={await environmentsPromise}
+            searchString={searchString}
+        />
     );
 }
 
@@ -69,87 +79,61 @@ export function OverviewPage({
     range,
     levels,
     environment,
-    environments,
+    environmentsPromise,
     searchString,
-    projectRows,
-    topErrors,
-    levelBreakdown,
-    buckets,
+    summariesPromise,
+    alertRulesPromise,
+    topErrorsPromise,
+    topErrorsWindow,
+    levelBreakdownPromise,
+    bucketsPromise,
 }: OverviewPageProps) {
-    const totalEvents = projectRows.reduce((s, r) => s + r.totalEvents, 0);
-    const totalErrors = projectRows.reduce((s, r) => s + r.errorCount, 0);
-    const firingCount = projectRows.reduce((s, r) => s + r.firingAlertsCount, 0);
-
-    // Aggregate bucket totals per timestamp for KPI sparklines
-    const tsMap = new Map<string, number>();
-    for (const b of buckets) {
-        const key = b.ts.toISOString();
-        tsMap.set(key, (tsMap.get(key) ?? 0) + b.count);
-    }
-    const sparkData = [...tsMap.entries()]
-        .sort(([a], [b]) => a.localeCompare(b))
-        .map(([, v]) => v);
-
     return (
         <div className={styles.page}>
-            <Suspense>
-                <OverviewFilterBar
+            <Suspense fallback={<div className={styles.filterBarFallback} />}>
+                <FilterBarSection
                     range={range}
                     levels={levels}
                     environment={environment}
-                    environments={environments}
+                    environmentsPromise={environmentsPromise}
                     searchString={searchString}
                 />
             </Suspense>
 
             <div className={styles.content}>
-                {/* KPI row */}
-                <div className={styles.kpiRow}>
-                    <div className={styles.statCard}>
-                        <div className={styles.statLabel}>Total events</div>
-                        <div className={styles.statValue}>{totalEvents.toLocaleString()}</div>
-                        <div className={styles.statSub}>
-                            {projects.length} project{projects.length !== 1 ? "s" : ""}
-                        </div>
-                        <KpiSparkline data={sparkData} color="var(--cyan)" />
-                    </div>
+                <Suspense fallback={<CardSkeleton />}>
+                    <OverviewKpiRow
+                        projects={projects}
+                        summariesPromise={summariesPromise}
+                        alertRulesPromise={alertRulesPromise}
+                        bucketsPromise={bucketsPromise}
+                    />
+                </Suspense>
 
-                    <div className={`${styles.statCard} ${totalErrors > 0 ? styles.statCardCritical : ""}`}>
-                        <div className={styles.statLabel}>Errors &amp; fatals</div>
-                        <div className={`${styles.statValue} ${totalErrors > 0 ? styles.valueRed : ""}`}>
-                            {totalErrors.toLocaleString()}
-                        </div>
-                        <div className={styles.statSub}>across all projects</div>
-                        {sparkData.length >= 2 && <KpiSparkline data={sparkData} color="var(--lvl-error)" />}
-                    </div>
+                <Suspense fallback={<WidgetSkeleton />}>
+                    <OverviewVolumeSection projects={projects} bucketsPromise={bucketsPromise} />
+                </Suspense>
 
-                    <div className={`${styles.statCard} ${firingCount > 0 ? styles.statCardWarn : ""}`}>
-                        <div className={styles.statLabel}>Firing alerts</div>
-                        <div className={`${styles.statValue} ${firingCount > 0 ? styles.valueOrange : ""}`}>
-                            {firingCount}
-                        </div>
-                        <div className={styles.statSub}>
-                            {projectRows.reduce((s, r) => s + r.enabledAlertsCount, 0)} rule{projectRows.reduce((s, r) => s + r.enabledAlertsCount, 0) !== 1 ? "s" : ""} total
-                        </div>
-                    </div>
+                <Suspense fallback={<WidgetSkeleton />}>
+                    <OverviewProjectsPanel
+                        projects={projects}
+                        orgSlug={orgSlug}
+                        summariesPromise={summariesPromise}
+                        alertRulesPromise={alertRulesPromise}
+                    />
+                </Suspense>
 
-                    <div className={styles.statCard}>
-                        <div className={styles.statLabel}>Projects</div>
-                        <div className={styles.statValue}>{projects.length}</div>
-                        <div className={styles.statSub}>in this organization</div>
-                    </div>
-                </div>
-
-                {/* Volume chart */}
-                <OrgVolumeChart buckets={buckets} projects={projects} />
-
-                {/* Projects section (cards + table toggle) */}
-                <ProjectsSection rows={projectRows} orgSlug={orgSlug} />
-
-                {/* Bottom two-column row */}
                 <div className={styles.bottomRow}>
-                    <OrgTopErrors errors={topErrors} projects={projects} />
-                    <OrgLevelBreakdown levels={levelBreakdown} />
+                    <Suspense fallback={<WidgetSkeleton />}>
+                        <OverviewTopErrorsPanel
+                            projects={projects}
+                            topErrorsPromise={topErrorsPromise}
+                            window={topErrorsWindow}
+                        />
+                    </Suspense>
+                    <Suspense fallback={<WidgetSkeleton />}>
+                        <OverviewLevelBreakdownPanel levelBreakdownPromise={levelBreakdownPromise} />
+                    </Suspense>
                 </div>
             </div>
         </div>

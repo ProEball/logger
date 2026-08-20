@@ -2,6 +2,7 @@ import { PgBoss } from "pg-boss";
 import { env } from "@/core/env";
 import { logger } from "@/core/logger";
 import { registerPartmanMaintenanceJob } from "@/features/ingest/jobs/partman-maintenance.job";
+import { registerEventRollupJob } from "@/features/ingest/jobs/event-rollup.job";
 import { registerAlertEvaluationJob } from "@/features/alerts/jobs/alert-evaluation.job";
 import { registerAlertDeliveryJob } from "@/features/alerts/jobs/alert-delivery.job";
 
@@ -27,6 +28,7 @@ export async function startWorker(): Promise<void> {
 
     await boss.start();
     await registerPartmanMaintenanceJob(boss);
+    await registerEventRollupJob(boss);
     await registerAlertEvaluationJob(boss);
     await registerAlertDeliveryJob(boss);
 

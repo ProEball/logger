@@ -9,7 +9,7 @@ import type { AutoRefreshValue } from "@/shared/types/user-preferences.types";
 import { useAutoRefresh } from "@/features/events/hooks/use-auto-refresh";
 import styles from "./AutoRefreshControl.module.scss";
 
-const OPTIONS: AutoRefreshValue[] = ["off", "10s", "30s", "60s"];
+const OPTIONS: AutoRefreshValue[] = ["off", "30s", "60s", "5m"];
 
 function getLabel(v: AutoRefreshValue): string {
     if (v === "off") return t("events.autoRefresh.off");

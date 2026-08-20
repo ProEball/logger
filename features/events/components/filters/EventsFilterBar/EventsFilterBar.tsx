@@ -4,12 +4,13 @@ import { FilterChip } from "@/shared/components/FilterBar/FilterChip";
 import { t } from "@/core/i18n/t";
 import { FiltersPopover } from "../FiltersPopover/FiltersPopover";
 import { TimeRangePicker } from "../TimeRangePicker/TimeRangePicker";
-import type { EventFilters, FacetCounts } from "@/features/events/utils/event-filters.types";
+import type { EventFilters } from "@/features/events/utils/event-filters.types";
 import styles from "./EventsFilterBar.module.scss";
 
 interface EventsFilterBarProps {
     filters: EventFilters;
-    facetCounts: FacetCounts;
+    orgSlug: string;
+    projectSlug: string;
     onApplyFilters: (next: Omit<EventFilters, "range">) => void;
     onSetTimeRange: (range: EventFilters["range"]) => void;
     onRemoveAttribute: (key: string) => void;
@@ -21,7 +22,8 @@ interface EventsFilterBarProps {
 
 export function EventsFilterBar({
     filters,
-    facetCounts,
+    orgSlug,
+    projectSlug,
     onApplyFilters,
     onSetTimeRange,
     onRemoveAttribute,
@@ -50,7 +52,12 @@ export function EventsFilterBar({
             <TimeRangePicker value={filters.range} onChange={onSetTimeRange} />
 
             {/* Datadog-style facet popover — single control surface for every filter */}
-            <FiltersPopover filters={filters} facetCounts={facetCounts} onApply={onApplyFilters} />
+            <FiltersPopover
+                filters={filters}
+                orgSlug={orgSlug}
+                projectSlug={projectSlug}
+                onApply={onApplyFilters}
+            />
 
             {/* Active filter chips */}
             {filters.levels?.length ? (

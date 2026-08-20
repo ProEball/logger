@@ -10,6 +10,14 @@ interface Project {
 interface OrgTopErrorsProps {
     errors: OrgTopError[];
     projects: Project[];
+    /**
+     * The window actually queried, e.g. "24h". Shown because it can differ from
+     * the range selected above — this widget is capped, and a figure covering a
+     * period other than the one the page advertises has to say so.
+     */
+    windowLabel: string;
+    /** True when the page asked for a wider range than this widget allows. */
+    isWindowClamped: boolean;
 }
 
 function timeAgo(date: Date): string {
@@ -22,16 +30,26 @@ function timeAgo(date: Date): string {
     return `${Math.floor(hours / 24)}d ago`;
 }
 
-export function OrgTopErrors({ errors, projects }: OrgTopErrorsProps) {
+export function OrgTopErrors({ errors, projects, windowLabel, isWindowClamped }: OrgTopErrorsProps) {
     const projectMap = new Map(projects.map((p) => [p.id, p]));
 
     return (
-        <div className={styles.card}>
+        <div className={styles.card} role="group" aria-label="Top errors across org">
             <div className={styles.cardHead}>
                 <span className={styles.cardTitle}>Top errors across org</span>
+                <span
+                    className={styles.windowBadge}
+                    title={
+                        isWindowClamped
+                            ? "Capped at 24 hours — this widget reads raw events, so a wider window costs in proportion to the errors in it."
+                            : undefined
+                    }
+                >
+                    last {windowLabel}
+                </span>
             </div>
             {errors.length === 0 ? (
-                <div className={styles.empty}>No errors in this range</div>
+                <div className={styles.empty}>No errors in the last {windowLabel}</div>
             ) : (
                 <ul className={styles.list}>
                     {errors.map((err, i) => {

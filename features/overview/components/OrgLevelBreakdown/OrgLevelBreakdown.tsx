@@ -15,7 +15,7 @@ export function OrgLevelBreakdown({ levels }: OrgLevelBreakdownProps) {
     const total = ordered.reduce((s, l) => s + l.count, 0);
 
     return (
-        <div className={styles.card}>
+        <div className={styles.card} role="group" aria-label="Level breakdown">
             <div className={styles.cardHead}>
                 <span className={styles.cardTitle}>Level breakdown</span>
                 {total > 0 && (

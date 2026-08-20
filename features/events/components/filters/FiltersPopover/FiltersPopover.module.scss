@@ -46,6 +46,16 @@
     border-bottom: 1px solid var(--border-1);
 }
 
+// Shown when the counts could not be loaded. The filters themselves still
+// work — only the numbers beside them are missing — so this is a note, not
+// an error state for the whole panel.
+.facetError {
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--border-1);
+    color: var(--text-3);
+    font-size: 12px;
+}
+
 .columns {
     display: grid;
     grid-template-columns: repeat(5, minmax(120px, 1fr));

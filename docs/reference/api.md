@@ -27,7 +27,8 @@ Request flow (in order — each step can short-circuit the response):
 6. **Attribute type conflict check** (see [logging.md](logging.md#attribute-type-enforcement)) → `400 { "error": "Attribute type conflict.", "details": [{index, key, message}] }`
 7. **Timestamp policy** (see below) — timestamp too old → `400 { "error": "Event timestamp is older than 30-day retention window." }`
 8. **Insert** → `202 { "id": "<uuid>" }`
-9. Any unexpected error → logged server-side, `500 { "error": "Internal server error." }`
+9. **Environment registry update** (added 2026-08-20) — records the batch's distinct environments in `project_environments`, so the overview's filter bar need not scan `events`. See [logging.md](logging.md#environment-registry). **Cannot affect the response**: it runs after the insert and its errors are caught and logged, because the events are already durable and the registry is derived data.
+10. Any unexpected error → logged server-side, `500 { "error": "Internal server error." }`
 
 ### `POST /api/ingest/batch` — up to 500 events
 

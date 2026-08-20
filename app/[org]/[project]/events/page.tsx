@@ -4,7 +4,7 @@ import { getCurrentUser } from "@/core/auth/server";
 import { getOrgBySlug } from "@/features/organizations/services/organizations.service";
 import { getMembership } from "@/features/organizations/services/organizations.service";
 import { getProjectBySlug } from "@/features/projects/services/projects.service";
-import { listEvents, getEventById, getFacetCounts } from "@/features/events/services/events-query.service";
+import { listEvents, getEventById } from "@/features/events/services/events-query.service";
 import { parseFilters } from "@/features/events/utils/parse-filters";
 import { parseCursor } from "@/features/events/utils/parse-cursor";
 import { EventsPage } from "@/features/events/components/EventsPage/EventsPage";
@@ -36,10 +36,10 @@ export default async function EventsRoute({ params, searchParams }: EventsPagePr
     const filters = parseFilters(urlParams);
     const cursor = parseCursor(urlParams);
 
-    const [{ events, hasMore }, facetCounts] = await Promise.all([
-        listEvents(project.id, filters, cursor),
-        getFacetCounts(project.id, filters),
-    ]);
+    // One query. Facet counts used to run here too — five aggregations on every
+    // load, including the great majority where nobody opens the filter panel.
+    // They now load on demand; see `features/events/actions/get-facet-counts.action.ts`.
+    const { events, hasMore } = await listEvents(project.id, filters, cursor);
 
     // If a specific event is requested for the drawer, fetch it
     const eventId = typeof sp.event === "string" ? sp.event : undefined;
@@ -60,7 +60,6 @@ export default async function EventsRoute({ params, searchParams }: EventsPagePr
             hasMore={hasMore}
             cursor={cursor}
             filters={filters}
-            facetCounts={facetCounts}
             selectedEvent={selectedEvent}
             activeTab={activeTab}
             orgSlug={orgSlug}

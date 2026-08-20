@@ -33,6 +33,7 @@ export const dictionary = {
             filters: "Filters",
             searchFilters: "Search filters…",
             clearAll: "Clear all",
+            countsUnavailable: "Filter counts are unavailable right now.",
             userId: "User ID",
             sessionId: "Session ID",
             requestId: "Request ID",

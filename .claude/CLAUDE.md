@@ -23,6 +23,7 @@ Next.js 16 App Router · React 19 · TypeScript `strict` · Drizzle + postgres.j
 | `docs/reference/api.md` | HTTP API — ingest, health, version, Server Action conventions |
 | `docs/reference/users-roles.md` | Orgs, membership, roles, permissions, invitations |
 | `docs/reference/logging.md` | Event data model, filtering, dashboard, alerts |
+| `docs/reference/widgets.md` | Every read surface: which query backs it, what it groups by, what it costs |
 | `docs/reference/security.md` | AuthN/AuthZ, API keys, rate limiting, CSP/headers, SSRF, known gaps |
 | `docs/reference/misc.md` | Testing, deployment, i18n, theming, the app's own logger |
 
@@ -39,7 +40,8 @@ npm run dev              # dev server on http://localhost (port 80, not 3000)
 npm run build            # production build
 npm run start            # production server, also port 80
 npm run lint             # eslint — must stay at 0 problems
-npm run test             # vitest
+npm run test             # vitest — unit only, no database needed
+npm run test:it          # vitest integration — creates/seeds logger_itest, needs Postgres up
 npm run test:e2e         # playwright (needs the isolated e2e DB — see misc.md#testing)
 npx tsc --noEmit         # type check — must stay at 0 errors
 npm run db:generate      # drizzle-kit generate

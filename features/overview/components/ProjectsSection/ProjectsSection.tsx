@@ -14,7 +14,7 @@ export function ProjectsSection({ rows, orgSlug }: ProjectsSectionProps) {
     const [view, setView] = useState<"cards" | "table">("cards");
 
     return (
-        <div className={styles.section}>
+        <div className={styles.section} role="group" aria-label="Projects">
             <div className={styles.sectionHead}>
                 <div className={styles.headLeft}>
                     <span className={styles.sectionTitle}>Projects</span>

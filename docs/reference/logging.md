@@ -70,6 +70,10 @@ Filter shape (`EventFilters`, shared between the events-list UI and alert rule c
 - Filter state lives entirely in the URL and never throws on malformed input (invalid values are silently dropped), so stale/malformed share links still render something sensible.
 - **Facet counts**: for each of levels/environments/sources/releases/errorTypes, the UI shows a per-option count scoped by *every other* active filter (but not that field's own filter, so unchecking a box doesn't zero out its own option list). Text facets cap at the top 20 options; `NULL` values are shown as `"(unset)"`.
 
+  **Loaded when the filter panel opens, not with the page** (changed 2026-08-20). These are five aggregations over the whole filtered range, and until then they ran inside the events route's `Promise.all` on every load — including auto-refreshes, and including the great majority of loads where nobody opens the panel, since `FiltersPopover` keeps its open state in client `useState` and the server never learned of it. A normal events page is now a single query: one keyset page of 51 rows.
+
+  They are re-fetched on **every** open rather than cached, because the counts are scoped by the active filters and those change between openings. The fetch goes through `getFacetCountsAction`, which re-checks session and `events.read` — a Server Action is a public endpoint, so the page's own membership check does not cover it. If it fails, the panel still filters; only the numbers are missing, and it says so.
+
 **Pagination** is cursor-based (keyset, not offset): page size 50, `WHERE (timestamp, id) < (cursor_ts, cursor_id) ORDER BY timestamp DESC, id DESC`, fetching 51 rows to detect `hasMore`. Changing any filter resets the cursor. There is no total count shown — only "50" or "50+".
 
 ## Dashboard
@@ -100,6 +104,107 @@ Bucketing uses epoch-floor arithmetic (`to_timestamp(floor(extract(epoch from ti
 ### Zero-fill
 
 The aggregation query only returns buckets that had at least one event (sparse result set). `fillBuckets()` walks every bucket boundary across the full requested range and inserts `{ total: 0 }` entries for any missing bucket, so charts show a continuous line/area that visibly drops to zero during quiet periods instead of just stopping short.
+
+## Organization overview
+
+Cross-project rollup at `/[org]` (`features/overview/services/overview.service.ts`, five raw-SQL aggregations scoped by a list of `project_id`s + time range). URL parsing and row assembly live in `features/overview/utils/`, not in the route.
+
+- **KPI row**: total events, errors + fatals, firing alerts (plus total enabled rules), project count. The first two carry a sparkline built from the volume buckets summed across projects.
+- **Volume chart**: one series per project.
+- **Projects**: cards by default, switchable to a table. **A project with no events in the range still gets a row, showing zeros** — dropping it would make a quiet project look deleted.
+- **Top errors across org**: `error`/`fatal` grouped by `SUBSTRING(message, 1, 200)`, top 5, each attributed to a project via `mode() WITHIN GROUP (ORDER BY project_id)` — so a message occurring in several projects is labelled with only one of them.
+- **Level breakdown**: counts per level. Rendered in severity order (`fatal → debug`) by the component, not in the order the query returns.
+
+### Bucket sizing
+
+The overview uses its **own** table (`OVERVIEW_BUCKET_SECONDS`), which does not match the project dashboard's `pickBucket()`:
+
+| Range | Overview | Project dashboard |
+|---|---|---|
+| 15m | 60s | 60s |
+| 1h | 300s | 60s |
+| 6h | 900s | 3600s |
+| 24h | 3600s | 3600s |
+| 7d | 6h | 12h |
+| 30d | 1d | 1d |
+
+The overview plots one series per project, so it trades resolution for a readable point count. Two bucketing rules in one app is a wart rather than a design; unifying them changes what the chart shows and is deliberately left to the read-path workstream (`PLAN.md` §16.1) rather than done as a refactor.
+
+### Ordering: count columns are cast to text
+
+These aggregations return counts as `COUNT(*)::text` (to avoid `bigint` serialisation), and **`ORDER BY count DESC` would bind to that text alias**, sorting lexicographically — `"9"` ranks above `"10"`. Where the query also has a `LIMIT`, that returns the *wrong rows*, not merely the right rows misordered.
+
+Fixed 2026-08-20 in `getOrgTopErrors` and `getOrgLevelBreakdown` by ordering on `COUNT(*)` instead; covered by `e2e/overview.spec.ts` ("orders top errors by count, not by the text of the count"), whose fixture deliberately uses counts of 10 and 9 because any pair below 10 hides the bug.
+
+⚠️ **The same slip is still present in `features/dashboard/services/aggregations.service.ts`** — `levelBreakdown` (line 109), `environmentBreakdown` (132) and `topSources` (256). `levelBreakdown` is masked because `LevelBreakdownWidget` re-sorts numerically; the other two are not — `topSources` has `LIMIT 10` in SQL and `EnvironmentBreakdownWidget` takes `.slice(0, 8)` of whatever order it receives. `topMessages` in the same file already uses `ORDER BY COUNT(*) DESC`, which is what identifies this as a slip rather than a convention. Not fixed here: those paths have no test that would prove the fix, and building one is part of §16.1.
+
+### The rollup
+
+Volume and level counts on the organization overview come from **`event_rollup_minutes`**, a per-minute summary rebuilt from `events` by the `event-rollup` job every minute — not from aggregating `events` on each page load.
+
+**Why a scheduled rebuild rather than counters maintained at ingest.** Incremental counters drift: a lost update, a rollback, a race, and the number is quietly wrong with nothing to detect it. A periodic rebuild reconstructs each bucket from the source, so error cannot accumulate — the worst case is one stale interval, corrected on the next run. It also keeps the ingest path free of contention on hot counter rows, and makes cost a function of the schedule rather than of the ingest rate.
+
+**Everyone sees the same numbers — for closed minutes.** This is the part that is not about speed. Before the rollup, two people opening the same dashboard seconds apart each aggregated over their own `now()`, so *every* figure could differ. They now share the rollup's snapshot, and `computed_at` records when it was taken.
+
+The agreement stops at `rolled_up_to`: the raw tail above it is still computed per request, so the newest minute can differ between two viewers by whatever arrived between their page loads. That is the price of the tail, and it is worth paying — an always-stale newest minute would be a worse trade — but "identical numbers" is accurate only below the boundary, not across the whole page.
+
+**Reads combine the rollup with a raw tail.** The rollup only holds *closed* minutes, so the newest minute — the one that matters while watching an incident — is never in it. A read takes the rollup below `rollup_state.rolled_up_to` and raw `events` above, so a just-ingested event is visible immediately. When `rolled_up_to` is `NULL` (nothing built yet, e.g. straight after the migration) the whole range comes from `events`, which is exactly the behaviour that preceded the table.
+
+**What the tail costs.** Measured 2026-08-20 on a 500k-event local corpus (~115 events/minute), varying only how far the boundary sits behind the newest event:
+
+| tail width | events in the tail | rollup only | rollup + tail | tail |
+|---|---|---|---|---|
+| 2 min | ~230 | 3.48 ms | 3.60 ms | **0.12 ms** |
+| 30 min | ~3,450 | 3.62 ms | 5.72 ms | **2.1 ms** |
+| 240 min | ~27,600 | 3.41 ms | 11.13 ms | **7.7 ms** |
+
+Roughly **0.3–0.6 µs per event in the tail** — an index range scan over the newest partition. The cost tracks *how far behind the rollup is*, not the range being charted: a 30-day chart with a two-minute tail costs the same tail as a one-hour chart with one.
+
+In steady state the boundary sits at the start of the current minute, so the tail holds at most one minute of ingest — about 1,000 events at the staging run's rate, well under a millisecond.
+
+It also means **a stalled job degrades speed, never correctness.** Four hours without a rebuild costs 11 ms instead of 3.4; the worst case is a return to the ~91 ms the same query took before the rollup existed.
+
+**Late events.** Ingest accepts timestamps up to 30 days old, and `events` records when an event *happened*, not when it *arrived* — so nothing in that table can reveal a late arrival. The ingest path therefore pulls `rollup_state.refresh_from` back to the batch's oldest timestamp (`LEAST`, so a later batch of fresh events cannot push it forward again). A batch carrying a three-day-old event costs one wider rebuild, then the watermark returns to normal.
+
+**Top errors has its own, capped window.** It is the only widget on the overview whose query can never come from the rollup, so it runs against raw `events` and its cost is proportional to the errors it scans — `EXPLAIN` shows the index finding rows in 0.35 ms while fetching them takes 2,133 heap blocks for 2,785 rows, roughly one random page each, because errors are ~7% of events and scattered among them.
+
+Its range is therefore `min(page range, 24h)` (`clampTopErrorsWindow`), and the widget displays the period it covers. It never shows *more* than the page asked for — a 15-minute page gives 15 minutes of errors — only less. Without the cap, selecting 30 days on the filter bar would have this widget aggregating 30 days of messages, which is the page's worst case and one click away.
+
+There is deliberately **no selector**. It would buy the ability to choose a window, which nobody has requested, at the cost of a second time control on a page that already has one. Add it when a request names the windows it needs.
+
+**What it does not cover:**
+
+- **Anything keyed by message** — top errors, top messages. 168k distinct messages per 500k events cannot be pre-aggregated at a fixed grain, and merging per-minute top-N lists is *approximate*: a message ranked eleventh every minute can be first over the hour and appear in no bucket at all. Since the point of the rollup is that everyone sees the same numbers, making them quietly wrong would defeat it.
+- **A level filter combined with an environment filter.** `by_level` and `by_env` are marginals, not a joint distribution; that combination falls back to `events`. Storing the cross product would make every 30-day read walk a nested object across 43,200 rows per project to serve a rare filter.
+- **`release`**, and it never will. A release identifier is *designed* to change on every deploy, so as a rollup dimension it grows without bound — a worse version of the environment-cardinality problem, and less obvious.
+
+**Retention.** `pruneRollup()` drops rollup rows past 30 days on every run; without it the rollup would keep counting events whose partitions retention had already dropped, and the two would disagree silently.
+
+### Environment registry
+
+The filter bar's environment list comes from **`project_environments`**, a per-project registry written on the ingest path (`features/ingest/services/environment-registry.service.ts`), not from a scan of `events`.
+
+- **Written after the events are inserted**, from the distinct environments in the batch — including `null`, which is a value here rather than an absence, because "(unset)" is one of the options the filter offers.
+- **A failure never fails the request.** The registry is derived data: losing an update costs a filter entry until the next event from that environment, whereas throwing would lose the event. `ingest.service.ts` catches and logs it, and that is the only deliberately swallowed error on the ingest path.
+- **`last_seen_at` is refreshed at most once a minute per row** (`setWhere` on the upsert). Updating it on every request would produce a dead tuple per batch on a table of a few rows, for a column only ever read against a 30-day window.
+- **Reading still looks back 30 days** — `last_seen_at >= now() - 30 days` — so a decommissioned environment ages out exactly as it did when the list came from `events`.
+- **The list still ignores the selected range**, unchanged from before: it answers "what this organization uses", not "what appeared in the last hour". Narrowing it to the range would make an option vanish the moment you picked a window in which it had no events.
+
+**Why:** `pg_stat_statements` measured the old 30-day scan at **13.4% of the org overview's total database time** on 2026-08-20 — 30 days of events read on every page load to produce a list of a handful of values. Measured after the change: 39.3 ms → 0.67 ms, and the query no longer appears among the page's costs at all. Page wall-clock barely moved (~106 ms → ~92 ms, within run-to-run noise) because the query ran in parallel with slower ones — what dropped is total database work, which is what matters under concurrency. See `PLAN.md` §16.1 Stage D.
+
+**Not covered by the registry:** the environment pills on each *project card* still come from `STRING_AGG(DISTINCT environment)` over `events`, scoped to the selected range — now the second most expensive query on the page at 23.8%. A registry cannot answer "which environments appeared between X and Y" without storing per-range data, so replacing it needs a decision about what the pills mean. Deferred, deliberately.
+
+### Known bug: an environment name containing a comma is split in two
+
+`getProjectSummaries` collects a project's environments with `STRING_AGG(DISTINCT environment, ',')` and then splits the result on `","` in TypeScript. The ingest schema validates `environment` only as `z.string().max(128)`, so a comma is a legal value — and `eu,prod` arrives on the project card as two environments, `eu` and `prod`.
+
+Reachable through the public ingest API without anything unusual. Pinned by `overview.service.itest.ts` ("KNOWN BUG: splits an environment name that contains a comma"). The fix is to aggregate into a real array (`ARRAY_AGG(DISTINCT environment)`) and drop the split; not done yet because it changes a shipped query and belongs with the read-path work rather than inside a test change.
+
+### Known inconsistency: level filter and the per-project top message
+
+`getProjectSummaries` applies the level filter to its statistics query but **not** to its top-message query, which is hardcoded to `level IN ('error','fatal')`. Filtering the overview to `levels=info` therefore shows a project with an error count of 0 and an error message displayed beside it. `getOrgTopErrors`, on the same page and under the same filter, *does* respect the level filter — so the two widgets disagree.
+
+Current behaviour is pinned by `e2e/overview.spec.ts` ("KNOWN BUG: a level filter does not reach the per-project top message") so that changing it fails loudly rather than silently. Not fixed yet because which of the two readings is correct — "top error regardless of filter" or "top message within the filter" — is a product question, not a bug with one obvious answer.
 
 ## Alerts
 
@@ -148,7 +253,9 @@ Webhook payload shape (`build-payload.ts`):
   "test": false
 }
 ```
-`events_url` is built from the validated **`APP_URL`**. Until 2026-08-13 it read a `NEXT_PUBLIC_APP_URL` that was defined nowhere, so every webhook ever sent carried a `http://localhost:3000/...` link — see [stack.md](stack.md#environment-variables).
+`condition` mirrors the rule's stored condition exactly, so the shape in the webhook is the shape in the schema. Note that `count` here is the *threshold to fire*, not the number of events that matched — the match count is not part of the payload. Until 2026-08-19 the payload also carried a `threshold` key duplicating `count`; it was undocumented, had no consumer, and was removed while the install was still pre-launch and dropping it broke nothing.
+
+`events_url` is built from the validated **`APP_URL`**. Until 2026-08-13 it read a `NEXT_PUBLIC_APP_URL` that was defined nowhere, so every webhook ever sent carried a `http://localhost:3000/...` link — see [stack.md](stack.md#environment-variables). **Verified against a real deployment on 2026-08-19**: both the firing and the resolve webhook carried a correct absolute URL on the deployed host.
 `sample_events` only re-applies the rule's `levels` filter when picking sample rows — not the full filter (environments/sources/attributes/etc. are ignored for sample selection, though they *are* applied when computing the actual match count for the threshold). Test-fire requests (from the "Test" button in the UI) use a hardcoded fake event instead of querying the DB.
 
 ### Rule mutation side effects

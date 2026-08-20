@@ -793,6 +793,244 @@ Status legend:
 Planning happens just-in-time: we detail the next feature when we're about
 to start it, not all at once.
 
+### 16.1 Post-beta workstream: read-path performance
+
+The numbered features above build the product. This workstream makes it hold
+up. It was opened on **2026-08-20**, after the staging run put real volume
+behind the app for the first time and the org overview came back at **1.4–1.6
+seconds** on 540k events — with the machine at 8% CPU, so the time was not
+resource exhaustion but query and page structure.
+
+The measured evidence behind every stage below is in
+[`LAUNCH.md` §0.1](LAUNCH.md#01-where-it-runs); the audit that produced the
+ordering is summarised in [`PROGRESS.md`](PROGRESS.md#read-path-audit-2026-08-20).
+
+> ⚠️ **Every stage begins with a discussion, not with code.**
+>
+> A finished stage is not permission to start the next one. Before each stage
+> opens, we sit down with the numbers the previous stage produced and decide:
+> is the next stage still the right next thing, has its scope changed, and is
+> the ordering below still correct? This is deliberate — the ordering was
+> derived from one afternoon of measurement on one machine at one data volume,
+> and every stage produces evidence that can invalidate the stages after it.
+>
+> A stage that starts because the previous one ended, rather than because we
+> looked at what it produced, is how this list turns back into guesswork.
+
+**Stage A — Documentation.** Bring `PLAN.md` and `PROGRESS.md` in line with
+what the staging run and the audit established, so the workstream has a
+written baseline. *(This section is that change.)*
+
+**Stage B — Tests for the read paths about to change.** `features/overview/`
+had **zero test coverage** and is exactly what Stages D and E rewrite. Per
+[WORKFLOW.md](../.claude/rules/WORKFLOW.md) §2 the tests would ship with each
+change anyway; pulling them forward is deliberate, because the first change
+would otherwise pay the whole cost of establishing a test approach for a
+service that talks to the database, in the middle of an optimisation.
+
+*Status 2026-08-20: done.* Three layers, in this order: the page's parsing and
+assembly logic extracted out of the route into `features/overview/utils/` and
+unit-tested (50 tests); `e2e/overview.spec.ts` (17 tests) asserting the rendered
+page; and `overview.service.ts` covered by 38 integration tests against a real
+Postgres on a purpose-built `logger_itest` database (`npm run test:it`).
+
+The premise held, twice. Each of the two lower layers found a real bug that the
+layer above could not see: the e2e spec found `ORDER BY` binding to a text alias
+(so "top 5 errors" returned the wrong five once a count passed 9), and the
+integration suite found an environment name containing a comma being split into
+two environments. Stage D would otherwise have been rewriting a page whose
+output nobody had ever checked, with both defects already in it.
+
+Note for Stage C: the integration harness — database creation, migration,
+seeding, connection — is reusable for the benchmark, but **its corpus is not**.
+That one is enumerated and tiny by design; measurement needs the opposite. Share
+the plumbing, not the data.
+
+**Stage C — Make it measurable.** Three things, none of which changes app
+behaviour.
+
+> **Order correction, 2026-08-20.** The list below was originally written
+> instrumentation-first, benchmark-last. That cannot work: tuning
+> `shared_buffers` before there is a benchmark means the first measurement
+> already contains the change, and nothing can say what the change did. The
+> benchmark comes first, then a recorded baseline, then **one** change at a
+> time.
+>
+> *Status: the benchmark harness is built* (`npm run bench`, see
+> [`reference/misc.md`](reference/misc.md#testing)); `pg_stat_statements` and
+> Postgres configuration are not started.
+- `pg_stat_statements`. **Done 2026-08-20** — enabled via
+  `shared_preload_libraries` in both compose files and created in
+  `db/init/01-extensions.sql`. It immediately produced the environment-
+  enumeration finding under Stage D below, and corrected the "eight
+  aggregations" count to seven. Recording only; it does not change a plan.
+- Postgres configuration. The image is stock `postgres:16`: `shared_buffers`
+  128 MB on a 4 GB host, `work_mem` 4 MB. At 540k events disk reads had already
+  appeared and the hash aggregate was at 64% of its budget. §0.1 of `LAUNCH.md`
+  justifies its RAM sizing with a 25% `shared_buffers` rule that nothing
+  implemented.
+
+  **Partly done, deliberately.** As of 2026-08-20 both compose files expose
+  `PG_SHARED_BUFFERS`, `PG_WORK_MEM`, `PG_EFFECTIVE_CACHE_SIZE`,
+  `PG_MAINTENANCE_WORK_MEM` and `PG_RANDOM_PAGE_COST` — **with the stock values
+  as defaults, so nothing changed**. Before this there was no `command:` and no
+  mounted config, so no setting could be changed at all, let alone measured.
+  Choosing values is the separate, measured step, and it **cannot be done on a
+  developer machine**: a laptop's page cache holds the whole 265 MB corpus, so
+  every `shared_buffers` value measures the same. It needs the constrained host.
+- A repeatable benchmark script. Every number we have was produced by typing
+  `EXPLAIN` by hand; that cannot prove an optimisation helped, and it certainly
+  cannot compare storage engines later.
+
+**Stage D — Remove the waste.**
+
+> **Reordered 2026-08-20, on Stage C's evidence** — which is what the discussion
+> gate is for. The list below was written caching-first; caching is now last.
+>
+> - **The environments registry is first** because it is the only item with a
+>   measured, hardware-independent justification (a share of database time, not
+>   a duration).
+> - **Caching is last, and it is bigger than this list assumed.** In Next 16
+>   `unstable_cache` is deprecated in favour of `use cache`, which requires
+>   `cacheComponents: true` — an application-wide flag that makes Next raise an
+>   error on unhandled uncached or runtime data access in *every* route. So it
+>   is an audit of the whole app, not a change to one page. Its benefit also
+>   scales with concurrent viewers, of which there is currently about one; the
+>   original justification is explicitly conditional on other teams adopting the
+>   tool. And doing it first would blind every measurement after it — Stage E
+>   would be measuring cache hits, and a slow query under a cache looks fast
+>   until it misses.
+
+In order:
+
+1. **The environments filter list. Done 2026-08-20.** `pg_stat_statements` put
+   the 30-day scan at **13.4% of the page's total database time**, spent on a
+   list of a handful of values. Replaced by `project_environments`, a registry
+   maintained at ingest — the pattern `attribute_key_types` already uses.
+   Measured: **39.3 ms → 0.67 ms**, and the query no longer appears among the
+   page's costs. Page wall-clock moved from ~106 ms to ~92 ms, which is inside
+   the ~10% run-to-run noise — expected, since the query ran in parallel with
+   slower ones. What was removed is database *work*, which is what matters once
+   more than one person is looking. Details in
+   [`reference/logging.md`](reference/logging.md#environment-registry).
+
+   **Still open: the per-project environment pills**, `STRING_AGG(DISTINCT
+   environment)` inside `getProjectSummaries` — 18.1% before, **23.8% after**,
+   now the second most expensive query on the page. A registry cannot answer it
+   as written, because those pills are scoped to the *selected range* while the
+   filter list is not. Closing it means deciding what the pills mean — "the
+   environments this project uses" or "the ones that appeared in this window" —
+   and that is a product question, deferred on 2026-08-20 rather than settled
+   inside an optimisation.
+2. **A rollup table for the dashboards.** *First increment shipped 2026-08-20 —
+   `event_rollup_minutes` + `rollup_state` + the `event-rollup` job, with the
+   volume chart and level breakdown reading it. `getProjectSummaries` and
+   everything keyed by message still read `events`; that is increment two.
+   Behaviour and rationale in [`reference/logging.md`](reference/logging.md#the-rollup).* Not the same thing as item 5 below: this is a summary
+   table in Postgres, refreshed by a scheduled job, that the read path queries
+   instead of `events` — the pattern the environments registry already proved
+   on the smallest possible case.
+
+   Shape settled in discussion: one row per `(project, minute)`, `total` plus
+   `by_level` / `by_env` as JSONB, `errors` as a generated column derived from
+   `by_level` so the two cannot disagree, `computed_at` so the UI can say what
+   the numbers are as of. Refreshed every 60 seconds, which aligns exactly with
+   the minute grain — each run closes one minute, and a number shown never
+   changes retroactively.
+
+   Two properties decided the design over maintaining counters at ingest:
+   **periodic recompute is self-healing** (each run rebuilds from `events`, so
+   drift cannot accumulate the way incremental counters do), and it leaves the
+   ingest path untouched, with no contention on hot counter rows.
+
+   Scope, from the inventory: **74% of measured overview cost is servable, 21%
+   is not.** Anything keyed by message stays on raw events — 168k distinct
+   messages per 500k events, and merging per-minute top-N lists is
+   *approximate* in a way that would produce plausible wrong numbers. Since the
+   stated reason for the rollup is that everyone should see the same figures,
+   making them quietly incorrect would defeat it.
+
+   Still open: what the job does on first run over existing data, how
+   late-arriving events are caught (ingest accepts timestamps up to 30 days
+   old, so a recompute of "recent minutes" would miss them), and whether the
+   auto-refresh intervals should differ between the dashboards and the event
+   list — the list must stay live and has no business being served stale.
+
+3. **Streaming. Done 2026-08-20.** The org page awaited a `Promise.all` of every
+   aggregation and rendered nothing until the slowest returned, which is why the
+   measured 1.4 s was time-to-first-pixel rather than time-to-last-widget;
+   `Suspense` was imported and had nothing to do. The page is now six
+   independently streaming sections.
+
+   **The route creates the promises and passes them down unawaited**, rather
+   than each section calling the service itself. That choice is the whole
+   change: sections needing the same query share one promise, so the bucket and
+   summary queries are still issued once each. Had each section fetched its own,
+   streaming would have *doubled* those two — a change made to speed the page up
+   would have slowed it down. Verified with `pg_stat_statements`: the bucket
+   query, awaited by two sections, records the same call count as the top-errors
+   query, awaited by one.
+
+   It also keeps the cross-feature composition (`features/projects`,
+   `features/alerts`) in the route, where §2.3 allows data loading, instead of
+   pulling two features into `features/overview` against §2.1.
+
+   Reduces no database work. Changes when the first pixel arrives — which on
+   this page is the largest thing a person notices, and the reason it cannot be
+   demonstrated locally: on a developer machine every query returns in
+   milliseconds, so there is nothing to stream. The benefit is on the
+   constrained host, where the page took 1.4 s.
+
+4. **The serialised page prologue**: four round trips before any real work, plus
+   a fifth on the project dashboard. Not yet measured — it sits outside the
+   benchmark's fan-out.
+
+5. **Caching of dashboard aggregations**, of which there is currently none. The
+   app is fully dynamically rendered (§17, CSP nonce), so every viewer
+   recomputes every aggregation on every load — load grows linearly with the
+   number of people looking at a dashboard, before a single extra event is
+   ingested. The events list stays uncached; staleness is acceptable on a chart
+   and not on a log tail. Last, for the three reasons in the note above.
+
+**Stage E — Query-level work.** Ordered by what Stage C's data says, not by
+this list.
+
+- ~~The five facet-count aggregations that run on every events-page load even
+  when the filter panel is closed.~~ **Done 2026-08-20**, ahead of its stage:
+  they load when the panel opens, and a normal events page is now a single
+  keyset query. Taken early because it came up while deciding the rollup's
+  scope and cost nothing to settle there — the alternative on the table was
+  deleting the counts outright, which would have removed a working feature to
+  buy something on-demand loading gives for free. Next for the same surface:
+  dropping the `RELEASE` and `ERROR TYPE` facets, which typically show one
+  option carrying the full count.
+
+Remaining candidates: the top-messages widget
+(measured at 654 ms alone, where the scan is only a quarter of the cost and the
+rest is sorting and merging tens of thousands of groups); and indexes on
+`environment`/`source`/`release`, which do not exist and are not free to add to
+a table taking a thousand inserts a minute.
+
+> **The first benchmark already disagrees with that ordering.** On a local
+> 500k corpus the most expensive single query is `getOrgEventBuckets` (~100 ms),
+> four times `getOrgTopErrors` (~26 ms) — and that is with 168k distinct
+> messages against the droplet's 68,933, which should have made top errors
+> *worse* here, not better. The 654 ms figure therefore cannot be a property of
+> the query shape; it belongs to the hardware, the untuned configuration, or the
+> concurrent ingest load. Which of the three is exactly what the rest of Stage C
+> is for. **Do not reorder this list on the strength of one local run** — the
+> whole reason for the discussion gate is that a single measurement on a single
+> machine is what produced the current ordering in the first place.
+
+**Stage F — Scaling blockers that are not query performance.** The connection
+pool of 10 against eight queries per page; the single app replica the in-memory
+rate limiter forces; and a backup strategy (`pg_dump` plus three local copies)
+that does not survive an order-of-magnitude growth under any storage engine.
+
+**Deferred — the storage engine decision.** See §17, 2026-08-20. Not part of
+this workstream, and deliberately not decided until there is a million events
+to decide on.
+
 ---
 
 ## 17. Decision Log
@@ -856,6 +1094,28 @@ to start it, not all at once.
 | 2026-08-13 | Migrations run via drizzle-orm's programmatic migrator, not `drizzle-kit migrate` | Keeps dev dependencies out of the runtime image: drizzle-kit carries its own esbuild and TypeScript, and reads `drizzle.config.ts`, which wants `dotenv` and a `.env.local` no container has. Both write the same `drizzle.__drizzle_migrations` table, so they stay interchangeable. Deviates from feature 08 step 9. |
 | 2026-08-13 | Restore drops and recreates the database rather than `pg_restore --clean` | `events` is declaratively partitioned and each partition's primary key is an *inherited* constraint Postgres refuses to drop directly; `--clean` aborts partway through the drop phase. Found by actually running a restore, which is the only way this surfaces. The dump carries the `drizzle`/`pgboss` schemas and the pg_partman extension, so an empty target needs no hand-preparation. |
 | 2026-08-13 | Production compose declares `name: logger-prod`; the dev file keeps the default | Both otherwise default to the folder name and share a namespace — running production in a developer checkout recreates the dev Postgres container and points production at the dev data volume (observed, not theorised). The dev file is left unnamed so existing checkouts keep their `logger_postgres_data`. |
+| 2026-08-20 | **The storage engine decision is deferred until the install carries 1M+ events.** Postgres stays for now | Three options were weighed — hand-rolled rollup tables, TimescaleDB, ClickHouse — and a fourth (metadata to MongoDB) rejected outright as solving nothing that is slow while adding a second datastore, cross-store joins in application code, and no transaction boundary. Deferring is unusually cheap **here**: `events` is append-only with 30-day retention, so the entire dataset self-expires and a migration is dual-write plus one month of waiting, with no backfill, ever. What does get more expensive with delay is not the data but the **read-path code** — eight dashboard widgets today, thirty later, each written against concrete SQL. Hence §16.1 Stage D/E: the work there survives any engine choice. Revisit when volume, not opinion, forces it. |
+| 2026-08-20 | Each stage of the §16.1 workstream **opens with a discussion**, not with the previous stage finishing | The ordering was derived from a single afternoon of measurement, on one host, at one data volume, with Postgres untuned. Every stage produces evidence capable of invalidating the ones after it — Stage C in particular may show that the ranking in Stage D/E is wrong. Treating a finished stage as authorisation to start the next converts a measured plan back into a guess. |
+| 2026-08-20 | Streaming is done by **passing unawaited promises from the route**, not by letting each section fetch its own data | The obvious way to split a page for `Suspense` is to move each query into the component that draws it. Here that would have been a regression: the bucket query feeds two sections and the summaries feed two more, so each would have been issued twice — a change made to speed the page up, doubling its most expensive query. React's `cache()` would deduplicate, but it keys on argument identity, and these take freshly built arrays, so it would have silently not applied. Creating each promise once in the route and passing it to every consumer makes sharing structural rather than dependent on a memoisation that happens to match. It also keeps the cross-feature composition in the route, where §2.3 allows data loading, instead of making `features/overview` import `features/projects` and `features/alerts` against §2.1. |
+| 2026-08-20 | The dashboards get a **Postgres rollup table**, not Next.js caching — these were being conflated | The plan's "caching of dashboard aggregations" had been read as `use cache`; what was actually wanted, and what §17's own storage-engine entry lists as option one, is a summary table the read path queries. They are not alternatives of the same kind: the Next cache lives in one app process (so it desynchronises across replicas and re-runs the slow query on every miss), while a rollup lives in the database, is shared by everyone, and is fast on every read. A rollup also delivers something no cache does — **viewers agree on the numbers**, where before, two people loading the dashboard seconds apart each aggregated over their own `now()` and every figure could differ. Precisely: they agree below `rolled_up_to`; the raw tail above it is still per-request, so the newest minute can differ. "Every figure may differ" becomes "only the newest minute may differ" — a smaller claim than first written here, and the accurate one. |
+| 2026-08-20 | The top-errors widget gets a **capped window**, not a range selector | It is the one query on the overview that cannot come from the rollup — keyed by message — so its cost is proportional to the errors it scans: `EXPLAIN` shows the index finding rows in 0.35 ms and the heap fetch costing 2,133 blocks for 2,785 rows, roughly a random page each, since errors are ~7% of events and scattered. The index is already optimal; the only lever is scanning fewer rows. A selector was proposed and rejected as more than the evidence supports: it buys the ability to *choose* a window, which nobody has asked for, and puts a second time control on a page that already has one ("why does the chart say 30 days and the errors say 15 minutes?"). `min(page range, 24h)` plus a visible period label removes the cliff in a few lines. Measured: 23.2 ms over 72 h, 12.4 ms over 24 h, 6.6 ms over 1 h — of which ~6 ms is fixed cost that no window reduces, which is also why narrowing below an hour buys nothing. |
+| 2026-08-20 | Rollup-backed reads **union the summary with a raw tail**, rather than serving the summary alone | The rollup materialises only closed minutes — a number that changes under the reader is what it exists to prevent. Served alone, though, every chart would be permanently missing its newest minute, which on a logging tool is the minute someone is watching an incident through; the feature would read as broken. `rollup_state.rolled_up_to` marks where the summary is complete, and reads take `events` above it. Two further properties fall out for free: a just-ingested event is visible immediately, and `NULL` (nothing built yet) degrades to the pre-rollup behaviour, which is what makes the migration safe to deploy before the job has ever run. This is the same shape as TimescaleDB's real-time aggregates — worth knowing, since §17's deferred storage decision lists it. |
+| 2026-08-20 | The rollup is refreshed by a **scheduled job**, not maintained incrementally at ingest | Incremental counters drift — a lost update, a rollback, a race — and drift has to be detected and repaired. A periodic recompute rebuilds each bucket from `events`, so error cannot accumulate: the worst case is one stale interval, self-corrected on the next run. It also keeps the ingest path free of contention on hot counter rows, which matters more as ingest volume is the thing expected to grow. Cost becomes a function of the schedule instead of the ingest rate. |
+| 2026-08-20 | The rollup **excludes anything keyed by message**, and `release` may never become a rollup dimension | Merging per-minute top-N lists is approximate: a message ranked eleventh every minute can be first over the hour and appear in no bucket at all. The rollup exists so that viewers agree on the numbers, and agreed-but-wrong is worse than differing-but-right — so top messages and top errors stay on raw `events`, at 21% of measured page cost. `release` is excluded for a different reason: it is *designed* to change on every deploy, so as a rollup dimension it grows without bound. Environment cardinality was the visible risk; `release` is the one the widget inventory caught. |
+| 2026-08-20 | A **widget inventory** (`reference/widgets.md`) is written before the rollup is designed, and kept as a reference doc | Designing the table from the two widgets that came up in conversation would have produced a schema that fits them and breaks on the third. Enumerating all of them first is what surfaced the `release` hazard, the dead `EnvironmentBreakdownWidget`, and two undocumented filter asymmetries on the overview. Keeping it afterwards has a separate justification: "which query feeds this number" currently requires opening three files. |
+| 2026-08-20 | Stage D is reordered on measurement: environments registry first, **caching last** | Caching was written first on the reasoning that load scales with viewers. Stage C changed two inputs. The registry now has a measured share of database time behind it, while caching's benefit remains conditional on a viewer count the install does not have (~1). And in Next 16 caching stopped being a local change: `unstable_cache` is deprecated for `use cache`, which needs `cacheComponents: true` — an app-wide flag that errors on unhandled uncached data access in every route. Decisive on its own: caching first would make every later measurement read cache hits instead of queries, and a slow query under a cache looks fast until it misses. |
+| 2026-08-20 | The environment registry writes on the ingest path and **its failure is swallowed** | It is the only deliberately swallowed error in ingest, against PROJECT.md §9. The trade is explicit: the registry is derived data, so a lost update costs one filter entry until the next event from that environment, while letting it throw would return 500 and lose the event itself. It is caught and logged in a named function rather than a bare `.catch()`, so the choice is visible at the call site. |
+| 2026-08-20 | Integration fixtures are **enumerated, not generated** — a few hundred hand-specified rows, each with a stated purpose, and expected values written as literals | The instinct to make a fixture "cover every variation" splits into two things that pull opposite ways. Variety of *shapes* — NULLs, boundary timestamps, a message that straddles the 200-character grouping cut, counts on both sides of 9/10, an environment containing the separator the query joins on — is what finds bugs, and both bugs found on 2026-08-20 came from it. Variety as *randomness* is the opposite: with random data the expected value has to be computed, and the only way to compute it is to re-implement the query in TypeScript, so the test compares the code against a copy of itself. That is not theoretical — `build-payload.test.ts` did exactly that, and deleting a field from the production module broke no test. Volume gets its own corpus for Stage C, sharing the harness but none of the data. |
+| 2026-08-20 | Integration tests insert with **direct SQL**, deliberately doing what got `scripts/seed-events.mjs` deleted | That script impersonated production traffic while bypassing the validation production traffic must pass, which made everything it produced untrustworthy. Here the point is inverted: control over the exact row shape *is* the subject under test. A `NULL` in a column the API always fills, and a timestamp 40 days old that the API rejects outright, are both required to test the read path — and neither is reachable through ingest. |
+| 2026-08-20 | The text-alias `ORDER BY` bug is fixed **only** where a test can prove it — `overview.service.ts` now, `aggregations.service.ts` flagged and left alone | Same one-line slip in five places across two features, and the temptation is to fix all five while the cause is fresh. Three of them sit in a service with no tests and no way to write one under the current mocking pattern, so fixing them would mean shipping an unverified change to a second feature inside a change whose entire purpose was establishing verification — and if the "fix" were wrong, nothing would say so. The occurrences are recorded with line numbers in `reference/logging.md` and `PROGRESS.md`, which costs a follow-up but never a silent regression. |
+| 2026-08-20 | Overview widget cards carry `role="group"` + `aria-label` purely so tests can address them | PROJECT.md §11 forbids querying by class or id, and the cards were unlabelled `div`s with nothing else to grab. The alternative — relaxing the rule for "components that happen to have no semantics" — would hollow it out, since any component can be described that way. Adding the accessible name is a smaller change than weakening the rule, and it is independently correct for screen readers. |
+| 2026-08-20 | Tests for `features/overview/` are pulled **ahead** of the optimisation they protect | WORKFLOW.md §2 would require them alongside each change regardless. The feature has zero coverage today and is precisely what Stages D and E rewrite, so writing them inside the first optimisation would mean inventing a testing approach for a database-touching service while also changing its behaviour — the two failure modes would be indistinguishable. |
+| 2026-08-19 | First staging deploy went to **DigitalOcean**, not the Hetzner recommended in `LAUNCH.md` §0.1 | The recommendation stands on price/performance and is unchanged; the account already existed on DigitalOcean and a throwaway staging box is the wrong place to spend an afternoon on provider onboarding. The measurements the run produced are provider-neutral. `LAUNCH.md` Appendix B records the DigitalOcean specifics, including two defects in its Marketplace Docker image (Docker daemon API ports 2375/2376 left open in UFW; `fail2ban` installed but never enabled). |
+| 2026-08-19 | DNS for the staging host stays at the registrar; **no Cloudflare** | The staging run exists to prove ACME issuance. Putting in front of it a proxy that is known to interfere with ACME adds a failure mode that proves nothing, and moving nameservers costs hours of propagation that verify nothing either. Cloudflare goes in later as its own step (Phase 8), with a health check straight after. |
+| 2026-08-19 | Certificate dry run went at the **production** Let's Encrypt CA, not staging | The `Caddyfile` has no `acme_ca` directive and no environment substitution for one, so a staging-CA rehearsal is a code change, not a config change. The failed-validation limit is per hostname per hour, so a mistake costs an hour; the weekly per-domain issuance limit is unreachable by hand. Revisit only if a run ever burns the hourly limit. |
+| 2026-08-19 | SSH hardening is a `sshd_config.d/00-hardening.conf` drop-in, never a `sed` over `sshd_config` | Ubuntu's main config opens with `Include sshd_config.d/*.conf` and OpenSSH takes the **first** value it sees, so any cloud-init drop-in outranks the main file and an edit there can appear to apply while changing nothing. A `00-` prefix sorts ahead of the images' `50-`/`60-` files. `sshd -T` is the only check that reports effective config. `LAUNCH.md` Appendix A was corrected — it had recommended the `sed`. |
+| 2026-08-19 | Webhook payload's `condition` no longer carries a `threshold` alias of `count` | It was undocumented, duplicated `count`, and had no consumer — `build-payload.test.ts` "covered" it only by reimplementing the assembly locally, so it tested a copy rather than the shipped code. Removed while the install was pre-launch and dropping it broke nothing; after real integrations exist it would have been a breaking change. The test file now imports the real `assembleAlertPayload`. |
+| 2026-08-19 | Load generators talk to the **HTTP API**; `scripts/seed-events.mjs` deleted | It wrote rows straight into Postgres, exercising none of auth, rate limiting, validation or the attribute type registry — and it was broken anyway (hardcoded project slug `"some"`, error message saying `"test"`). Replaced by `event-one-by-key.mjs` (paced single requests, for watching the dashboard) and `events-batch-by-key.mjs` (batched, for volume), sharing `event-factory.mjs`. Credentials come from `LOGGER_API_KEY`/`LOGGER_URL`, matching `demo-live.mjs`, because the repository is public. |
 | 2026-08-13 | Unit tests stay colocated with their source; **rejected** a per-feature `tests/` folder | Colocation is what makes a missing test visible in the folder listing and the diff — the mechanism WORKFLOW.md §2 leans on — and it makes `git mv` carry a test along with its module instead of orphaning it. The perceived inconsistency was only that features keep logic in different subfolders (`auth` in `actions/`, `ingest` in `services/`+`utils/`); the rule was already uniform at 32/32. Revisit only if bulk `.test.tsx` component tests start cluttering per-component folders. See `PROJECT.md` §11. |
 
 ---

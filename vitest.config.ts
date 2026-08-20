@@ -8,7 +8,10 @@ export default defineConfig({
         environment: "jsdom",
         setupFiles: ["./vitest.setup.ts"],
         globals: true,
-        exclude: ["node_modules/**", ".next/**", ".next-e2e/**", "e2e/**"],
+        // `**/*.itest.ts` needs a real Postgres and runs via
+        // `npm run test:it` (vitest.integration.config.ts). Excluded here so
+        // that `npm run test` keeps working with no database at all.
+        exclude: ["node_modules/**", ".next/**", ".next-e2e/**", "e2e/**", "**/*.itest.ts"],
         // `@/core/env` validates the whole server schema the moment it is
         // imported, so any module under test that reaches it needs these set.
         // Values are throwaway — nothing here connects to a real database.

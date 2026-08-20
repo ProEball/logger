@@ -77,8 +77,11 @@ npm run db:generate    # drizzle-kit generate
 npm run db:migrate     # drizzle-kit migrate
 npm run db:push        # drizzle-kit push (dev convenience, no migration file)
 npm run db:studio      # drizzle-kit studio
-npm run test            # vitest run
+npm run test            # vitest run — unit tests, jsdom, needs no database
+npm run test:it          # vitest run --config vitest.integration.config.ts — needs Postgres
 npm run test:e2e         # playwright test --pass-with-no-tests
+npm run bench:seed       # builds the benchmark corpus in logger_bench (BENCH_EVENTS=500000 by default)
+npm run bench            # vitest bench — measures whatever DATABASE_URL points at
 npm run db:migrate:e2e    # applies migrations to the isolated e2e database (logger_test) — see misc.md#testing
 npm run demo              # node scripts/demo-live.mjs (seeds a running instance via the ingest API)
 ```
@@ -94,7 +97,17 @@ npm run dev                                       # app on http://localhost (por
 
 E2E tests do **not** run against this dev database — they need a one-time separate setup (`logger_test` database + `.env.e2e.local`); see [misc.md#testing](misc.md#testing) before running `npm run test:e2e` for the first time.
 
-`docker-compose.dev.yml` builds `db/Dockerfile` (`postgres:16` + `postgresql-16-partman` apt package) and mounts `db/init/01-extensions.sql` (runs `CREATE EXTENSION IF NOT EXISTS pg_partman;` at container init) plus a named volume for data persistence. It defines **only** the `postgres` service — no app/worker containers in dev; you run those with `npm run dev` / the worker toggle below.
+**Four databases, one Postgres instance:** `logger` (dev), `logger_test` (e2e), `logger_itest` (integration), `logger_bench` (benchmarks). Only the first two need setting up by hand — `npm run test:it` creates `logger_itest` and `npm run bench:seed` creates `logger_bench`, each installing `pg_partman` and migrating on its own. The difference between the last two is lifetime: `logger_itest` is dropped and reseeded on **every** run (~40 rows, ~1 s), `logger_bench` is seeded once and reused (500k rows, ~14 s). Override connections with `ITEST_DATABASE_URL` / `ITEST_ADMIN_URL` / `BENCH_DATABASE_URL` if Postgres is not on the default local port.
+
+`docker-compose.dev.yml` builds `db/Dockerfile` (`postgres:16` + `postgresql-16-partman` apt package) and mounts `db/init/01-extensions.sql` (runs `CREATE EXTENSION IF NOT EXISTS pg_partman;` and `pg_stat_statements` at container init) plus a named volume for data persistence.
+
+**Postgres settings** are passed on the command line by both compose files (added 2026-08-20 — before that there was no `command:` and no mounted config, so nothing was adjustable). `shared_preload_libraries=pg_stat_statements` is fixed; `PG_SHARED_BUFFERS`, `PG_WORK_MEM`, `PG_EFFECTIVE_CACHE_SIZE`, `PG_MAINTENANCE_WORK_MEM` and `PG_RANDOM_PAGE_COST` are overridable and **default to Postgres's own stock values**, so adding them changed no behaviour. These are read by Docker Compose, not by the application — they are absent from `core/env/index.ts` on purpose. Picking real values is a measured step; see `PLAN.md` §16.1 Stage C for why it cannot be done on a developer machine.
+
+`pg_stat_statements` needs both the preload flag (restart) and `CREATE EXTENSION` per database. The init script covers a fresh data directory only; on an existing install:
+
+```bash
+docker compose exec postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "CREATE EXTENSION IF NOT EXISTS pg_stat_statements"'
+``` It defines **only** the `postgres` service — no app/worker containers in dev; you run those with `npm run dev` / the worker toggle below.
 
 `docker-compose.dev.yml` deliberately keeps the **default** project name (the folder name, `logger`), while the production `docker-compose.yml` declares `name: logger-prod`. Without that split both files share one namespace and running the production stack in a developer checkout recreates the dev Postgres container and points production at the dev data volume.
 

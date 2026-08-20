@@ -5,6 +5,7 @@ export type HelpCategorySlug =
     | "api"
     | "users-roles"
     | "logging"
+    | "widgets"
     | "security"
     | "misc";
 
@@ -16,7 +17,8 @@ export type HelpIconKey =
     | "users"
     | "activity"
     | "shield"
-    | "settings";
+    | "settings"
+    | "grid";
 
 export interface HelpCategory {
     slug: HelpCategorySlug;
@@ -69,6 +71,13 @@ export const HELP_CATEGORIES: HelpCategory[] = [
         description: "Event levels, alert rule evaluation and webhook delivery, and how dashboard charts are bucketed.",
         icon: "activity",
         sourceFile: "logging.md",
+    },
+    {
+        slug: "widgets",
+        label: "Widgets",
+        description: "Every chart, table and counter in the app: which query feeds it, what it groups by, and what it costs.",
+        icon: "grid",
+        sourceFile: "widgets.md",
     },
     {
         slug: "security",

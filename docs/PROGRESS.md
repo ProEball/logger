@@ -2,17 +2,137 @@
 
 > Single source of truth for "where are we right now". Update after every work session.
 
-**Last updated**: 2026-08-13 (Feature 08 — Docker packaging, complete + live-checked)
+**Last updated**: 2026-08-20 (staging run, read-path audit, §16.1 Stages B–D — rollup complete)
 
 ---
 
 ## Current Phase
 
-**Feature 08 — Docker packaging is done** · `docs/features/08-docker-packaging.md` — 30 / 30, live-checked against a real stack on 2026-08-13. The app is deployable: multi-stage `Dockerfile`, production `docker-compose.yml` (proxy/app/worker/migrate/postgres/backup), `Caddyfile` with automatic HTTPS, standalone worker and migration entrypoints, backup/restore scripts, and CI + release workflows. Deployment procedures live in [`docs/OPERATIONS.md`](OPERATIONS.md).
+**Read-path performance — [`PLAN.md` §16.1](PLAN.md#161-post-beta-workstream-read-path-performance).** The numbered roadmap features are all complete and the app is deployable (Feature 08, 30/30, live-checked 2026-08-13; deployment procedures in [`OPERATIONS.md`](OPERATIONS.md)). The staging run on 2026-08-19/20 then put real volume behind it for the first time, and the org overview came back at **1.4–1.6 s on 540k events** with the host at 8% CPU — so the cost is query and page structure, not resources. That opened the workstream.
 
-**Next: no feature is in progress.** The roadmap's numbered features are all complete. What remains is the gap list below, sequenced for a real launch in [`LAUNCH.md`](LAUNCH.md) — pick from there rather than starting something new.
+**Stage B — tests for `features/overview/` — is under way.** First half landed 2026-08-20: the search-param parsing, chart bucket table and per-project row assembly were extracted out of `app/[org]/(org-shell)/page.tsx` and `OverviewPage.tsx` into `features/overview/utils/` and covered by 50 tests (441 total, up from 391). The extraction came first because the logic was in a route file, where §2.3 forbids it and where nothing could unit-test it — and because Stage D rewrites exactly that code.
 
-**Production readiness: features ~85–90%, operations ~75%.** Packaging, delivery and CI are closed. What is left is email, offsite-backup verification, and a real staging run.
+**Second half landed the same day: `e2e/overview.spec.ts`, 17 tests** covering the KPI row, the project table (including a project with no events), top errors, level breakdown, and every filter. Writing it **found a real bug**: `COUNT(*)::text AS count` followed by `ORDER BY count DESC` binds to the text alias, so `"9"` sorted above `"10"` and "top 5 errors across org" returned the wrong five. Failing test first, then the fix, per WORKFLOW §2. Three more occurrences remain in the dashboard service — see the known gaps below.
+
+**Stage B is closed.** The last piece — `overview.service.ts` itself — is covered by **38 integration tests** against a real Postgres (`npm run test:it`), on a new `logger_itest` database the harness creates, migrates and seeds itself. Verified from nothing: dropping the database and re-running rebuilds it and passes in ~1.2 s. Setup and rationale in [`reference/misc.md`](reference/misc.md#testing).
+
+That suite found a **second bug**: an environment name containing a comma is split into two environments, because the query joins with `STRING_AGG(…, ',')` and the service splits the result on `","` — and ingest accepts a comma in `environment`. Pinned at the time rather than fixed, since it changed a shipped query; **fixed later the same day** as a side effect of moving the pills to the rollup, and the pinned test inverted.
+
+**Test totals now:** 441 unit · 38 integration · 70 e2e. *(By the end of the day: 492 · 70 · 71.)*
+
+**Stage C started 2026-08-20 — benchmark harness first.** `npm run bench` measures the real service functions against whatever `DATABASE_URL` points at, discovering its target at run time and reporting the corpus it chose; `npm run bench:seed` builds a 500k corpus in `logger_bench`. The stage's order was corrected in the plan: benchmark → baseline → one change at a time, not instrumentation first. `pg_stat_statements` and Postgres tuning are **not** started; both change the deployed image and the second needs the first.
+
+**First baseline (local, 500k events, 168k distinct messages)** — `bench/baselines/2026-08-20-local-500k.json`:
+
+| Query | mean |
+|---|---|
+| round-trip floor (`SELECT 1`) | 0.26 ms |
+| `getOrgEventBuckets` (1h) | **99.6 ms** |
+| `getProjectSummaries` (3 queries) | 56.2 ms |
+| `getOrgEnvironments` (30-day scan) | 39.3 ms |
+| `getOrgTopErrors` | 25.7 ms |
+| `getOrgLevelBreakdown` | 14.1 ms |
+| whole page fan-out | 106.4 ms |
+
+**`pg_stat_statements` is enabled** (both compose files, `db/init/01-extensions.sql`) and produced the most useful result of the stage so far. Per page fan-out, all seven `events` queries have identical call counts — no N+1 — and the time splits like this:
+
+| share | query |
+|---|---|
+| 30.7% | `getOrgEventBuckets` |
+| **18.1%** | `STRING_AGG(DISTINCT environment)` inside `getProjectSummaries` |
+| **13.4%** | `getOrgEnvironments` — the 30-day scan |
+| 10.1% | `getOrgTopErrors` |
+| 8.8% | per-project top message |
+| 6.1% | per-project stats |
+| 5.0% | `getOrgLevelBreakdown` |
+
+**Environment enumeration is 31.5% of the page's database time, and it is paid twice** — once for the dropdown, once per project — for what is a list of two values. That is a *proportion*, so unlike every timing on this page it survives the move to different hardware. It makes the environments registry the best-evidenced item in Stage D.
+
+**Postgres tuning is deliberately not done.** Both compose files now expose `PG_SHARED_BUFFERS`, `PG_WORK_MEM` and three more, defaulting to the stock values — the knob exists, nothing was turned. Choosing values needs a constrained host: a developer machine's page cache holds the entire 265 MB corpus, so every `shared_buffers` setting measures the same.
+
+**Stage D item 1 done, 2026-08-20 — the environments registry.** `project_environments` (migration 0007, with a backfill) is maintained at ingest and replaces the 30-day scan of `events` behind the overview's filter bar. **39.3 ms → 0.67 ms**, and the query drops out of the page's cost list entirely; the remaining queries redistribute exactly as removing 13.4% predicts (buckets 30.7% → 37.6%, against 35.5% calculated). Page wall-clock went ~106 ms → ~92 ms, which is **inside the noise floor** — expected, because the query ran in parallel with slower ones. The honest claim is that database *work* fell, not that the page got faster. Baselines: `bench/baselines/2026-08-20-local-500k{,-after-env-registry}.json`.
+
+Stage D was **reordered** on Stage C's evidence, with caching moved from first to last — reasons in `PLAN.md` §16.1 and §17. The per-project environment pills (`STRING_AGG(DISTINCT environment)`) were **not** covered at this point: 18.1% before, 23.8% after. They looked like they needed a product decision about what the pills mean — that turned out to be wrong, and they were closed by the rollup later the same day without any semantic change, because `by_env` is stored per minute and so can answer "environments in this range" exactly.
+
+**Facet counts moved off the events page load, 2026-08-20.** Five aggregations used to run in the route's `Promise.all` on every load — including auto-refreshes — while `FiltersPopover` keeps its open state in client `useState`, so nobody could see them on the great majority of loads. They now load when the panel opens, through `getFacetCountsAction`. **A normal events page is one query**: a keyset page of 51 rows.
+
+The action re-checks session and `events.read` — a Server Action is a public endpoint, and the page's own membership check does not cover it. It takes the page's query string and re-parses it with `parseFilters`, the same function the route uses, rather than carrying a second Zod schema for `EventFilters` that could drift from the first.
+
+Reading through a Server Action departs from `PROJECT.md` §8 ("Server Actions for mutations; Server Components for reads"). Deliberate: the read is triggered by a client interaction the server cannot observe, and a route handler would mean re-implementing auth that an action gets for nothing.
+
+New e2e covers it, and the test was verified to **fail** against a deliberately broken action before being kept — otherwise it would be one more test that passes on a broken page, which this suite already had too many of.
+
+**Rollup table landed, 2026-08-20 — Stage D item 2, complete.** `event_rollup_minutes` (one row per `(project, minute)`, `by_level`/`by_env` as JSONB, `errors` a generated column) plus `rollup_state`, rebuilt every minute by the `event-rollup` pg-boss job. The volume chart, the level breakdown and the project summaries all read it; **everything keyed by message still reads `events`**, which is structural rather than unfinished.
+
+Design points worth not re-deriving:
+
+- **Reads union the rollup with a raw tail.** The rollup holds only closed minutes, so on its own every chart would be missing the newest minute — the one someone watching an incident cares about. `rollup_state.rolled_up_to` marks where the rollup is complete; below it comes from the rollup, above from `events`. `NULL` means "nothing built yet" and the read falls back entirely to `events`, which is what makes migration 0008 safe to deploy before the job has ever run.
+- **Catch-up is capped at one day per run.** The migration seeds the watermark at each project's oldest event, so without a cap the first run would aggregate the whole table while the schedule kept firing.
+- **Delete-then-insert, not upsert.** A minute whose events aged out has to lose its row; an upsert would leave a stale count that nothing would ever contradict.
+- **Late events** are handled by the ingest path pulling the watermark back with `LEAST(refresh_from, oldest in batch)`. `events` stores when an event happened, not when it arrived, so no query on that table could work this out.
+
+**Both increments are done.** `getOrgEventBuckets`, `getOrgLevelBreakdown` and `getProjectSummaries` all read the rollup; only the message-keyed queries still touch `events`.
+
+Measured on the 500k local corpus:
+
+| | fan-out | note |
+|---|---|---|
+| original | 106.4 ms | before any of this |
+| after environments registry | ~94.5 ms | inside the noise floor |
+| after rollup (buckets, levels) | 56.1 ms | |
+| after rollup (project summaries) | **26.0 ms** | |
+
+Individually: volume buckets **90.8 → 3.4 ms** (27×), level breakdown 14.1 → 6.7 ms, project summaries **57.5 → 24.1 ms**.
+
+**The page is now bounded by `getOrgTopErrors`** — the one query that structurally cannot come from a rollup, since it is keyed by message. `EXPLAIN` locates its cost precisely: the `(project_id, level, timestamp)` index finds the rows in 0.35 ms, but fetching them costs **2,133 heap blocks for 2,785 rows** — about one random page per row, because errors are ~7% of events and scattered among the rest. So cost is proportional to matching rows, and the index is already optimal.
+
+That leaves one lever: match fewer rows. **The widget's window is now capped at 24 h** independently of the page range (`clampTopErrorsWindow`), and it displays the period it covers. A 30-day page range used to drag this widget along with it; measured 23.2 ms over 72 h against 6.6 ms over 1 h, of which ~6 ms is fixed cost no window reduces.
+
+Deliberately **not** a user-facing selector. That would buy the ability to choose a window — which nobody has asked for — at the price of a second time control on a page that already has one. The cap is a few lines and removes the cliff; a selector can follow a request that names the windows it needs.
+
+`getProjectSummaries` keeps two paths: `by_level` answers a level filter, but an **environment** filter needs errors-per-environment — a joint the marginals do not hold — so that read still goes to `events`. Both paths are pinned against direct counts.
+
+**The comma-in-environment bug is fixed as a side effect.** The pills come from JSON keys now, so there is no `STRING_AGG`/`split(",")` pair left to break them. The test that pinned the bug was inverted, not deleted — it failed the moment the fix landed, which is exactly what it was for. New divergence in its place, deliberate and tested: above the 20-environment cap the pill list is the top 20 plus `(other)`, not the raw `DISTINCT`.
+
+**The raw tail costs about 0.3–0.6 µs per event in it**, and its width depends on how far behind the rollup is, not on the range being charted: 0.12 ms for a two-minute tail, 7.7 ms for a four-hour one. Steady state is at most a minute of ingest. A stalled job therefore degrades speed and not correctness — the worst case is the ~91 ms the query took before the rollup.
+
+⚠️ The first attempt at this measurement was **meaningless and nearly reported as a win**: the benchmark builds the rollup immediately before measuring, so the boundary landed past the newest event and the tail was empty. "The tail is free" was measuring nothing at all. The bench now pushes the boundary back deliberately (`BENCH_TAIL_MINUTES`, default 2) to match production. Same class of error as benchmarking the environments registry against an unpopulated table.
+
+Verification is mostly **agreement, not existence**: the integration tests compare rollup-backed reads against direct counts of `events` — total, per level, with and without a filter, and after a fresh insert that no rebuild has seen. 16 new integration tests, 65 in total.
+
+**Auto-refresh** is now `off | 30s | 60s | 5m`. `10s` went for its **cost** — six page loads a minute per viewer, for a difference nobody acts on. It was first justified here as "the rollup only changes once a minute, so a faster refresh sees the same numbers"; that is **wrong**, and corrected on the spot: reads union the rollup with a raw tail, so freshness is not gated by the rebuild cadence at all. A stored `10s` is **translated to `30s`** rather than falling back to the default, which would have silently switched auto-refresh off for everyone who had chosen it.
+
+⚠️ The same mistake reached two other claims and has been corrected in both: **"every viewer sees identical numbers" holds only below `rolled_up_to`.** The raw tail is computed per request, so the newest minute can still differ between two viewers by whatever arrived between their loads. The rollup turns "every figure may differ" into "only the newest minute may differ", which is the real, smaller claim.
+
+**Streaming done, 2026-08-20 — Stage D item 3.** `app/[org]/(org-shell)/page.tsx` no longer awaits a `Promise.all` of every aggregation before rendering. It starts each query, passes the **promise** down, and `OverviewPage` is six independent `Suspense` boundaries: filter bar, KPI row, volume chart, projects panel, top errors, level breakdown.
+
+Passing promises rather than letting each section fetch is the substance of it. Two sections need the bucket query and two need the summaries; a section-fetches-its-own design would have issued both **twice**, so a change made to speed the page up would have slowed it down. Verified with `pg_stat_statements` against `logger_test`: all six aggregations record identical call counts, including the bucket query that two sections await. It also keeps the cross-feature calls in the route, where §2.3 permits data loading, rather than importing `features/projects` and `features/alerts` into `features/overview` against §2.1.
+
+The 17 overview e2e tests written earlier the same day passed unchanged — which is the return on having written them before the optimisation rather than after.
+
+⚠️ **The benefit is not observable locally.** Every query returns in milliseconds against a developer machine, so there is nothing to stream. This pays off on the constrained host where the page measured 1.4 s, and it is not yet confirmed there.
+
+**Widget inventory written before designing the rollup** — [`reference/widgets.md`](reference/widgets.md), registered as a help-centre category so it is readable in the app. Every read surface across the overview, the project dashboard and the events page: which query backs it, what it groups by, which filters it responds to, its measured share, and whether a rollup could serve it.
+
+Three things it turned up that reading two widgets would not have:
+
+- **`release` is the dimension that must never enter a rollup.** Environment cardinality was the risk everyone saw; a release identifier is *designed* to change on every deploy, so it is strictly worse and far less obvious. The releases facet stays on raw events.
+- **`EnvironmentBreakdownWidget` and `environmentBreakdown()` are dead code** — rendered nowhere, called nowhere. One of the three text-alias `ORDER BY` bugs lives in it and therefore cannot affect anyone; the other two are live.
+- **Two undocumented asymmetries on the overview**: the volume chart ignores the level and environment filters that narrow every other widget, and the per-project top error ignores the level filter that org-wide top errors respects.
+
+Scope for the rollup falls out of it: **74% of measured overview cost is servable, 21% is not** (anything keyed by message), plus everything returning rows.
+
+**Run-to-run variance is ~10%.** The same benchmark on the same machine against the same corpus gave a 106.4 ms fan-out and then 94.5 ms, with each run reporting ±3–4% internally. So the noise floor is wider than the tool's own error estimate, and **a local change claiming less than roughly 10% is indistinguishable from nothing**. Anything smaller has to be argued from `pg_stat_statements` proportions or measured on a quieter host.
+
+Two more things worth carrying forward. **The fan-out costs about what its slowest member costs** (106 vs 100 ms), so at one viewer the queries really do run in parallel and the 10-connection pool is not yet the constraint. And **the ranking disagrees with the audit**: bucketing is four times top-errors here, where the droplet's single most expensive query was top-errors at 654 ms — despite this corpus having 2.4× the distinct messages, which should have gone the other way. So the droplet's 654 ms is not explained by query shape. Hardware, the stock Postgres configuration, and concurrent ingest are the remaining candidates, and separating them is the rest of Stage C. **One local run is not grounds to reorder Stage E** — that is how the current ordering was arrived at, and why the discussion gate exists. The repository's db-mocking pattern stubs the Drizzle query builder and cannot reach `db.execute(sql\`…\`)`; asserting on generated SQL text would test the string rather than the answer. Correctness there needs a real Postgres, which makes the seeding/connection harness shared with Stage C's benchmark — **so the B/C boundary is itself on the table at the next discussion.** Two datasets are needed either way: a small deterministic corpus for correctness, and a large one for measurement, since nothing reproduces a 1.4 s page at a thousand rows.
+
+⚠️ Note for whoever builds that harness: `e2e/support/cleanup.ts` does `DELETE FROM events` against `logger_test`, so a corpus seeded once by hand into that database is destroyed by the next `npm run test:e2e` run.
+
+> ⚠️ **Each stage of §16.1 opens with a discussion, not with code.** A finished stage is not authorisation to start the next one — see the decision-log entry for 2026-08-20. Do not pick up Stage C because Stage B closed.
+
+**The storage engine decision is deferred until 1M+ events** and is deliberately *not* part of this workstream. Postgres stays. Reasoning, including why deferring is unusually cheap here and what does get more expensive with delay, is in `PLAN.md` §17.
+
+**Production readiness: features ~85–90%, operations ~80%.** Packaging, delivery, CI and — since the staging run — TLS, ingest under load and alert delivery are closed. What is left is email, offsite-backup verification, the update path, and this workstream.
 
 ### Blockers before production
 
@@ -26,14 +146,50 @@
 
 ### Known gaps, not blockers
 
-- **No staging run.** Everything was verified against local Docker. Real ACME certificate issuance (`DOMAIN=:80` skips it) and behaviour under real ingest load are unproven. Do a staging deploy before the first tagged release.
+- **Staging run: partly done, 2026-08-19.** A throwaway DigitalOcean droplet at `stage.proeball.com`, deployed from the first-ever release tag (`v0.1.0-rc1` → `ghcr.io/proeball/logger`). **Closed by it:** real ACME issuance (worked first time, Let's Encrypt certificate on the real domain), HTTP→HTTPS redirect, `/api/health/ready`, the whole documented ingest contract including the attribute type registry and rate limiting, alert evaluation with both firing and resolve webhooks, the SSRF guard on live delivery, and 2 hours of sustained load (41,762 events, zero failures, flat latency). Sizing measurements are recorded in [`LAUNCH.md`](LAUNCH.md#01-where-it-runs); the DigitalOcean walkthrough in its Appendix B. **Still unproven:** offsite backup with `OFFSITE=true` against a real bucket, the update path (`docker compose pull && up -d` onto a new tag), and unattended reboot recovery.
 - **`projects.retention_days` is not enforced.** The column is read and exposed through the projects service, but partition retention is globally hardcoded to `'30 days'` in migration 0003 — confirmed again during the Feature 08 live check (`part_config.retention = '30 days'` on a freshly migrated database). PLAN.md §14 records this as a deliberate deferral; the open question is whether to implement it or stop exposing the value.
 - **Ingest rate limiter is single-instance in-memory** — needs a shared store before running more than one `app` replica.
 - **No rate limiting on `/api/auth/*`** — login and password-reset requests are not throttled. The actions are test-covered for enumeration-safety, but throttling is a separate, still-missing control.
 - **Secrets live in one `.env` on the host**, protected only by `chmod 600`. No secret manager, no rotation procedure. Backups are unencrypted at rest.
-- **`features/overview/` has no tests** — the last feature with zero coverage.
-- **`scripts/seed-events.mjs` is broken** — resolves a project by the hardcoded slug `"some"` while its error message says `"test"`.
+- **Neither `test:it` nor `test:e2e` runs in CI.** CI has no Postgres at all — `DATABASE_URL` there is a throwaway value for `core/env`'s import-time validation. The integration suite is the closer of the two to being addable (no app instance, ~1 s, self-seeding); its blocker is that migration 0003 needs `pg_partman`, which the stock `postgres:16` image a `services:` block provides does not have. See [`reference/misc.md`](reference/misc.md#continuous-integration).
+- **`aggregations.service.ts` has no tests** — the project dashboard's raw-SQL aggregations. `overview.service.ts` was closed on 2026-08-20 by the integration suite, and the same harness would cover this one; the fixture would need extending with per-project cases. Note it *looked* covered until that day: `aggregations.service.test.ts` never imported the service it was named after — it tested `utils/aggregation-utils.ts` — and renaming it is what made the gap visible. See [`reference/misc.md`](reference/misc.md#testing).
+- **`features/dashboard/utils/aggregation-utils.ts` imports from `features/events/`** (`event-filters.types`) — a feature-to-feature import, against `PROJECT.md` §2.1. Pre-existing; found while extracting the overview utils and deliberately not fixed in that change, because moving the `TimeRange` type to `shared/` touches three features and the extraction had to stay behaviour-neutral.
+- ~~**The org overview is rendered by e2e but never asserted**~~ — **closed 2026-08-20** by `e2e/overview.spec.ts` (17 tests). Until then `login()` (`e2e/support/auth.ts:42`) rendered `/[org]` on every test in every spec and only ever checked the URL, so a page showing all zeros would have passed the suite.
+- **Count columns are ordered as text in `features/dashboard/services/aggregations.service.ts`** — `levelBreakdown` (~109), `environmentBreakdown` (~132), `topSources` (~256) select `COUNT(*)::text AS count` and then `ORDER BY count DESC`, which binds to the text alias and ranks `"9"` above `"10"`. `topSources` has a SQL `LIMIT 10` and `EnvironmentBreakdownWidget` takes `.slice(0, 8)`, so both return the wrong rows, not just the wrong order; `levelBreakdown` is masked by the widget re-sorting. The same bug was fixed in `overview.service.ts` on 2026-08-20 — see [`reference/logging.md`](reference/logging.md#ordering-count-columns-are-cast-to-text). Not fixed here because there is no test that could prove it, which is itself §16.1 Stage B/C work.
+- **Read-path performance** — findings are collected in [Read-path audit](#read-path-audit-2026-08-20) below rather than listed here, because they are a sequenced workstream (§16.1) and not independent gaps.
+- ~~**`scripts/seed-events.mjs` is broken**~~ — **deleted 2026-08-19.** It wrote to Postgres directly, bypassing everything the ingest API enforces. Replaced by three API-based load scripts documented in [`reference/misc.md`](reference/misc.md#scripts-that-feed-a-running-instance).
 - **`scripts/apply-migrations.mjs` is unsafe** — it writes migration *names* into `drizzle.__drizzle_migrations` where drizzle expects content *hashes*, so a database it has touched will not agree with either real migrator. Not used by any supported path; a candidate for deletion.
+
+---
+
+## Read-path audit (2026-08-20)
+
+Findings from the staging run. Each is evidence for a stage in [`PLAN.md` §16.1](PLAN.md#161-post-beta-workstream-read-path-performance) — the plan carries the ordering and the reasoning, this section carries the measurements.
+
+**The measurements themselves.** 540k events across two projects, on 2 vCPU / 4 GB. Org overview: **1.4–1.6 s**, near-identical for 24h, 7d and 30d ranges (the install is two days old, so all three cover the same data). Host during it: **8% CPU**, memory flat at 27%, load-1 spiking to 2.78 while CPU stayed low — waiting, not computing. Isolated `EXPLAIN (ANALYZE, BUFFERS)` of the top-messages aggregation: **654 ms**, of which the partition scan is 166 ms and the rest is sorting and merging 68,933 groups to return ten of them.
+
+### Structural
+
+- **No read caching anywhere.** `next/cache` appears only as `revalidatePath` after mutations. The app is fully dynamically rendered (the CSP nonce forces it — `PLAN.md` §17), so every viewer recomputes every aggregation on every load. **Load scales with the number of people looking at dashboards, independently of ingest volume** — the multiplier that matters most if other teams start using this.
+- **The org page defeats its own streaming.** `app/[org]/(org-shell)/page.tsx:41` awaits a `Promise.all` of six calls — one of which, `getProjectSummaries`, is itself a `Promise.all` of three — before rendering anything. That is **seven aggregations over `events` per page load** — measured with `pg_stat_statements` on 2026-08-20, each with an identical call count, so there is no N+1 hiding in the fan-out. (This entry originally said eight, counted by hand; the eighth query is the per-project alert-rule lookup, which does not touch `events`.) 1.4 s is time-to-first-pixel. `Suspense` is imported in `OverviewPage.tsx` and has nothing to do.
+- **Connection pool is 10** (`core/db/client.ts:15`). One overview load takes eight slots; two concurrent viewers queue.
+- **Every page has a serialised prologue** — `getCurrentUser` → `getOrgBySlug` → `getMembership` → `getProjectBySlug`, four round trips before any real work, not batched. The project dashboard adds a fifth (`hasAnyEvents`) before its own `Promise.all`.
+
+### Queries
+
+- **`getOrgEnvironments` scans 30 days on every load** ([`overview.service.ts:216`](../features/overview/services/overview.service.ts)) — the interval is hardcoded, so it ignores the selected range, and it exists to populate a dropdown with two values. There is no index on `environment`. The `attribute_key_types` registry already in the codebase is the pattern that would make this constant-time.
+- **Five facet-count aggregations run on every events-page load**, whether or not the filter panel is open.
+- **Top messages groups by `SUBSTRING(message, 1, 200)`** — an expression, so no index can serve it, and the cost tracks the number of *distinct* messages rather than rows.
+- **No indexes on `environment`, `source`, `release`**, all of which are filterable and facetable. Adding them is not free on a table taking a thousand inserts a minute.
+
+### Configuration
+
+- **Postgres is entirely untuned.** `db/Dockerfile` is stock `postgres:16` plus `pg_partman`; neither it, `db/init/`, nor `docker-compose.yml` sets a single parameter. Running defaults: `shared_buffers` **128 MB** on a 4 GB host, `work_mem` **4 MB**. At 540k events the working set was ~130 MB — disk reads had just started appearing (`hit=15261 read=1336`) and the hash aggregate was using 5153 kB of its 8 MB budget (`work_mem` × `hash_mem_multiplier`), i.e. **64% of the way to spilling**.
+- **`pg_stat_statements` is not installed.** The app's own slow-query logger only fires at ≥500 ms, so a 80 ms query called two hundred times a minute is invisible — which is the shape this workload actually has.
+
+### Method caveat, recorded so the numbers are read correctly
+
+An earlier measurement of the same query returned **111 ms**, and it was worthless: the load generator used twelve fixed message strings, so the aggregate saw 275 groups. The generator now spans three cardinality classes (~48% distinct) and the honest figure is 654 ms. Any future comparison — including between storage engines — must use data with realistic message cardinality, or it will flatter whatever is being tested. See [`reference/misc.md`](reference/misc.md#scripts-that-feed-a-running-instance).
 
 ---
 

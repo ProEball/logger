@@ -84,6 +84,30 @@ test.describe.serial("Events list", () => {
         expect(rows).toBeGreaterThan(0);
     });
 
+    test("filter panel loads its counts on open, not with the page", async ({ page }) => {
+        // Added 2026-08-20 with the move to on-demand facets. The five facet
+        // aggregations no longer run with the page, so nothing else in this
+        // suite would notice if the panel came up permanently empty.
+        await login(page, EMAIL, PASS, ORG_SLUG);
+        await page.goto(`/${ORG_SLUG}/${PROJECT_SLUG}/events?range=7d`);
+        await page.waitForSelector("table", { timeout: 10_000 });
+
+        // Nothing facet-shaped exists before the panel is opened: the options
+        // are checkboxes, and the page renders none of them.
+        await expect(page.getByRole("checkbox")).toHaveCount(0);
+
+        await page.getByRole("button", { name: /^Filters/ }).click();
+
+        // After opening, the panel is populated from the server. Asserting on
+        // the option checkboxes rather than on text keeps this from passing
+        // against an empty panel — which is the only failure worth catching
+        // here, and the one a text match would sail straight through.
+        await expect(page.getByRole("checkbox").first()).toBeVisible({ timeout: 10_000 });
+        // Seeded data yields at least: info + error levels, "(unset)" for
+        // environment/source/release, and TypeError + "(unset)" error types.
+        expect(await page.getByRole("checkbox").count()).toBeGreaterThan(3);
+    });
+
     test("GET /api/ingest → events queryable after ingest", async ({ request }) => {
         // Verify events exist in DB via ingest endpoint
         const res = await request.post("/api/ingest", {

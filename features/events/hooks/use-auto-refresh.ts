@@ -6,9 +6,9 @@ import type { AutoRefreshValue } from "@/shared/types/user-preferences.types";
 
 const INTERVAL_MS: Record<AutoRefreshValue, number | null> = {
     off: null,
-    "10s": 10_000,
     "30s": 30_000,
     "60s": 60_000,
+    "5m": 300_000,
 };
 
 export function useAutoRefresh(value: AutoRefreshValue): void {

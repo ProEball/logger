@@ -108,8 +108,14 @@ Tagging a release (`git tag v0.2.0 && git push origin v0.2.0`) runs
 `ghcr.io/<owner>/logger`. On the host, point `IMAGE` in `.env` at the new tag:
 
 ```bash
-IMAGE=ghcr.io/<owner>/logger:v0.2.0
+IMAGE=ghcr.io/<owner>/logger:0.2.0
 ```
+
+> **The image tag has no `v`.** `docker/metadata-action` is configured with
+> `type=semver,pattern={{version}}`, which strips it: git tag `v0.2.0` publishes
+> image tag `0.2.0`. This line said `:v0.2.0` until 2026-08-20 and cost a
+> `manifest unknown` during the first real deploy. Check the package listing on
+> GHCR if in doubt — it shows the tags that actually exist.
 
 ```bash
 docker compose pull
@@ -118,6 +124,38 @@ docker compose up -d
 
 `migrate` re-runs on every `up`, applies anything new, and exits 0 — `app` and
 `worker` do not start until it does.
+
+### Deploying the read-path release (2026-08-20)
+
+Three things about this particular update are worth knowing before running it.
+
+**Postgres is recreated, not just restarted.** `docker-compose.yml` now passes a
+`command:` (for `shared_preload_libraries=pg_stat_statements` and the tuning
+knobs), so `docker compose up -d` replaces the container. The named volume
+carries the data across; the outage is the length of one Postgres start.
+
+**`pg_stat_statements` needs one manual step on an existing install.**
+`db/init/01-extensions.sql` only runs against an empty data directory, so:
+
+```bash
+docker compose exec postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "CREATE EXTENSION IF NOT EXISTS pg_stat_statements"'
+```
+
+**The rollup builds in the background, not during migration.** Migration 0008
+seeds each project's watermark at its oldest event and leaves `rolled_up_to`
+NULL, which readers treat as "nothing rolled up yet" and answer entirely from
+`events` — so the deploy is safe before the job has ever run. The `event-rollup`
+job then catches up **one day of history per run**, once a minute. Watch it
+finish:
+
+```bash
+docker compose exec postgres sh -c \
+  'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT project_id, refresh_from, rolled_up_to FROM rollup_state"'
+```
+
+`rolled_up_to` advancing to within a minute or two of now means the backfill is
+done. It requires the `worker` service to be running — without it the rollup
+never builds and the dashboards silently keep reading raw events.
 
 ### Building on the host
 
@@ -318,7 +356,7 @@ a longer note at the point of temptation.
   checkout recreates the dev Postgres container and points production at the
   dev data volume.
 - **Postgres is not published to the host.** Use
-  `docker compose exec postgres psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"`.
+  `docker compose exec postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"'`. The `sh -c` wrapper is not decoration: `$POSTGRES_USER` lives in `.env`, which Docker Compose reads for the container and your shell does not, so expanding it outside sends an empty `-U` and psql falls back to the OS user — `FATAL: role "root" does not exist`.
   Adding a `ports:` entry would expose it to the internet on most VPS firewall
   setups.
 - **`worker` is pinned to one replica.** pg-boss `singletonKey` already

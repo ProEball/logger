@@ -59,7 +59,7 @@ export function OverviewFilterBar({
     return (
         <div className={styles.bar}>
             {/* Range presets */}
-            <div className={styles.group}>
+            <div className={styles.group} role="group" aria-label="Time range">
                 {PRESETS.map((p) => (
                     <button
                         key={p}
@@ -75,7 +75,7 @@ export function OverviewFilterBar({
             <div className={styles.sep} />
 
             {/* Level chips */}
-            <div className={styles.group}>
+            <div className={styles.group} role="group" aria-label="Levels">
                 {ALL_LEVELS.map((level) => {
                     const active = levels.includes(level);
                     return (
@@ -112,7 +112,7 @@ export function OverviewFilterBar({
             {environments.length > 0 && (
                 <>
                     <div className={styles.sep} />
-                    <div className={styles.group}>
+                    <div className={styles.group} role="group" aria-label="Environments">
                         <button
                             type="button"
                             className={`${styles.pill} ${environment === "" ? styles.pillActive : ""}`}

@@ -11,20 +11,10 @@ import {
     getOrgEnvironments,
     getOrgEventBuckets,
 } from "@/features/overview/services/overview.service";
+import { parseOverviewFilters } from "@/features/overview/utils/overview-filters";
+import { clampTopErrorsWindow } from "@/features/overview/utils/top-errors-window";
+import type { AlertRuleFlags } from "@/features/overview/utils/build-project-rows";
 import { OverviewPage } from "@/features/overview/components/OverviewPage/OverviewPage";
-import type { AlertRule } from "@/core/db/schema";
-import type { ProjectRow } from "@/features/overview/services/overview.service";
-
-const VALID_PRESETS = new Set(["15m", "1h", "6h", "24h", "7d", "30d"]);
-
-const BUCKET_SECS: Record<string, number> = {
-    "15m": 60,
-    "1h":  300,
-    "6h":  900,
-    "24h": 3600,
-    "7d":  3600 * 6,
-    "30d": 3600 * 24,
-};
 
 interface OrgPageProps {
     params: Promise<{ org: string }>;
@@ -43,70 +33,66 @@ export default async function OrgPage({ params, searchParams }: OrgPageProps) {
     const membership = await getMembership(user.id, org.id);
     if (!membership) redirect("/login");
 
-    // Parse filters from URL search params
-    const rawRange = typeof rawSearch.range === "string" ? rawSearch.range : "1h";
-    const rangePreset = VALID_PRESETS.has(rawRange) ? rawRange : "1h";
-    const { from, to } = resolveRange({ type: "preset", value: rangePreset as "1h" });
-    const dateRange = { from, to };
+    const filters = parseOverviewFilters(rawSearch);
+    const dateRange = resolveRange({ type: "preset", value: filters.preset });
 
-    const rawLevels = typeof rawSearch.levels === "string" ? rawSearch.levels : "";
-    const levels = rawLevels ? rawLevels.split(",").filter(Boolean) : [];
-    const environment = typeof rawSearch.env === "string" ? rawSearch.env : "";
-    const environments_filter = environment ? [environment] : undefined;
-
-    // Reconstruct search string for client filter bar
-    const searchString = Object.entries(rawSearch)
-        .filter(([, v]) => typeof v === "string" && v !== "")
-        .map(([k, v]) => `${k}=${encodeURIComponent(v as string)}`)
-        .join("&");
-
+    // Awaited: the project list decides what every other query is scoped to,
+    // and the page has nothing to render without it.
     const projects = await listProjectsForOrg(org.id);
     const projectIds = projects.map((p) => p.id);
 
-    const bucketSecs = BUCKET_SECS[rangePreset] ?? 3600;
+    // NOT awaited. Each query is started here and handed to the section that
+    // draws it, so a slow aggregation delays only its own widget instead of the
+    // whole page (`PLAN.md` §16.1 Stage D). Sections that need the same data
+    // receive the same promise and share one query.
+    //
+    // Starting them here rather than inside the sections also keeps the
+    // cross-feature calls — projects, alert rules — in the route, which §2.3
+    // permits, instead of making `features/overview` import two other features
+    // against §2.1.
+    const summariesPromise = getProjectSummaries(
+        projectIds,
+        dateRange,
+        filters.levelsFilter,
+        filters.environmentsFilter,
+    );
+    // Top errors is the one widget that cannot come from the rollup, so its
+    // cost scales with the rows it matches. Its window is capped independently
+    // of the page's — see `clampTopErrorsWindow`.
+    const topErrorsWindow = clampTopErrorsWindow(filters.preset);
+    const topErrorsPromise = getOrgTopErrors(
+        projectIds,
+        resolveRange({ type: "preset", value: topErrorsWindow.preset }),
+        filters.levelsFilter,
+        filters.environmentsFilter,
+    );
+    const levelBreakdownPromise = getOrgLevelBreakdown(projectIds, dateRange, filters.environmentsFilter);
+    const environmentsPromise = getOrgEnvironments(projectIds);
+    const bucketsPromise = getOrgEventBuckets(projectIds, dateRange, filters.bucketSecs);
 
-    const [summaries, topErrors, levelBreakdown, environments, alertRulesResults, buckets] = await Promise.all([
-        getProjectSummaries(projectIds, dateRange, levels.length > 0 ? levels : undefined, environments_filter),
-        getOrgTopErrors(projectIds, dateRange, levels.length > 0 ? levels : undefined, environments_filter),
-        getOrgLevelBreakdown(projectIds, dateRange, environments_filter),
-        getOrgEnvironments(projectIds),
-        Promise.all(projects.map((p) => listAlertRules(p.id, membership, true))),
-        getOrgEventBuckets(projectIds, dateRange, bucketSecs),
-    ]);
-
-    const alertRulesByProject = new Map<string, AlertRule[]>();
-    projects.forEach((p, i) => {
-        alertRulesByProject.set(p.id, alertRulesResults[i]);
-    });
-
-    const projectRows: ProjectRow[] = projects.map((project) => {
-        const summary = summaries.get(project.id);
-        const rules = alertRulesByProject.get(project.id) ?? [];
-        return {
-            project: { id: project.id, slug: project.slug, name: project.name },
-            totalEvents: summary?.totalEvents ?? 0,
-            errorCount: summary?.errorCount ?? 0,
-            environments: summary?.environments ?? [],
-            topMessage: summary?.topMessage ?? null,
-            topMessageLevel: summary?.topMessageLevel ?? null,
-            firingAlertsCount: rules.filter((r) => r.enabled && r.state === "firing").length,
-            enabledAlertsCount: rules.filter((r) => r.enabled).length,
-        };
+    const alertRulesPromise = Promise.all(
+        projects.map((p) => listAlertRules(p.id, membership, true)),
+    ).then((results) => {
+        const byProject = new Map<string, AlertRuleFlags[]>();
+        projects.forEach((p, i) => byProject.set(p.id, results[i]));
+        return byProject;
     });
 
     return (
         <OverviewPage
             orgSlug={org.slug}
             projects={projects}
-            range={rangePreset}
-            levels={levels}
-            environment={environment}
-            environments={environments}
-            searchString={searchString}
-            projectRows={projectRows}
-            topErrors={topErrors}
-            levelBreakdown={levelBreakdown}
-            buckets={buckets}
+            range={filters.preset}
+            levels={filters.levels}
+            environment={filters.environment}
+            environmentsPromise={environmentsPromise}
+            searchString={filters.searchString}
+            summariesPromise={summariesPromise}
+            alertRulesPromise={alertRulesPromise}
+            topErrorsPromise={topErrorsPromise}
+            topErrorsWindow={topErrorsWindow}
+            levelBreakdownPromise={levelBreakdownPromise}
+            bucketsPromise={bucketsPromise}
         />
     );
 }

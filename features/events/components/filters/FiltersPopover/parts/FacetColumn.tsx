@@ -1,6 +1,7 @@
 "use client";
 
 import { Checkbox } from "@/shared/components/Checkbox/Checkbox";
+import { Skeleton } from "@/shared/components/Skeleton/Skeleton";
 import { LevelBadge, type LogLevel } from "@/shared/components/LevelBadge/LevelBadge";
 import type { FacetOption } from "@/features/events/utils/event-filters.types";
 import styles from "../FiltersPopover.module.scss";
@@ -11,6 +12,8 @@ interface FacetColumnProps<T extends string> {
     selected: T[];
     query: string;
     isLevel?: boolean;
+    /** Counts are fetched when the panel opens; show placeholders until they land. */
+    isLoading?: boolean;
     onToggle: (value: T) => void;
 }
 
@@ -20,10 +23,24 @@ export function FacetColumn<T extends string>({
     selected,
     query,
     isLevel,
+    isLoading,
     onToggle,
 }: FacetColumnProps<T>) {
     const q = query.trim().toLowerCase();
     const visible = q ? options.filter((o) => o.value.toLowerCase().includes(q)) : options;
+
+    if (isLoading) {
+        return (
+            <div className={styles.facetColumn}>
+                <div className={styles.facetTitle}>{title}</div>
+                {[0, 1, 2].map((i) => (
+                    <div key={i} className={styles.facetOption}>
+                        <Skeleton width="70%" />
+                    </div>
+                ))}
+            </div>
+        );
+    }
 
     if (q && visible.length === 0) return null;
 

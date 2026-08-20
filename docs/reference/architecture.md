@@ -10,13 +10,17 @@ shared/         Reusable library code used across features
 db/             Postgres + backup Docker build contexts (not application code)
 docs/           Planning docs, design docs, OPERATIONS.md, and (now) this reference
 e2e/            Playwright end-to-end specs
-scripts/        Build and operational scripts (worker bundling, backup/restore, demo seeding)
+itest/          Support code for the integration suite (`*.itest.ts` files live
+                beside their sources; only the harness lives here)
+bench/          Benchmark support + committed baselines (`*.bench.ts` likewise
+                live beside their sources)
+scripts/        Build and operational scripts (worker bundling, backup/restore, ingest load generators)
 .github/        CI and release workflows
 ```
 
 Deployment artifacts sit at the repo root: `Dockerfile`, `.dockerignore`, `docker-compose.yml` (production), `docker-compose.dev.yml` (Postgres only), `Caddyfile`, `.env.production.example`. See [misc.md#deployment](misc.md#deployment).
 
-`docs/reference/` is also **runtime data**, not just documentation: the in-app help centre reads those eight markdown files off disk. `next.config.ts` declares them via `outputFileTracingIncludes` and `.dockerignore` exempts the directory from its `docs` exclusion — remove either and every help page 500s in production while working in dev.
+`docs/reference/` is also **runtime data**, not just documentation: the in-app help centre reads those nine markdown files off disk. `next.config.ts` declares them via `outputFileTracingIncludes` and `.dockerignore` exempts the directory from its `docs` exclusion — remove either and every help page 500s in production while working in dev.
 
 **Rule enforced by project convention** (`.claude/rules/PROJECT.md`): features must never import from another feature; anything needed by more than one feature must move to `shared/`. All imports use the `@/` alias mapped to the repo root (`@/core/...`, `@/shared/...`, `@/features/...`).
 
@@ -44,9 +48,9 @@ Each feature follows: `actions/` (Server Actions), `components/` (per-component 
 | `auth` | Login, logout, setup wizard (first-run bootstrap), password reset, account/session management |
 | `dashboard` | Per-project metrics aggregation (time-bucketed charts, breakdowns) |
 | `events` | Events list/detail UI, filtering, keyset-paginated query service |
-| `ingest` | The event-ingestion pipeline: API-key auth, validation, attribute-type enforcement, enrichment, insert; also owns the partition-maintenance job |
+| `ingest` | The event-ingestion pipeline: API-key auth, validation, attribute-type enforcement, enrichment, insert. Also owns the derived read-path tables written from that path — the environment registry and the event rollup — and the two maintenance jobs behind them (`partman-maintenance`, `event-rollup`) |
 | `organizations` | Organization CRUD, membership, invitations |
-| `overview` | Org-level (cross-project) rollup dashboard |
+| `overview` | Org-level (cross-project) rollup dashboard. Its search-param parsing, chart bucket widths and per-project row assembly live in `overview/utils/` — they were in `app/[org]/(org-shell)/page.tsx` until 2026-08-20, which put business logic in a route (against `PROJECT.md` §2.3) and left it untestable. The route still performs the data-loading fan-out, which §2.3 permits — and since 2026-08-20 it passes each query down as an **unawaited promise** so the page streams section by section. Keeping the fan-out in the route is deliberate: it composes `projects` and `alerts`, and moving that into the feature would make one feature import two others, against §2.1. |
 | `projects` | Project CRUD with soft delete and per-org unique slugs |
 | `roles` | RBAC role CRUD, permission-matrix UI, system-role seeding |
 
@@ -175,6 +179,9 @@ See [logging.md](logging.md#the-events-table) for the full column list and [Even
 | Table | Key columns | Notes |
 |---|---|---|
 | `attributeKeyTypes` (`attribute_key_types`) | PK `(projectId, key)`, `type` (text: `"string"｜"number"｜"boolean"`, app-enforced only — no DB check constraint), `createdAt` | Records the **first-seen** JSON type per `(project, attribute key)`, used to reject subsequent type-mismatched values at ingest — see [logging.md](logging.md#attribute-type-enforcement) |
+| `eventRollupMinutes` (`event_rollup_minutes`) | PK `(project_id, minute)`, `total` (int), `by_level` / `by_env` (jsonb), `errors` (int, **`GENERATED ALWAYS AS` `error` + `fatal` from `by_level`, STORED**), `computed_at` | Added 2026-08-20 (migration 0008). Per-minute event counts, rebuilt from `events` by the `event-rollup` job — see [logging.md](logging.md#the-rollup). **One row per `(project, minute)`, not per `(project, minute, level, environment)`**: the finer key multiplies rows by dimensions the client controls, and `environment` is unvalidated free text at ingest. Keeping breakdowns inside the row degrades a runaway dimension into a fatter row instead of a row explosion, and the environment keys are capped at 20 with the tail folded into `(other)`. **`by_level` and `by_env` are marginals, not a joint distribution** — a read filtering by level *and* environment at once falls back to `events`. Only minutes that had events get a row |
+| `rollupState` (`rollup_state`) | PK `project_id`, `refresh_from`, `rolled_up_to` (nullable) | Added 2026-08-20. `refresh_from` is the watermark the next rebuild starts at, pulled back at ingest by the batch's **oldest** timestamp — `events` records when an event happened, not when it arrived, so nothing in that table can reveal a late arrival. `rolled_up_to` is the exclusive bound the rollup is complete to, `NULL` until the first run; reads take the rollup below it and raw `events` above, which is what keeps a just-ingested event visible immediately |
+| `projectEnvironments` (`project_environments`) | `projectId` → `projects.id` CASCADE, `environment` (text, **nullable**), `firstSeenAt`, `lastSeenAt`; `UNIQUE NULLS NOT DISTINCT (project_id, environment)`; index on `(project_id, last_seen_at)` | Added 2026-08-20 (migration 0007). Which environments a project has sent events from, maintained at ingest, so the overview's filter bar does not scan `events` — see [logging.md](logging.md#environment-registry). **No primary key**: `environment` is nullable, because an absent environment is itself one of the offered options ("(unset)"), and a nullable column cannot be part of a PK. `NULLS NOT DISTINCT` is what stops Postgres treating every NULL as unique and accumulating one row per ingest request |
 
 ### Migrations
 
@@ -186,7 +193,9 @@ See [logging.md](logging.md#the-events-table) for the full column list and [Even
 | 0003 | **Hand-written raw SQL** — creates the partitioned `events` table, FK, indexes (including GIN indexes not modeled in Drizzle), and configures `pg_partman` |
 | 0004 | `alertRules`, `alertNotifications` |
 | 0005 | Adds `apiKeys.rateLimitPerMin` |
-| 0006 | Adds `attributeKeyTypes` (most recent, 2026-08-12) |
+| 0006 | Adds `attributeKeyTypes` (2026-08-12) |
+| 0007 | Adds `projectEnvironments` (2026-08-20). **Generated, then hand-extended** with a backfill: `INSERT … SELECT project_id, environment, MIN(timestamp), MAX(timestamp) FROM events GROUP BY …`. Without it an existing install loses its environment filter until fresh events arrive from every environment it had, since the registry is written at ingest and knows no history. That statement reads every row of `events` once and will dominate the migration's runtime on a large table |
+| 0008 | Adds `eventRollupMinutes` and `rollupState` (most recent, 2026-08-20). **Generated, then hand-extended** to seed `rollup_state.refresh_from` from each project's oldest event. The rollup itself is deliberately *not* built here: a migration that aggregates the whole events table would make deployment time proportional to data volume, and a failure mid-way would block the release instead of retrying on its own. `rolled_up_to` stays NULL, which readers treat as "nothing rolled up yet" and answer entirely from `events` — that is what makes this safe to deploy before the first job run |
 
 ## Events partitioning
 
@@ -211,6 +220,7 @@ Three jobs are registered (`registerXJob(boss)` calls, in this order):
 | Job | Trigger | What it does |
 |---|---|---|
 | `partman-maintenance` | Cron `0 * * * *` (hourly), `singletonKey` guards against duplicate execution across replicas | `SELECT public.run_maintenance(p_analyze := false)` — advances/prunes `events` partitions. Failure is logged at `ERROR` and swallowed (not rethrown) |
+| `event-rollup` | Cron `* * * * *` (every minute — pg-boss cron has no finer granularity), `singletonKey` so a run that overruns its minute is not doubled up | `runRollupCycle()` in `features/ingest/services/event-rollup.service.ts`: rebuilds `event_rollup_minutes` for every project whose watermark is behind, then prunes rows past retention. Catch-up is capped at **one day per run**, so the first run after migration 0008 — which starts at the oldest event — cannot aggregate the whole table in one job. Rebuild is delete-then-insert per window, not upsert, so a minute whose events have aged out loses its row instead of keeping a stale count. Failure is logged at `ERROR` and swallowed; the effect is increasingly stale dashboards, not a failed request |
 | `alert-evaluation` | Cron `* * * * *` (every minute), `singletonKey` | Calls `evaluateAllEnabled(boss)` — evaluates every enabled alert rule, updates state, enqueues `alert-delivery` jobs for state transitions |
 | `alert-delivery` | On-demand (`boss.work`, no cron — enqueued by the evaluator) | Delivers one webhook notification, `retryLimit: 3, retryDelay: 30, retryBackoff: true` |
 

@@ -6,3 +6,5 @@ export * from "./orgMembership";
 export * from "./invitations";
 export * from "./alerts";
 export * from "./attributeKeyTypes";
+export * from "./projectEnvironments";
+export * from "./eventRollup";
