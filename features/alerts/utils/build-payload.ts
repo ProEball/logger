@@ -9,7 +9,7 @@ import { serializeFilters } from "@/shared/utils/serialize-filters";
 
 const SAMPLE_EVENT_LIMIT = 3;
 
-type SampleEvent = {
+export type SampleEvent = {
     id: string;
     timestamp: string;
     level: string;
@@ -25,10 +25,14 @@ export type AlertPayload = {
     state: string;
     previous_state: string;
     triggered_at: string;
+    // Mirrors the stored `condition` shape exactly (see alert-schemas.ts) so an
+    // integrator reads one shape in the rule and the same one in the webhook.
+    // A `threshold` alias of `count` used to be emitted here as well; it was
+    // undocumented, had no consumer, and was removed 2026-08-19 while the
+    // install was still pre-launch and dropping it broke nothing.
     condition: {
         type: string;
         count: number;
-        threshold: number;
         windowMinutes: number;
     };
     filter: Record<string, unknown>;
@@ -56,6 +60,44 @@ export async function buildPayload(
     const filterParams = serializeFilters(filter);
     const eventsUrl = `${env.APP_URL}/${orgSlug}/${projectSlug}/events?${filterParams.toString()}`;
 
+    return assembleAlertPayload({
+        rule,
+        newState,
+        previousState,
+        triggeredAt,
+        condition,
+        sampleEvents,
+        eventsUrl,
+        isTest,
+    });
+}
+
+/**
+ * The pure half of `buildPayload`: everything after the sample events have been
+ * fetched and the URL built. Exported so its tests exercise this code rather
+ * than a second copy of it — until 2026-08-19 the test file carried its own
+ * reimplementation, which meant a change to the real payload shape could not
+ * fail a test.
+ */
+export function assembleAlertPayload({
+    rule,
+    newState,
+    previousState,
+    triggeredAt,
+    condition,
+    sampleEvents,
+    eventsUrl,
+    isTest,
+}: {
+    rule: Pick<AlertRule, "id" | "name" | "projectId" | "filter">;
+    newState: string;
+    previousState: string;
+    triggeredAt: Date;
+    condition: AlertCondition;
+    sampleEvents: SampleEvent[];
+    eventsUrl: string;
+    isTest: boolean;
+}): AlertPayload {
     return {
         rule_id: rule.id,
         rule_name: rule.name,
@@ -66,7 +108,6 @@ export async function buildPayload(
         condition: {
             type: condition.type,
             count: condition.count,
-            threshold: condition.count,
             windowMinutes: condition.windowMinutes,
         },
         filter: rule.filter as Record<string, unknown>,
