@@ -11,22 +11,90 @@
     },
     "method": "In-page fetch with cache:'no-store', reading response.body chunk by chunk and timestamping each. Navigation timing and paint entries taken from a real navigation. Load generators were running throughout; concurrent ingest is present in every number here.",
     "dashboard_from_arkady_local": {
-        "full_response_ms": { "1h": 714, "6h": 2381, "24h": 9019, "7d": 18420, "30d": 19218 },
+        "full_response_ms": {
+            "1h": 714,
+            "6h": 2381,
+            "24h": 9019,
+            "7d": 18420,
+            "30d": 19218
+        },
         "repeat_within_seconds_30d_ms": 19846,
-        "navigation_30d": { "ttfb_ms": 156, "fcp_ms": 184, "lcp_ms": 18908, "response_end_ms": 18863 },
-        "chunk_profile_30d": { "chunks": 7, "bytes": 90883, "ttfb_ms": 226, "p25_ms": 230, "p50_ms": 21511, "p75_ms": 21518, "done_ms": 21518 }
+        "navigation_30d": {
+            "ttfb_ms": 156,
+            "fcp_ms": 184,
+            "lcp_ms": 18908,
+            "response_end_ms": 18863
+        },
+        "chunk_profile_30d": {
+            "chunks": 7,
+            "bytes": 90883,
+            "ttfb_ms": 226,
+            "p25_ms": 230,
+            "p50_ms": 21511,
+            "p75_ms": 21518,
+            "done_ms": 21518
+        }
     },
     "overview_playground": {
-        "full_response_ms": { "1h": 441, "24h": 4462, "7d": 5456, "30d": 4719 },
+        "full_response_ms": {
+            "1h": 441,
+            "24h": 4462,
+            "7d": 5456,
+            "30d": 4719
+        },
         "repeat_within_seconds_30d_ms": 5230,
-        "navigation_30d": { "ttfb_ms": 125, "fcp_ms": 160, "lcp_ms": 4664, "response_end_ms": 4647 },
-        "chunk_profile_30d": { "chunks": 16, "bytes": 72289, "ttfb_ms": 164, "p25_ms": 194, "p50_ms": 332, "p75_ms": 3805, "done_ms": 4941 }
+        "navigation_30d": {
+            "ttfb_ms": 125,
+            "fcp_ms": 160,
+            "lcp_ms": 4664,
+            "response_end_ms": 4647
+        },
+        "chunk_profile_30d": {
+            "chunks": 16,
+            "bytes": 72289,
+            "ttfb_ms": 164,
+            "p25_ms": 194,
+            "p50_ms": 332,
+            "p75_ms": 3805,
+            "done_ms": 4941
+        }
     },
     "findings": [
         "TTFB and FCP measure nothing on either page: both are ~150-230 ms whether the page streams or not, because Next flushes the document shell before any data is awaited.",
         "LCP is no better: on the overview it lands at 4664 ms against a 4647 ms response end. The largest element is the chart, which arrives last either way.",
         "The chunk arrival profile is the metric that separates them. The dashboard delivers 25% of its bytes at 230 ms and then nothing at all until 21.5 s. The overview delivers 50% by 332 ms and 75% by 3.8 s.",
         "Run-to-run variance on the 30d dashboard is ~12% (19.2 s, 19.8 s, 21.5 s across three runs). Differences below that are noise.",
-        "Two back-to-back 30d loads cost the same on both pages, confirming neither has a cache on this build."
-    ]
+        "Two back-to-back 30d loads cost the same on both pages, confirming neither has a cache on this build.",
+        "Auto-refresh fires twice per tick on the project dashboard. Measured, not inferred: two requests 1-3 ms apart at each tick, ~1.3 s each at the 1h range.",
+        "The visibility-aware pause in useAutoRefresh works: a backgrounded tab produced zero ticks in 75 seconds.",
+        "The auto-refresh control still renders the \"5m\" option as \"5ms\" on this build - the label defect fixed in the branch."
+    ],
+    "auto_refresh": {
+        "measured_at_range": "1h",
+        "interval_setting": "30s",
+        "result": "Two full RSC refreshes per tick, 1-3 ms apart, not deduplicated by Next.",
+        "tick_1": [
+            {
+                "at_ms": 1,
+                "dur_ms": 1343
+            },
+            {
+                "at_ms": 2,
+                "dur_ms": 1390
+            }
+        ],
+        "tick_2": [
+            {
+                "at_ms": 25608,
+                "dur_ms": 1315
+            },
+            {
+                "at_ms": 25611,
+                "dur_ms": 1347
+            }
+        ],
+        "note": "Confirms the duplicate useAutoRefresh registration described in the §16.2 streaming commit: DashboardPage called the hook and also rendered DashboardHeader, which renders AutoRefreshControl, which calls it too. At the 1h range each refresh costs ~1.3 s; at 30d each would cost ~19 s.",
+        "caveat": "document.hidden was overridden to false to run this. An MCP-driven tab is backgrounded, and the hook correctly pauses on a hidden tab - which is itself a positive finding: the visibility-aware pause works in production. The tick interval is therefore measured from a simulated foreground, and the 25.6 s gap is offset by the visibilitychange resume rather than being a clean 30 s.",
+        "restored": "The auto-refresh preference was set back to Off, as found."
+    }
 }
