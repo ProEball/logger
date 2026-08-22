@@ -1,0 +1,30 @@
+{
+    "recorded": "2026-08-22",
+    "target": "stage.proeball.com",
+    "build": "v0.3.0 (020cf17), image ghcr.io/proeball/logger:0.3.0",
+    "compare_with": "2026-08-22-stage-5.5M-v0.2.0.json",
+    "note": "After deploying §16.2. Same host, same corpus, same method: in-page fetch with cache:'no-store', response body read chunk by chunk and each chunk timestamped.",
+    "dashboard_from_arkady_local": {
+        "chunk_profile_30d_cold": { "chunks": 14, "bytes": 112409, "ttfb_ms": 183, "p25_ms": 197, "p50_ms": 205, "p75_ms": 290, "done_ms": 17378 },
+        "chunk_profile_30d_warm": [
+            { "chunks": 11, "ttfb_ms": 229, "p50_ms": 274, "done_ms": 292 },
+            { "chunks": 17, "ttfb_ms": 197, "p50_ms": 385, "done_ms": 408 }
+        ],
+        "cold_by_range_done_ms": { "1h": 252, "6h": 2409, "24h": 7008, "7d": 17469, "30d": 17378 },
+        "cold_by_range_p50_ms": { "1h": 235, "6h": 217, "24h": 172, "7d": 184, "30d": 205 }
+    },
+    "overview_playground": {
+        "chunk_profile_30d": { "chunks": 19, "bytes": 74128, "ttfb_ms": 199, "p50_ms": 431, "p75_ms": 537, "done_ms": 583 },
+        "caveat": "Almost certainly a cache hit — the overview is cached in this build too, and 583 ms is far below its 4941 ms cold figure on v0.2.0."
+    },
+    "verdict": {
+        "streaming": "The headline result. p50 went from 21511 ms to 205 ms and p75 from 21518 ms to 290 ms at 30d. Three quarters of the page now arrives in under 300 ms; only the topMessages tail waits.",
+        "cache": "Repeat loads inside the TTL complete in 292 and 408 ms against 19846 ms before — roughly 60x.",
+        "full_response": "17378 ms at 30d against 19218 / 19846 / 21518 ms before. A drop, but run-to-run variance was measured at ~12% on this page, so this single figure is weak evidence on its own. It is consistent with the ~6.2 s of database work that pg_stat_statements said the rollup removes, and not proof of it.",
+        "auto_refresh_ticks": "NOT MEASURED. See open_questions."
+    },
+    "open_questions": [
+        "The auto-refresh tick count could not be re-measured. An automated tab is backgrounded and the hook correctly pauses on document.hidden; the override used before the deploy stopped holding across the tool's evaluation timeouts, and the tooling redacts query strings, so the dashboard's own refresh could not be separated from the events-page prefetch by URL. The pre-deploy figure of two refreshes per tick stands on duration grounds (both were ~1.3 s, which a prefetch of the events page is not). The post-deploy figure is simply unknown.",
+        "Preference writes stopped persisting partway through the session. The first change after the deploy (Off -> 30s) persisted; every later change (30s -> Off, 30s -> 60s) did not, verified by full page reloads on a different route. Cause not established — it could be the app or it could be this automated session, and guessing between them is not worth the words. AutoRefreshControl discards the { error } that updatePreferencesAction returns, so neither a user nor an operator would ever see which."
+    ]
+}
