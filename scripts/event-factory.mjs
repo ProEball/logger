@@ -143,3 +143,35 @@ export function parseRetryAfterMs(headerValue, fallbackMs = 60_000) {
     if (!Number.isFinite(seconds) || seconds < 0) return fallbackMs;
     return Math.round(seconds * 1000);
 }
+
+// ── credentials ──────────────────────────────────────────────────────────────
+
+/**
+ * Which environment variable holds each key slot. Two slots exist because one
+ * generator drives one project, and an organisation overview only looks like a
+ * real one when more than a single project is producing traffic.
+ */
+export const API_KEY_SLOTS = {
+    1: "LOGGER_API_KEY",
+    2: "LOGGER_API_KEY_2",
+};
+
+/**
+ * Resolve which key a run should use. Returns the variable *name* alongside its
+ * value, so a missing key can name the variable to set rather than reporting
+ * "API_KEY is missing" when there are two of them.
+ *
+ * An unrecognised slot throws instead of falling back to slot 1. A typo would
+ * otherwise send one project's load into another, and the events would look
+ * entirely plausible on arrival — the mistake would surface as a confusing
+ * dashboard days later rather than as an error at the point it was made.
+ */
+export function resolveApiKey(env, slot = "1") {
+    const name = API_KEY_SLOTS[String(slot)];
+    if (!name) {
+        throw new Error(
+            `Unknown API key slot "${slot}". Known slots: ${Object.keys(API_KEY_SLOTS).join(", ")}.`,
+        );
+    }
+    return { name, key: env[name] ?? "" };
+}

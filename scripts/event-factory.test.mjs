@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
+    API_KEY_SLOTS,
     buildEvent,
     buildMessage,
     MESSAGE_TEMPLATES,
     parseRetryAfterMs,
     pick,
     randomizeAttributes,
+    resolveApiKey,
     weightedLevel,
 } from "./event-factory.mjs";
 
@@ -184,5 +186,49 @@ describe("parseRetryAfterMs", () => {
 
     it("falls back on a negative value", () => {
         expect(parseRetryAfterMs("-1", 5_000)).toBe(5_000);
+    });
+});
+
+describe("resolveApiKey", () => {
+    const ENV = { LOGGER_API_KEY: "lgr_one", LOGGER_API_KEY_2: "lgr_two" };
+
+    it("defaults to slot 1", () => {
+        expect(resolveApiKey(ENV)).toEqual({ name: "LOGGER_API_KEY", key: "lgr_one" });
+    });
+
+    it("reads slot 2 from its own variable", () => {
+        expect(resolveApiKey(ENV, "2")).toEqual({ name: "LOGGER_API_KEY_2", key: "lgr_two" });
+    });
+
+    it("accepts a numeric slot as well as a string one", () => {
+        // process.argv gives strings, but a caller passing 2 should not get slot 1.
+        expect(resolveApiKey(ENV, 2).key).toBe("lgr_two");
+    });
+
+    it("returns an empty key rather than undefined when the variable is unset", () => {
+        expect(resolveApiKey({}, "2")).toEqual({ name: "LOGGER_API_KEY_2", key: "" });
+    });
+
+    it("names the variable that is missing, so the message says what to set", () => {
+        expect(resolveApiKey({}, "2").name).toBe("LOGGER_API_KEY_2");
+    });
+
+    // Falling back to slot 1 here would send one project's load into another,
+    // and the events would look entirely plausible on arrival.
+    it.each([["3"], ["0"], [""], ["two"], [null]])("throws on the unknown slot %s", (slot) => {
+        expect(() => resolveApiKey(ENV, slot)).toThrow(/Unknown API key slot/);
+    });
+
+    it("lists the valid slots in the error, so the fix is in the message", () => {
+        // The slot is what a caller types, so the slot is what the message lists.
+        expect(() => resolveApiKey(ENV, "3")).toThrow(/Known slots: 1, 2/);
+    });
+
+    it("covers every declared slot", () => {
+        // Asserts the derivation rather than the contents: adding a third slot
+        // to API_KEY_SLOTS must not leave this suite silently unchanged.
+        for (const [slot, name] of Object.entries(API_KEY_SLOTS)) {
+            expect(resolveApiKey({ [name]: "lgr_x" }, slot)).toEqual({ name, key: "lgr_x" });
+        }
     });
 });

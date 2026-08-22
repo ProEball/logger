@@ -8,8 +8,12 @@
  * ~70 ms for a single request, so it is about seventy times cheaper per event.
  *
  * Usage:
- *   LOGGER_API_KEY=lgr_xxx node scripts/event-one-by-key.mjs
- *   PowerShell: $env:LOGGER_API_KEY="lgr_xxx"; node scripts/event-one-by-key.mjs
+ *   node scripts/event-one-by-key.mjs      → the key in LOGGER_API_KEY
+ *   node scripts/event-one-by-key.mjs 2    → the key in LOGGER_API_KEY_2
+ *
+ * Both are read from .env.local, which is gitignored. Two slots exist because
+ * one generator drives one project, and an org overview only looks like a real
+ * one when more than a single project is producing traffic.
  *
  * ⚠️  Rate limiting is per API key (`RATE_LIMIT_PER_MIN` in .env, default
  *     1000). MAX_PER_MINUTE must stay under it.
@@ -18,7 +22,16 @@
  */
 
 import { pathToFileURL } from "node:url";
-import { buildEvent, parseRetryAfterMs, sleep } from "./event-factory.mjs";
+import { config } from "dotenv";
+import { buildEvent, parseRetryAfterMs, resolveApiKey, sleep } from "./event-factory.mjs";
+
+/** True when this file was run directly; false when a test imports it. */
+const IS_ENTRYPOINT =
+    Boolean(process.argv[1]) && import.meta.url === pathToFileURL(process.argv[1]).href;
+
+// Read the local, gitignored env file — but only when actually running. A test
+// importing this module has no business reading the developer's secrets.
+if (IS_ENTRYPOINT) config({ path: ".env.local", quiet: true });
 
 // ── configuration ────────────────────────────────────────────────────────────
 
@@ -26,15 +39,17 @@ import { buildEvent, parseRetryAfterMs, sleep } from "./event-factory.mjs";
 export const BASE_URL = process.env.LOGGER_URL ?? "https://stage.proeball.com";
 
 /**
- * API key for the target project, shown once at creation time in the UI.
- * Supply it as LOGGER_API_KEY rather than editing this file — the repository is
- * public, and a committed key is a leaked key. `scripts/demo-live.mjs` reads the
- * same variable.
+ * API key for the target project, shown once at creation time in the UI. It
+ * lives in .env.local as LOGGER_API_KEY, or LOGGER_API_KEY_2 for the second
+ * project; the positional argument picks which one (see Usage above).
+ *
+ * No default, and never a literal here. A key baked into a committed file is a
+ * published key: this repository is public, and the literal survives its own
+ * deletion — it stays in the history and in every fork and cache that history
+ * reaches.
  */
-// No default. A key baked in here is a key published: this repository is
-// public, and a literal in a committed file survives its own deletion — it
-// stays in the history and in the forks and caches that history reaches.
-export const API_KEY = process.env.LOGGER_API_KEY ?? "";
+const KEY_SLOT = IS_ENTRYPOINT ? (process.argv[2] ?? "1") : "1";
+export const { name: API_KEY_NAME, key: API_KEY } = resolveApiKey(process.env, KEY_SLOT);
 
 /**
  * The event to send. Edit freely — every field the ingest schema accepts is
@@ -146,7 +161,10 @@ async function sendOne(event) {
 
 async function main() {
     if (!API_KEY || !API_KEY.startsWith("lgr_")) {
-        console.error("API_KEY is missing or does not look like a Logger key (lgr_...).");
+        console.error(
+            `${API_KEY_NAME} is missing or does not look like a Logger key (lgr_...). ` +
+                "Set it in .env.local.",
+        );
         process.exit(1);
     }
 
@@ -172,7 +190,7 @@ async function main() {
     let windowAccepted = 0;
 
     console.log(
-        `event-one-by-key → ${BASE_URL}\n` +
+        `event-one-by-key → ${BASE_URL} (${API_KEY_NAME})\n` +
             `  rate        ${MIN_PER_MINUTE}–${MAX_PER_MINUTE} events/min, ` +
             `one request each, oscillating over ${(WAVE_PERIOD_MS / 60_000).toFixed(0)} min\n` +
             `  total       ${TOTAL_EVENTS === Infinity ? "unlimited (Ctrl-C to stop)" : TOTAL_EVENTS.toLocaleString()}\n` +
@@ -264,6 +282,6 @@ async function main() {
 
 // Only run when executed directly — see events-batch-by-key.mjs for why this
 // uses pathToFileURL rather than string concatenation.
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (IS_ENTRYPOINT) {
     await main();
 }

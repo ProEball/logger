@@ -140,7 +140,7 @@ components/
 
 - **Reality check (recounted 2026-08-20):** `npm run test` runs **53 files / 568 tests**. Of those, 49 are `.test.ts` beside their source under `core/`, `features/` and `shared/`; three are `.test.mjs` under `scripts/` (the load generators — `vitest.config.ts` does not exclude them) and one sits under `app/`. There are still **no** component tests: zero `.test.tsx` in the tree. Do not read the existing layout as the target.
 
-  *Updated 2026-08-21:* `npm run test` now runs **59 files / 644 tests** and `npm run test:it` **4 files / 102 tests**. `features/dashboard/services/aggregations.service.ts` — flagged here as uncovered since 2026-08-20 — is covered by 26 integration tests, which is what finally allowed the two text-alias `ORDER BY` defects in it to be fixed.
+  *Updated 2026-08-21:* `npm run test` now runs **59 files / 656 tests** and `npm run test:it` **4 files / 102 tests**. `features/dashboard/services/aggregations.service.ts` — flagged here as uncovered since 2026-08-20 — is covered by 26 integration tests, which is what finally allowed the two text-alias `ORDER BY` defects in it to be fixed.
 
 ## 12. Styling
 

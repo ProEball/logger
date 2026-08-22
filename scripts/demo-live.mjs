@@ -2,14 +2,23 @@
  * Demo live event stream — sends events through the ingest HTTP API in real time.
  *
  * Usage:
- *   LOGGER_API_KEY=lk_xxx node scripts/demo-live.mjs
- *   LOGGER_API_KEY=lk_xxx node scripts/demo-live.mjs --url http://localhost:3000
- *   LOGGER_API_KEY=lk_xxx node scripts/demo-live.mjs --burst 5   # events per tick
+ *   node scripts/demo-live.mjs
+ *   node scripts/demo-live.mjs --url http://localhost:3000
+ *   node scripts/demo-live.mjs --burst 5   # events per tick
+ *
+ * The key comes from LOGGER_API_KEY in .env.local (gitignored); --key overrides
+ * it for a one-off run. This script uses slot 1 only — the two load generators
+ * take a slot argument, a demo has one project to show.
  *
  * Press Ctrl+C to stop.
  */
 
 import { randomUUID } from "crypto";
+import { config } from "dotenv";
+
+// The keys live in .env.local so they are typed once rather than into every
+// terminal — which is how one of them ended up committed to a script.
+config({ path: ".env.local", quiet: true });
 
 // ── CLI / env ──────────────────────────────────────────────────────────────────
 
@@ -28,7 +37,7 @@ const MAX_DELAY_MS = 1800;
 if (!API_KEY) {
     console.error(
         "\n  Missing API key.\n" +
-        "  Set LOGGER_API_KEY=lk_xxx before running, or pass --key lk_xxx\n"
+        "  Set LOGGER_API_KEY in .env.local, or pass --key lgr_xxx for a one-off run.\n"
     );
     process.exit(1);
 }
