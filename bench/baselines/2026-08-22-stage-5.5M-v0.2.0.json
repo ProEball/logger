@@ -67,7 +67,12 @@
         "Two back-to-back 30d loads cost the same on both pages, confirming neither has a cache on this build.",
         "Auto-refresh fires twice per tick on the project dashboard. Measured, not inferred: two requests 1-3 ms apart at each tick, ~1.3 s each at the 1h range.",
         "The visibility-aware pause in useAutoRefresh works: a backgrounded tab produced zero ticks in 75 seconds.",
-        "The auto-refresh control still renders the \"5m\" option as \"5ms\" on this build - the label defect fixed in the branch."
+        "The auto-refresh control still renders the \"5m\" option as \"5ms\" on this build - the label defect fixed in the branch.",
+        "topMessages confirmed as the project dashboard: 11784 ms per call at 30d. The hypothesis held.",
+        "The rollup is worth 20-40x on real data, measured on the same host in the same minute: rollup-backed reads cost 54-197 ms where the raw-events equivalents cost 1966-4192 ms.",
+        "topSources costs 2701 ms per call at 30d against 11 ms on the 500k local corpus. §16.2 deferred the by_source rollup column until it was measured rather than argued from symmetry; this is that number, and it argues for adding it.",
+        "The write path is free: 2177 event inserts cost 485 ms in total, 0.2 ms each. Concurrent ingest can be struck off the list of candidate explanations for slow reads, where it had been since the first droplet audit.",
+        "PREDICTION CORRECTED before the deploy: the pre-deploy prediction said full page time would barely move because the rollup does not touch topMessages. That is wrong. eventsPerMinute (4192 ms) and levelBreakdown (1966 ms) both move to the rollup and both are large here, so ~6.2 s of database work per load disappears. The after-run should test a drop, not a flat line."
     ],
     "auto_refresh": {
         "measured_at_range": "1h",
@@ -96,5 +101,89 @@
         "note": "Confirms the duplicate useAutoRefresh registration described in the §16.2 streaming commit: DashboardPage called the hook and also rendered DashboardHeader, which renders AutoRefreshControl, which calls it too. At the 1h range each refresh costs ~1.3 s; at 30d each would cost ~19 s.",
         "caveat": "document.hidden was overridden to false to run this. An MCP-driven tab is backgrounded, and the hook correctly pauses on a hidden tab - which is itself a positive finding: the visibility-aware pause works in production. The tick interval is therefore measured from a simulated foreground, and the 25.6 s gap is offset by the visibilitychange resume rather than being a clean 30 s.",
         "restored": "The auto-refresh preference was set back to Off, as found."
+    },
+    "pg_stat_statements": {
+        "window": "75 s on v0.2.0; both the org overview and the project dashboard were loaded during it, at range=30d",
+        "unit": "mean_ms is per call",
+        "caveat": "The two pages were loaded inside the same window, so their queries competed with each other. Per-call means are sound; inferring page wall-clock by summing them is not.",
+        "message_keyed_raw_events": [
+            {
+                "query": "SELECT SUBSTRING(message, $5, $6) ...",
+                "calls": 2,
+                "mean_ms": 11784,
+                "attributed": "dashboard topMessages"
+            },
+            {
+                "query": "WITH ranked AS (SELECT project_id::text, ...",
+                "calls": 3,
+                "mean_ms": 4931,
+                "attributed": "overview getProjectTopMessages"
+            },
+            {
+                "query": "SELECT SUBSTRING(message, $6, $7) ...",
+                "calls": 3,
+                "mean_ms": 3724,
+                "attributed": "overview getOrgTopErrors (clamped to 24h)"
+            }
+        ],
+        "dashboard_raw_events_movable_to_rollup": [
+            {
+                "query": "SELECT to_timestamp(floor(extract($4 from timestamp) / $5) * $6) AS ts, ...",
+                "calls": 2,
+                "mean_ms": 4192,
+                "attributed": "dashboard eventsPerMinute"
+            },
+            {
+                "query": "SELECT level, COUNT(*)::text AS count FROM events WHERE project_id = $1",
+                "calls": 2,
+                "mean_ms": 1966,
+                "attributed": "dashboard levelBreakdown"
+            }
+        ],
+        "dashboard_raw_events_not_movable_today": [
+            {
+                "query": "SELECT COALESCE(source, $5) AS source, COUNT(*)::text AS count FROM events",
+                "calls": 2,
+                "mean_ms": 2701,
+                "attributed": "dashboard topSources - needs a by_source rollup column"
+            }
+        ],
+        "rollup_backed_reads_overview": [
+            {
+                "query": "WITH rolled AS (SELECT project_id, key AS env FROM event_...",
+                "calls": 3,
+                "mean_ms": 197
+            },
+            {
+                "query": "WITH rolled AS (SELECT key AS level, SUM(value::int)::int AS n ...",
+                "calls": 3,
+                "mean_ms": 148
+            },
+            {
+                "query": "WITH rolled AS (SELECT project_id, minute AS ts, total, errors ...",
+                "calls": 3,
+                "mean_ms": 54
+            }
+        ],
+        "write_path": [
+            {
+                "query": "insert into events",
+                "calls": 2177,
+                "total_ms": 485,
+                "mean_ms": 0
+            },
+            {
+                "query": "insert into attribute_key_types",
+                "calls": 2177,
+                "total_ms": 244,
+                "mean_ms": 0
+            },
+            {
+                "query": "insert into rollup_state",
+                "calls": 2178,
+                "total_ms": 157,
+                "mean_ms": 0
+            }
+        ]
     }
 }
