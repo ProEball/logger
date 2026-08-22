@@ -18,6 +18,7 @@ vi.mock("@/core/db/client", () => ({ db: { update: updateSpy } }));
 vi.mock("@/core/auth/server", () => ({ getCurrentUser }));
 
 import { updatePreferencesAction } from "./update-preferences.action";
+import { AUTO_REFRESH_VALUES, THEME_VALUES } from "@/shared/types/user-preferences.types";
 
 /** Flattens a Drizzle SQL fragment to a comparable string. */
 function sqlToText(fragment: unknown): string {
@@ -100,6 +101,49 @@ describe("updatePreferencesAction", () => {
             await updatePreferencesAction({ theme: "dark" });
             expect(whereSpy).toHaveBeenCalledTimes(1);
             expect(updateSpy).toHaveBeenCalledTimes(1);
+        });
+    });
+
+    /**
+     * The schema is built from AUTO_REFRESH_VALUES / THEME_VALUES rather than
+     * restating them. Before 2026-08-20 it restated them, and the copies drifted:
+     * `5m` reached the type and the control but not the enum, so the write was
+     * rejected while Redux had already flipped. The setting looked applied and
+     * reverted on the next load.
+     *
+     * These assert the schema tracks the shared list, which is the property that
+     * broke — not that the list has any particular contents today.
+     */
+    describe("accepts exactly the values the shared type allows", () => {
+        it.each(AUTO_REFRESH_VALUES)("accepts autoRefresh %s", async (value) => {
+            const result = await updatePreferencesAction({ autoRefresh: value });
+
+            expect(result.error).toBeUndefined();
+            expect(updateSpy).toHaveBeenCalled();
+        });
+
+        it.each(THEME_VALUES)("accepts theme %s", async (value) => {
+            const result = await updatePreferencesAction({ theme: value });
+
+            expect(result.error).toBeUndefined();
+        });
+
+        /**
+         * `10s` is migrated on *read* by `parseAutoRefresh`, but nothing emits it
+         * any more, so a client sending it is a client sending a stale value.
+         */
+        it("rejects the retired 10s interval", async () => {
+            const result = await updatePreferencesAction({ autoRefresh: "10s" });
+
+            expect(result.error).toBeDefined();
+            expect(updateSpy).not.toHaveBeenCalled();
+        });
+
+        it("rejects a value that is in neither list", async () => {
+            const result = await updatePreferencesAction({ autoRefresh: "1h" });
+
+            expect(result.error).toBeDefined();
+            expect(updateSpy).not.toHaveBeenCalled();
         });
     });
 });

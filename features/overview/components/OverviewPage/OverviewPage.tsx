@@ -10,7 +10,8 @@ import type {
     OrgEventBucket,
     OrgLevelCount,
     OrgTopError,
-    ProjectEventSummary,
+    ProjectStats,
+    ProjectTopMessage,
 } from "@/features/overview/services/overview.service";
 import type { AlertRuleFlags, OverviewProject } from "@/features/overview/utils/build-project-rows";
 import type { TopErrorsWindow } from "@/features/overview/utils/top-errors-window";
@@ -42,11 +43,16 @@ interface OverviewPageProps {
     orgSlug: string;
     projects: OverviewProject[];
     range: string;
-    levels: string[];
     environment: string;
     environmentsPromise: Promise<string[]>;
     searchString: string;
-    summariesPromise: Promise<Map<string, ProjectEventSummary>>;
+    statsPromise: Promise<Map<string, ProjectStats>>;
+    /**
+     * Passed down **unawaited** all the way to the per-project `Suspense`
+     * boundaries in `OverviewProjectsPanel`. Awaiting it anywhere above them
+     * would undo the split it exists for.
+     */
+    topMessagesPromise: Promise<Map<string, ProjectTopMessage>>;
     alertRulesPromise: Promise<Map<string, AlertRuleFlags[]>>;
     topErrorsPromise: Promise<OrgTopError[]>;
     topErrorsWindow: TopErrorsWindow;
@@ -57,15 +63,13 @@ interface OverviewPageProps {
 /** The filter bar needs the environment list, which is now a registry lookup. */
 async function FilterBarSection({
     range,
-    levels,
     environment,
     environmentsPromise,
     searchString,
-}: Pick<OverviewPageProps, "range" | "levels" | "environment" | "environmentsPromise" | "searchString">) {
+}: Pick<OverviewPageProps, "range" | "environment" | "environmentsPromise" | "searchString">) {
     return (
         <OverviewFilterBar
             range={range}
-            levels={levels}
             environment={environment}
             environments={await environmentsPromise}
             searchString={searchString}
@@ -77,11 +81,11 @@ export function OverviewPage({
     orgSlug,
     projects,
     range,
-    levels,
     environment,
     environmentsPromise,
     searchString,
-    summariesPromise,
+    statsPromise,
+    topMessagesPromise,
     alertRulesPromise,
     topErrorsPromise,
     topErrorsWindow,
@@ -93,7 +97,6 @@ export function OverviewPage({
             <Suspense fallback={<div className={styles.filterBarFallback} />}>
                 <FilterBarSection
                     range={range}
-                    levels={levels}
                     environment={environment}
                     environmentsPromise={environmentsPromise}
                     searchString={searchString}
@@ -104,7 +107,7 @@ export function OverviewPage({
                 <Suspense fallback={<CardSkeleton />}>
                     <OverviewKpiRow
                         projects={projects}
-                        summariesPromise={summariesPromise}
+                        statsPromise={statsPromise}
                         alertRulesPromise={alertRulesPromise}
                         bucketsPromise={bucketsPromise}
                     />
@@ -118,7 +121,8 @@ export function OverviewPage({
                     <OverviewProjectsPanel
                         projects={projects}
                         orgSlug={orgSlug}
-                        summariesPromise={summariesPromise}
+                        statsPromise={statsPromise}
+                        topMessagesPromise={topMessagesPromise}
                         alertRulesPromise={alertRulesPromise}
                     />
                 </Suspense>

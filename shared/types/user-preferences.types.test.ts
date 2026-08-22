@@ -3,6 +3,7 @@ import {
     DEFAULT_PREFERENCES,
     parseAutoRefresh,
     parsePreferences,
+    splitAutoRefresh,
 } from "@/shared/types/user-preferences.types";
 
 describe("parseAutoRefresh", () => {
@@ -56,5 +57,31 @@ describe("parsePreferences", () => {
             theme: DEFAULT_PREFERENCES.theme,
             autoRefresh: "5m",
         });
+    });
+});
+
+describe("splitAutoRefresh", () => {
+    it.each([
+        ["30s", "30", "s"],
+        ["60s", "60", "s"],
+    ] as const)("splits %s into an amount and a seconds unit", (value, amount, unit) => {
+        expect(splitAutoRefresh(value)).toEqual({ amount, unit });
+    });
+
+    /**
+     * The regression this function exists for. The label used to be built by
+     * stripping "s" from the value and appending it back from a seconds-only
+     * template, so `5m` rendered as **"5ms"** from the day it was added
+     * (2026-08-20). Nothing failed: a label assembled inline in a component is
+     * a branch no test can reach.
+     */
+    it("treats a minutes value as minutes, not as seconds", () => {
+        expect(splitAutoRefresh("5m")).toEqual({ amount: "5", unit: "m" });
+    });
+
+    it("never leaves the unit inside the amount", () => {
+        for (const value of ["30s", "60s", "5m"] as const) {
+            expect(splitAutoRefresh(value).amount).toMatch(/^[0-9]+$/);
+        }
     });
 });

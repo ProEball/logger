@@ -92,6 +92,21 @@ Covered in depth in [users-roles.md](users-roles.md). Summary of the security-re
 - Fine-grained authorization is enforced per-page and per-Server-Action via `getMembership()` + `assertPermission()`/`assertOwner()`, never centralized in middleware. This means adding a new mutating action without remembering to call `assertPermission` is a real risk — there's no framework-level backstop that would catch a missing check.
 - The owner flag unconditionally bypasses all permission checks, including permissions (`org.delete`, `roles.manage`) that no role can ever hold — by design, but worth knowing when reasoning about worst-case blast radius of a compromised owner account.
 
+### Cached reads and the scope in the cache key
+
+Added 2026-08-20 with `features/overview/services/overview-cache.service.ts`, which holds overview query results in process for 30 seconds and serves them to every reader of an organization. Extended 2026-08-21 to the project dashboard (`features/dashboard/services/dashboard-cache.service.ts`), where the scope in the key is a single project id rather than a list. Both build their keys with the same `shared/utils/query-cache-key.ts`.
+
+**A shared cache turns its key into an authorization boundary.** Anything the key omits is a dimension along which one reader can be served another reader's answer, and it fails *silently* — there is no error, just the wrong rows. The key therefore includes the full `projectIds` scope alongside the range preset and every filter; `shared/utils/query-cache-key.test.ts` asserts the separation for disjoint scopes, for a subset against its superset, and for an empty scope; `overview-cache.service.test.ts` and `dashboard-cache.service.test.ts` each assert it end to end by checking that a differing scope actually reaches the database again.
+
+On the **project dashboard** the scope is not theoretical even today: two projects are two different answers, and a key that omitted the project id would serve one project's messages, sources and error counts under another project's URL. `dashboard-cache.service.test.ts` asserts that a differing project id reaches the database again.
+
+On the **org overview** it remains defence in depth: `listProjectsForOrg()` is not permission-filtered, so all members of an organization share one scope and there is no visibility difference to leak. It is in the key because the day per-project visibility is introduced, a key without it would not fail loudly — it would start cross-serving projects.
+
+Two related details:
+
+- Keys are built with `JSON.stringify`, not by joining on a separator. Environment names arrive from the ingest API as arbitrary strings, so a value may contain the separator: joined on `|`, the single environment `a|b` and the filter pair `["a","b"]` collapse to one key, which is a filter bypass rather than a cosmetic collision. Covered by tests over `| , : " [ ]`.
+- The cache is per process and unauthenticated by nature — it stores whatever the query returned. It is **not** a substitute for the per-page `getMembership()` check, which still runs on every request before any cached value is read.
+
 ## Environment variable validation
 
 As of 2026-08-13, **8** variables are schema-validated and fail the app at boot if invalid: `DATABASE_URL`, `AUTH_SECRET`, `APP_URL`, `NODE_ENV`, `LOG_LEVEL`, `WORKER_IN_PROCESS`, `RATE_LIMIT_PER_MIN`, `ALLOW_PRIVATE_WEBHOOK_TARGETS` (see [stack.md](stack.md#environment-variables)). Operational tuning config is now covered alongside secret-bearing config; only build metadata (`NEXT_PUBLIC_BUILD_*`) and the test-only `E2E_MODE` remain raw `process.env` reads.

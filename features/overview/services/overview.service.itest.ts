@@ -4,7 +4,8 @@ import {
     getOrgEventBuckets,
     getOrgLevelBreakdown,
     getOrgTopErrors,
-    getProjectSummaries,
+    getProjectStats,
+    getProjectTopMessages,
 } from "@/features/overview/services/overview.service";
 import {
     ALPHA,
@@ -39,21 +40,21 @@ beforeAll(async () => {
     range = canonicalRange(anchor);
 });
 
-// ── getProjectSummaries ──────────────────────────────────────────────────────
+// ── getProjectStats ──────────────────────────────────────────────────────────
 
-describe("getProjectSummaries", () => {
+describe("getProjectStats", () => {
     it("returns an empty map for no projects without querying", async () => {
-        expect(await getProjectSummaries([], range)).toEqual(new Map());
+        expect(await getProjectStats([], range)).toEqual(new Map());
     });
 
     it("counts every event in the range per project", async () => {
-        const map = await getProjectSummaries(ORG_A_PROJECTS, range);
+        const map = await getProjectStats(ORG_A_PROJECTS, range);
         expect(map.get(ALPHA)?.totalEvents).toBe(34); // 1+12+10+1+1+2+2+3+2
         expect(map.get(BETA)?.totalEvents).toBe(17); // 9+6+2
     });
 
     it("counts fatal as an error", async () => {
-        const map = await getProjectSummaries(ORG_A_PROJECTS, range);
+        const map = await getProjectStats(ORG_A_PROJECTS, range);
         expect(map.get(ALPHA)?.errorCount).toBe(20); // 10 boom +1 fatal +2+2 long +3+2 rare
         expect(map.get(BETA)?.errorCount).toBe(9);
     });
@@ -61,42 +62,35 @@ describe("getProjectSummaries", () => {
     it("omits a project with no events entirely, rather than returning zeros", async () => {
         // The caller (`buildProjectRows`) is what turns a missing entry into a
         // zeroed row; the service itself simply has no row to return.
-        const map = await getProjectSummaries(ORG_A_PROJECTS, range);
+        const map = await getProjectStats(ORG_A_PROJECTS, range);
         expect(map.has(QUIET)).toBe(false);
     });
 
     it("excludes an event sitting exactly on the exclusive upper bound", async () => {
         // "alpha at upper bound" is at anchor+60m, which is `to`.
-        const map = await getProjectSummaries(ORG_A_PROJECTS, range);
+        const map = await getProjectStats(ORG_A_PROJECTS, range);
         expect(map.get(ALPHA)?.totalEvents).toBe(34);
 
         const wider = { from: range.from, to: new Date(range.to.getTime() + 1) };
-        expect((await getProjectSummaries(ORG_A_PROJECTS, wider)).get(ALPHA)?.totalEvents).toBe(35);
+        expect((await getProjectStats(ORG_A_PROJECTS, wider)).get(ALPHA)?.totalEvents).toBe(35);
     });
 
     it("includes an event sitting exactly on the inclusive lower bound", async () => {
         const later = { from: new Date(range.from.getTime() + 1), to: range.to };
         // Losing only the anchor marker itself.
-        expect((await getProjectSummaries(ORG_A_PROJECTS, later)).get(ALPHA)?.totalEvents).toBe(33);
+        expect((await getProjectStats(ORG_A_PROJECTS, later)).get(ALPHA)?.totalEvents).toBe(33);
     });
 
     it("never counts events belonging to another organization", async () => {
         // The other org has 50 fatals in this range. Asking for org A's
         // projects must not see them under any aggregate.
-        const map = await getProjectSummaries(ORG_A_PROJECTS, range);
+        const map = await getProjectStats(ORG_A_PROJECTS, range);
         const total = [...map.values()].reduce((s, r) => s + r.totalEvents, 0);
         expect(total).toBe(51); // 34 + 17, not 101
     });
 
-    it("reports the most frequent error message per project", async () => {
-        const map = await getProjectSummaries(ORG_A_PROJECTS, range);
-        expect(map.get(ALPHA)?.topMessage).toBe("alpha boom"); // 10, the most of any
-        expect(map.get(ALPHA)?.topMessageLevel).toBe("error");
-        expect(map.get(BETA)?.topMessage).toBe("beta boom");
-    });
-
     it("lists a project's environments, excluding NULL", async () => {
-        const map = await getProjectSummaries(ORG_A_PROJECTS, range);
+        const map = await getProjectStats(ORG_A_PROJECTS, range);
         // Beta's info and warn events carry no environment at all.
         expect(map.get(BETA)?.environments).toEqual(["staging"]);
     });
@@ -111,36 +105,21 @@ describe("getProjectSummaries", () => {
         //
         // This assertion was inverted from the pinned bug rather than replaced:
         // it is the same check, now expecting the right answer.
-        const map = await getProjectSummaries(ORG_A_PROJECTS, range);
+        const map = await getProjectStats(ORG_A_PROJECTS, range);
         const envs = map.get(ALPHA)?.environments ?? [];
 
         expect(envs).toEqual([COMMA_ENVIRONMENT, "production", "staging"]);
         expect(envs).not.toContain("eu");
     });
 
-    it("applies a level filter to the event counts", async () => {
-        const map = await getProjectSummaries(ORG_A_PROJECTS, range, ["info"]);
-        expect(map.get(ALPHA)?.totalEvents).toBe(14); // marker 1 + routine 12 + comma-env 1
-        expect(map.get(BETA)?.totalEvents).toBe(6);
-        expect(map.get(ALPHA)?.errorCount).toBe(0);
-    });
-
-    it("KNOWN BUG: a level filter does not reach the top-message query", async () => {
-        // The stats query takes the filter; the top-message query is hardcoded
-        // to `level IN ('error','fatal')` (overview.service.ts:101). Filtering
-        // to `info` therefore yields a project with zero errors and an error
-        // message attached. `getOrgTopErrors`, on the same page under the same
-        // filter, does respect it — so the two widgets disagree.
-        //
-        // Which behaviour is correct is a product question, so this pins the
-        // current one. The e2e suite pins the visible half of the same bug.
-        const map = await getProjectSummaries(ORG_A_PROJECTS, range, ["info"]);
-        expect(map.get(ALPHA)?.errorCount).toBe(0);
-        expect(map.get(ALPHA)?.topMessage).toBe("alpha boom");
-    });
+    // Removed 2026-08-20 with the level filter itself: "applies a level filter
+    // to the event counts" and "KNOWN BUG: a level filter does not reach the
+    // top-message query". The second pinned a defect that only existed because
+    // the two queries disagreed about a filter neither now receives — deleting
+    // the filter deleted the disagreement. See `OverviewFilterBar.tsx`.
 
     it("applies an environment filter to the event counts", async () => {
-        const map = await getProjectSummaries(ORG_A_PROJECTS, range, undefined, ["production"]);
+        const map = await getProjectStats(ORG_A_PROJECTS, range, ["production"]);
         expect(map.get(ALPHA)?.totalEvents).toBe(32); // 34 less the staging fatal and the comma env
         // Beta has nothing in production at all.
         expect(map.has(BETA)).toBe(false);
@@ -151,7 +130,40 @@ describe("getProjectSummaries", () => {
             from: new Date(anchor.getTime() - 3 * 60 * 60_000),
             to: new Date(anchor.getTime() - 2 * 60 * 60_000),
         };
-        expect((await getProjectSummaries(ORG_A_PROJECTS, quiet)).size).toBe(0);
+        expect((await getProjectStats(ORG_A_PROJECTS, quiet)).size).toBe(0);
+    });
+});
+
+// ── getProjectTopMessages ────────────────────────────────────────────────────
+
+/**
+ * Split out of `getProjectStats` on 2026-08-20. The assertions here were part
+ * of that suite; they moved rather than disappeared, because the behaviour did
+ * not change — only which promise carries it.
+ */
+describe("getProjectTopMessages", () => {
+    it("returns an empty map for no projects", async () => {
+        expect(await getProjectTopMessages([], range)).toEqual(new Map());
+    });
+
+    it("reports the most frequent error message per project", async () => {
+        const map = await getProjectTopMessages(ORG_A_PROJECTS, range);
+        expect(map.get(ALPHA)?.message).toBe("alpha boom"); // 10, the most of any
+        expect(map.get(ALPHA)?.level).toBe("error");
+        expect(map.get(BETA)?.message).toBe("beta boom");
+    });
+
+    it("omits a project with no errors rather than mapping it to null", async () => {
+        const quiet = {
+            from: new Date(anchor.getTime() - 3 * 60 * 60_000),
+            to: new Date(anchor.getTime() - 2 * 60 * 60_000),
+        };
+        expect((await getProjectTopMessages(ORG_A_PROJECTS, quiet)).size).toBe(0);
+    });
+
+    it("never reaches another organization's events", async () => {
+        const map = await getProjectTopMessages(ORG_A_PROJECTS, range);
+        expect([...map.values()].map((v) => v.message)).not.toContain("other org noise");
     });
 });
 
@@ -226,24 +238,26 @@ describe("getOrgTopErrors", () => {
     });
 
     it("returns every group when the limit is raised above their number", async () => {
-        const rows = await getOrgTopErrors(ORG_A_PROJECTS, range, undefined, undefined, 50);
+        const rows = await getOrgTopErrors(ORG_A_PROJECTS, range, undefined, 50);
         expect(rows).toHaveLength(6);
         expect(rows.at(-1)?.message).toBe("alpha meltdown");
     });
 
     it("defaults to error and fatal only", async () => {
-        const rows = await getOrgTopErrors(ORG_A_PROJECTS, range, undefined, undefined, 50);
+        const rows = await getOrgTopErrors(ORG_A_PROJECTS, range, undefined, 50);
         const messages = rows.map((r) => r.message);
         expect(messages).not.toContain("alpha routine");
         expect(messages).not.toContain("beta warning");
         expect(messages).toContain("alpha meltdown"); // fatal is included
     });
 
-    it("an explicit level list overrides that default", async () => {
-        const rows = await getOrgTopErrors(ORG_A_PROJECTS, range, ["warn"]);
-        expect(rows).toEqual([
-            expect.objectContaining({ message: "beta warning", count: 2 }),
-        ]);
+    it("cannot be widened past error and fatal by any caller", async () => {
+        // The `levels` override this used to accept was removed on 2026-08-20
+        // along with the only caller that passed one. A widget labelled "top
+        // errors" that could be asked for warnings was a defect waiting for a
+        // second caller.
+        const rows = await getOrgTopErrors(ORG_A_PROJECTS, range, undefined, 50);
+        expect(rows.map((r) => r.message)).not.toContain("beta warning");
     });
 
     it("attributes a group to its project", async () => {
@@ -259,7 +273,7 @@ describe("getOrgTopErrors", () => {
     });
 
     it("never returns another organization's errors", async () => {
-        const rows = await getOrgTopErrors(ORG_A_PROJECTS, range, undefined, undefined, 50);
+        const rows = await getOrgTopErrors(ORG_A_PROJECTS, range, undefined, 50);
         expect(rows.map((r) => r.message)).not.toContain("other org noise");
     });
 });

@@ -62,6 +62,14 @@ components/
 - **[MUST]** No nested folders inside `parts/`.
 - **[MUST]** No per-component barrel `index.ts`. Import the explicit path. The single exception is `shared/components/index.ts`.
 
+> **§2.1 is the most-violated rule in this file. Counted 2026-08-20: 54 cross-feature imports in non-test source, across 19 feature pairs** — `dashboard → events` alone is 14. `features/alerts` reaches into `organizations` and `projects` from every one of its five actions; `api-keys`, `projects` and `roles` do the same.
+>
+> That count is recorded here rather than quietly fixed because it changes what the rule *is*. As written it reads like a boundary the codebase holds; in fact it is an aspiration the codebase breaks routinely, and a reader who assumes the former will be surprised by the first file they open. Most of the 54 are actions reaching for `getMembership`/`getProjectBySlug` — an authorization helper that arguably belongs in `shared/` and was never moved.
+>
+> One instance *was* fixed the same day, and only because it acquired a third consumer: `AutoRefreshControl` lived in `features/events/components/auto-refresh/` with `features/dashboard` importing it across the boundary, and adding the org overview made the shared home unavoidable. It moved to `shared/components/AutoRefreshControl/`, its hook to `shared/hooks/use-auto-refresh.ts`, its strings from the `events` i18n namespace to `common`.
+>
+> The honest lesson is not "three arrows forced the rule" — 54 arrows did not force anything. It is that this rule has no enforcement, so it is obeyed exactly when someone notices. An import-boundary lint rule would change that; until one exists, treat the number above as the baseline rather than the exception.
+
 ### 2.3 `app/` is routing only
 
 **[MUST]** No business logic, services, or components in `app/`. Pages compose feature components and handle routing, params, and data loading. Route files follow App Router conventions (`page.tsx`, `layout.tsx`, `loading.tsx`, `error.tsx`, `not-found.tsx`).
@@ -119,7 +127,7 @@ components/
 - **[MUST]** *When* tests are required is defined in `WORKFLOW.md` §2. This section is only *how*.
 - **[MUST]** Test behaviour, not implementation — query by role and label, never class or id.
 - **[MUST]** Mock only at real system boundaries: database, external HTTP, DNS, clock. Never mock an internal module.
-- **[MUST]** Unit tests sit **next to their source**: `thing.ts` → `thing.test.ts` in the same folder, **named after the module it actually imports**. All 44 do today. E2E specs are the exception and live in `e2e/`, one per flow, `kebab-case.spec.ts`.
+- **[MUST]** Unit tests sit **next to their source**: `thing.ts` → `thing.test.ts` in the same folder, **named after the module it actually imports**. All 55 `.test.ts` files under `core/`, `features/` and `shared/` do today. E2E specs are the exception and live in `e2e/`, one per flow, `kebab-case.spec.ts`.
 
   The naming half of that rule is not pedantry. Until 2026-08-20 `features/dashboard/services/aggregations.service.test.ts` tested `utils/aggregation-utils.ts` and never imported the service it was named for — so the folder listing showed a 9.5 kB SQL service as covered when it had no tests at all, and showed `aggregation-utils.ts` as untested when it was the only thing covered. A misnamed test does not merely fail to help; it actively hides the gap the colocation rule exists to expose.
 
@@ -130,7 +138,9 @@ components/
 
   Its fixture is **enumerated, not generated**: every row exists for a named case and every expected value is a literal with its arithmetic shown. A randomised fixture forces the test to compute its expectation, and computing it means re-implementing the query — the test then compares the code with a copy of itself. See `itest/support/fixture.ts`.
 
-- **Reality check:** 44 unit test files, all `.test.ts` — there are still **no** component tests. `features/overview/` had none at all until 2026-08-20; it now covers its three `utils/` modules **and** `overview.service.ts` (38 integration tests). `features/dashboard/services/aggregations.service.ts` remains uncovered. Do not read the existing layout as the target.
+- **Reality check (recounted 2026-08-20):** `npm run test` runs **53 files / 568 tests**. Of those, 49 are `.test.ts` beside their source under `core/`, `features/` and `shared/`; three are `.test.mjs` under `scripts/` (the load generators — `vitest.config.ts` does not exclude them) and one sits under `app/`. There are still **no** component tests: zero `.test.tsx` in the tree. Do not read the existing layout as the target.
+
+  *Updated 2026-08-21:* `npm run test` now runs **59 files / 644 tests** and `npm run test:it` **4 files / 102 tests**. `features/dashboard/services/aggregations.service.ts` — flagged here as uncovered since 2026-08-20 — is covered by 26 integration tests, which is what finally allowed the two text-alias `ORDER BY` defects in it to be fixed.
 
 ## 12. Styling
 

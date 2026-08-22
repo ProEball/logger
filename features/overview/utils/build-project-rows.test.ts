@@ -5,18 +5,16 @@ import {
     type AlertRuleFlags,
     type OverviewProject,
 } from "@/features/overview/utils/build-project-rows";
-import type { ProjectEventSummary } from "@/features/overview/services/overview.service";
+import type { ProjectStats } from "@/features/overview/services/overview.service";
 
 const alpha: OverviewProject = { id: "p1", slug: "alpha", name: "Alpha" };
 const beta: OverviewProject = { id: "p2", slug: "beta", name: "Beta" };
 
-function summary(patch: Partial<ProjectEventSummary> & { projectId: string }): ProjectEventSummary {
+function stats(patch: Partial<ProjectStats> & { projectId: string }): ProjectStats {
     return {
         totalEvents: 0,
         errorCount: 0,
         environments: [],
-        topMessage: null,
-        topMessageLevel: null,
         ...patch,
     };
 }
@@ -37,27 +35,33 @@ describe("buildProjectRows", () => {
         expect(row.totalEvents).toBe(0);
         expect(row.errorCount).toBe(0);
         expect(row.environments).toEqual([]);
-        expect(row.topMessage).toBeNull();
-        expect(row.topMessageLevel).toBeNull();
     });
 
-    it("maps a project summary onto its row", () => {
-        const summaries = new Map([
-            ["p1", summary({
+    /**
+     * The top message left `ProjectRow` on 2026-08-20 — it arrives on its own
+     * promise and renders into a per-row `Suspense` boundary, because that
+     * query costs ~954 ms against ~30 ms for everything here. A row carrying it
+     * again would mean the split had been undone.
+     */
+    it("carries no message fields", () => {
+        const [row] = buildProjectRows([alpha], new Map(), new Map());
+        expect(row).not.toHaveProperty("topMessage");
+        expect(row).not.toHaveProperty("topMessageLevel");
+    });
+
+    it("maps a project's statistics onto its row", () => {
+        const byProject = new Map([
+            ["p1", stats({
                 projectId: "p1",
                 totalEvents: 120,
                 errorCount: 7,
                 environments: ["production", "staging"],
-                topMessage: "Payment failed",
-                topMessageLevel: "error",
             })],
         ]);
-        const [row] = buildProjectRows([alpha], summaries, new Map());
+        const [row] = buildProjectRows([alpha], byProject, new Map());
         expect(row.totalEvents).toBe(120);
         expect(row.errorCount).toBe(7);
         expect(row.environments).toEqual(["production", "staging"]);
-        expect(row.topMessage).toBe("Payment failed");
-        expect(row.topMessageLevel).toBe("error");
     });
 
     it("preserves the order of the project list", () => {
@@ -66,8 +70,8 @@ describe("buildProjectRows", () => {
     });
 
     it("ignores a summary for a project that is not in the list", () => {
-        const summaries = new Map([["p2", summary({ projectId: "p2", totalEvents: 999 })]]);
-        const rows = buildProjectRows([alpha], summaries, new Map());
+        const byProject = new Map([["p2", stats({ projectId: "p2", totalEvents: 999 })]]);
+        const rows = buildProjectRows([alpha], byProject, new Map());
         expect(rows).toHaveLength(1);
         expect(rows[0].totalEvents).toBe(0);
     });
@@ -127,15 +131,15 @@ describe("sumProjectRows", () => {
     });
 
     it("adds every row's counts together", () => {
-        const summaries = new Map([
-            ["p1", summary({ projectId: "p1", totalEvents: 100, errorCount: 3 })],
-            ["p2", summary({ projectId: "p2", totalEvents: 5, errorCount: 5 })],
+        const byProject = new Map([
+            ["p1", stats({ projectId: "p1", totalEvents: 100, errorCount: 3 })],
+            ["p2", stats({ projectId: "p2", totalEvents: 5, errorCount: 5 })],
         ]);
         const rules = new Map([
             ["p1", [rule(true, "firing"), rule(true, "ok")]],
             ["p2", [rule(true, "firing"), rule(false, "firing")]],
         ]);
-        expect(sumProjectRows(buildProjectRows([alpha, beta], summaries, rules))).toEqual({
+        expect(sumProjectRows(buildProjectRows([alpha, beta], byProject, rules))).toEqual({
             totalEvents: 105,
             totalErrors: 8,
             firingAlerts: 2,

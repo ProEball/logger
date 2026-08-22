@@ -1,7 +1,7 @@
 import type { AlertRuleFlags, OverviewProject } from "@/features/overview/utils/build-project-rows";
 import { buildProjectRows, sumProjectRows } from "@/features/overview/utils/build-project-rows";
 import { totalsByTimestamp } from "@/features/overview/utils/bucket-totals";
-import type { OrgEventBucket, ProjectEventSummary } from "@/features/overview/services/overview.service";
+import type { OrgEventBucket, ProjectStats } from "@/features/overview/services/overview.service";
 import { KpiSparkline } from "./parts/KpiSparkline";
 import styles from "./OverviewKpiRow.module.scss";
 
@@ -16,24 +16,30 @@ interface OverviewKpiRowProps {
      * this is passed as a promise rather than each section calling the service
      * itself. Doing that would have issued the bucket and summary queries twice.
      */
-    summariesPromise: Promise<Map<string, ProjectEventSummary>>;
+    /**
+     * Statistics only. Until 2026-08-20 this was one promise that also carried
+     * the per-project top message, so these four numbers — every one of them
+     * rollup-backed and a few milliseconds old — waited ~954 ms for a message
+     * aggregation the row does not render.
+     */
+    statsPromise: Promise<Map<string, ProjectStats>>;
     alertRulesPromise: Promise<Map<string, AlertRuleFlags[]>>;
     bucketsPromise: Promise<OrgEventBucket[]>;
 }
 
 export async function OverviewKpiRow({
     projects,
-    summariesPromise,
+    statsPromise,
     alertRulesPromise,
     bucketsPromise,
 }: OverviewKpiRowProps) {
-    const [summaries, alertRules, buckets] = await Promise.all([
-        summariesPromise,
+    const [stats, alertRules, buckets] = await Promise.all([
+        statsPromise,
         alertRulesPromise,
         bucketsPromise,
     ]);
 
-    const rows = buildProjectRows(projects, summaries, alertRules);
+    const rows = buildProjectRows(projects, stats, alertRules);
     const { totalEvents, totalErrors, firingAlerts, enabledAlerts } = sumProjectRows(rows);
     const sparkData = totalsByTimestamp(buckets);
 

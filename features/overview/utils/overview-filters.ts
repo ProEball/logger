@@ -10,6 +10,12 @@
  * Range resolution deliberately stays out of here — the route calls
  * `resolveRange()` from the dashboard feature, because a feature importing
  * another feature is a §2.1 violation and a route composing two of them is not.
+ *
+ * A `levels` param was parsed here until 2026-08-20. The level chips it fed
+ * narrowed three of the page's eight widgets and left five visibly unchanged,
+ * so they were removed — full reasoning in `OverviewFilterBar.tsx`. A stale
+ * `?levels=` in a bookmarked URL is now ignored, which is the same
+ * degrade-to-default treatment every other unrecognised input here gets.
  */
 
 export const OVERVIEW_PRESETS = ["15m", "1h", "6h", "24h", "7d", "30d"] as const;
@@ -42,10 +48,6 @@ export interface OverviewFilters {
     preset: OverviewPreset;
     /** Bucket width for the volume chart, in seconds. */
     bucketSecs: number;
-    /** Selected levels, for the filter bar. Empty means "no level filter". */
-    levels: string[];
-    /** The same, shaped for the service layer, which reads absent as "all". */
-    levelsFilter: string[] | undefined;
     /** Selected environment, for the filter bar. Empty means "all". */
     environment: string;
     /** The same, shaped for the service layer. */
@@ -70,9 +72,6 @@ export function parseOverviewFilters(rawSearch: RawSearchParams): OverviewFilter
     const rawRange = typeof rawSearch.range === "string" ? rawSearch.range : "";
     const preset = isOverviewPreset(rawRange) ? rawRange : DEFAULT_OVERVIEW_PRESET;
 
-    const rawLevels = typeof rawSearch.levels === "string" ? rawSearch.levels : "";
-    const levels = rawLevels ? rawLevels.split(",").filter(Boolean) : [];
-
     const environment = typeof rawSearch.env === "string" ? rawSearch.env : "";
 
     // Repeated params (`?env=a&env=b`) arrive as an array and are dropped, not
@@ -85,8 +84,6 @@ export function parseOverviewFilters(rawSearch: RawSearchParams): OverviewFilter
     return {
         preset,
         bucketSecs: OVERVIEW_BUCKET_SECONDS[preset],
-        levels,
-        levelsFilter: levels.length > 0 ? levels : undefined,
         environment,
         environmentsFilter: environment ? [environment] : undefined,
         searchString,

@@ -1,4 +1,4 @@
-import type { ProjectEventSummary, ProjectRow } from "@/features/overview/services/overview.service";
+import type { ProjectStats, ProjectRow } from "@/features/overview/services/overview.service";
 
 /**
  * Assembly of the overview's per-project table rows, extracted from
@@ -19,7 +19,11 @@ export interface OverviewProject {
 }
 
 /**
- * Join projects with their event summaries and alert rules into table rows.
+ * Join projects with their statistics and alert rules into table rows.
+ *
+ * The top error message is **not** here. It arrives on a separate promise and
+ * renders into its own `Suspense` boundary per row, because that query costs
+ * ~954 ms against ~30 ms for everything in this row — see `getProjectStats`.
  *
  * The project list is the spine: a project with no events in the range still
  * gets a row, with zeros. That is deliberate — dropping it would make a quiet
@@ -28,19 +32,17 @@ export interface OverviewProject {
  */
 export function buildProjectRows(
     projects: OverviewProject[],
-    summaries: Map<string, ProjectEventSummary>,
+    stats: Map<string, ProjectStats>,
     alertRulesByProject: Map<string, AlertRuleFlags[]>,
 ): ProjectRow[] {
     return projects.map((project) => {
-        const summary = summaries.get(project.id);
+        const projectStats = stats.get(project.id);
         const rules = alertRulesByProject.get(project.id) ?? [];
         return {
             project: { id: project.id, slug: project.slug, name: project.name },
-            totalEvents: summary?.totalEvents ?? 0,
-            errorCount: summary?.errorCount ?? 0,
-            environments: summary?.environments ?? [],
-            topMessage: summary?.topMessage ?? null,
-            topMessageLevel: summary?.topMessageLevel ?? null,
+            totalEvents: projectStats?.totalEvents ?? 0,
+            errorCount: projectStats?.errorCount ?? 0,
+            environments: projectStats?.environments ?? [],
             firingAlertsCount: rules.filter((r) => r.enabled && r.state === "firing").length,
             enabledAlertsCount: rules.filter((r) => r.enabled).length,
         };

@@ -4,7 +4,7 @@ import { renderHook } from "@testing-library/react";
 const { refreshMock } = vi.hoisted(() => ({ refreshMock: vi.fn() }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: refreshMock }) }));
 
-import { useAutoRefresh } from "@/features/events/hooks/use-auto-refresh";
+import { useAutoRefresh } from "@/shared/hooks/use-auto-refresh";
 
 beforeEach(() => {
     vi.useFakeTimers();

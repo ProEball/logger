@@ -1,10 +1,13 @@
 import Link from "next/link";
+import type { ReactNode } from "react";
 import type { ProjectRow } from "@/features/overview/services/overview.service";
 import styles from "./ProjectStatsTable.module.scss";
 
 interface ProjectStatsTableProps {
     rows: ProjectRow[];
     orgSlug: string;
+    /** Per-project top-error cells, rendered on the server and streamed in. */
+    topMessages: Record<string, ReactNode>;
 }
 
 function ErrorRate({ total, errors }: { total: number; errors: number }) {
@@ -26,7 +29,7 @@ function AlertBadge({ firingCount }: { firingCount: number }) {
     );
 }
 
-export function ProjectStatsTable({ rows, orgSlug }: ProjectStatsTableProps) {
+export function ProjectStatsTable({ rows, orgSlug, topMessages }: ProjectStatsTableProps) {
     return (
         <div className={styles.tableWrap}>
             <table className={styles.table}>
@@ -41,7 +44,7 @@ export function ProjectStatsTable({ rows, orgSlug }: ProjectStatsTableProps) {
                     </tr>
                 </thead>
                 <tbody>
-                    {rows.map(({ project, totalEvents, errorCount, topMessage, topMessageLevel, firingAlertsCount }) => (
+                    {rows.map(({ project, totalEvents, errorCount, firingAlertsCount }) => (
                         <tr key={project.id} className={styles.row}>
                             <td className={styles.td}>
                                 <Link
@@ -65,25 +68,7 @@ export function ProjectStatsTable({ rows, orgSlug }: ProjectStatsTableProps) {
                             <td className={styles.td}>
                                 <ErrorRate total={totalEvents} errors={errorCount} />
                             </td>
-                            <td className={styles.td}>
-                                {topMessage ? (
-                                    <span className={styles.topMsgWrap}>
-                                        {topMessageLevel && (
-                                            <span
-                                                className={styles.lvlDot}
-                                                style={{ background: `var(--lvl-${topMessageLevel})` }}
-                                            />
-                                        )}
-                                        <span className={styles.topMsg} title={topMessage}>
-                                            {topMessage.length > 64
-                                                ? topMessage.slice(0, 64) + "…"
-                                                : topMessage}
-                                        </span>
-                                    </span>
-                                ) : (
-                                    <span className={styles.noData}>—</span>
-                                )}
-                            </td>
+                            <td className={styles.td}>{topMessages[project.id]}</td>
                             <td className={styles.td}>
                                 <AlertBadge firingCount={firingAlertsCount} />
                             </td>

@@ -1,26 +1,33 @@
 "use client";
 
-import { Suspense } from "react";
+import { Suspense, type ReactNode } from "react";
 import Link from "next/link";
-import { AutoRefreshControl } from "@/features/events/components/auto-refresh/AutoRefreshControl/AutoRefreshControl";
+import { AutoRefreshControl } from "@/shared/components/AutoRefreshControl/AutoRefreshControl";
 import { useDashboardRange } from "@/features/dashboard/hooks/use-dashboard-range";
+import { DASHBOARD_SEGMENT_PRESETS } from "@/features/dashboard/utils/dashboard-range";
+import type { TimeRangePreset } from "@/shared/utils/event-filters.schema";
 import styles from "./DashboardHeader.module.scss";
 
-const SEGMENT_PRESETS = ["1h", "24h", "7d", "30d"] as const;
-type SegmentPreset = (typeof SEGMENT_PRESETS)[number];
+
 
 interface DashboardHeaderProps {
     projectName: string;
     orgSlug: string;
     projectSlug: string;
-    eventsPerMinRate?: string;
+    /**
+     * A slot, not a string. The rate is derived from the bucket query, and this
+     * header is a client component — so the value arrives as a Server Component
+     * already wrapped in its own `Suspense`, and the title does not wait for a
+     * 43 ms aggregation to render.
+     */
+    eventsPerMinRate?: ReactNode;
 }
 
 function DashboardHeaderInner({ projectName, orgSlug, projectSlug, eventsPerMinRate }: DashboardHeaderProps) {
     const { range, setRange } = useDashboardRange();
     const activePreset = range.type === "preset" ? range.value : null;
 
-    const handlePreset = (preset: SegmentPreset) => {
+    const handlePreset = (preset: TimeRangePreset) => {
         setRange({ type: "preset", value: preset });
     };
 
@@ -32,13 +39,13 @@ function DashboardHeaderInner({ projectName, orgSlug, projectSlug, eventsPerMinR
                     <h1 className={styles.title}>{projectName}</h1>
                 </div>
                 {eventsPerMinRate && (
-                    <span className={styles.subtitle}>{eventsPerMinRate} events / min</span>
+                    <span className={styles.subtitle}>{eventsPerMinRate}</span>
                 )}
             </div>
 
             <div className={styles.controls}>
                 <div className={styles.segment} role="group" aria-label="Time range">
-                    {SEGMENT_PRESETS.map((preset) => (
+                    {DASHBOARD_SEGMENT_PRESETS.map((preset) => (
                         <button
                             key={preset}
                             type="button"
@@ -76,7 +83,7 @@ export function DashboardHeader(props: DashboardHeaderProps) {
                     </div>
                     <div className={styles.controls}>
                         <div className={styles.segment}>
-                            {SEGMENT_PRESETS.map((p) => (
+                            {DASHBOARD_SEGMENT_PRESETS.map((p) => (
                                 <span key={p} className={styles.segBtn}>{p}</span>
                             ))}
                         </div>

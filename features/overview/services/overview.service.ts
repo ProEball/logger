@@ -1,15 +1,29 @@
 import { sql } from "drizzle-orm";
 import { db } from "@/core/db/client";
+import { rollupBoundary } from "@/shared/services/rollup-boundary.service";
 
 export type DateRange = { from: Date; to: Date };
 
-export type ProjectEventSummary = {
+/**
+ * Everything about a project that the rollup can answer: counts and the
+ * environments it used. Cheap — a few milliseconds even at millions of rows.
+ *
+ * Split from the top message on 2026-08-20. They used to be one type returned
+ * by one function, which meant one promise, which meant the KPI row waited
+ * ~954 ms for a message aggregation it does not display. See
+ * `getProjectTopMessages` for the other half.
+ */
+export type ProjectStats = {
     projectId: string;
     totalEvents: number;
     errorCount: number;
     environments: string[];
-    topMessage: string | null;
-    topMessageLevel: string | null;
+};
+
+/** The most frequent error message for one project, and its dominant level. */
+export type ProjectTopMessage = {
+    message: string;
+    level: string;
 };
 
 export type ProjectRow = {
@@ -17,8 +31,6 @@ export type ProjectRow = {
     totalEvents: number;
     errorCount: number;
     environments: string[];
-    topMessage: string | null;
-    topMessageLevel: string | null;
     firingAlertsCount: number;
     enabledAlertsCount: number;
 };
@@ -51,22 +63,28 @@ function uuidArray(ids: string[]) {
     return sql.join(ids.map((id) => sql`${id}::uuid`), sql`, `);
 }
 
-function levelCond(levels?: string[]) {
-    if (!levels || levels.length === 0) return sql``;
-    return sql` AND level = ANY(ARRAY[${sql.join(levels.map((l) => sql`${l}`), sql`, `)}])`;
-}
-
 function envCond(environments?: string[]) {
     if (!environments || environments.length === 0) return sql``;
     return sql` AND environment = ANY(ARRAY[${sql.join(environments.map((e) => sql`${e}`), sql`, `)}])`;
 }
 
-export async function getProjectSummaries(
+/**
+ * Counts and environments per project — the rollup-backed half of what used to
+ * be `getProjectSummaries`.
+ *
+ * **Why this is its own function.** Measured on staging: the statistics and
+ * environment queries cost ~8 ms and ~23 ms, and the per-project top message
+ * cost **954 ms**. All three lived in one `Promise.all` behind one promise, so
+ * every consumer of any of them waited for the slowest — including the KPI row,
+ * whose headline numbers come entirely from the rollup and never touch a
+ * message. Splitting makes nothing faster; it stops the cheap half being held
+ * by the expensive one (`PLAN.md` §16.1 Stage E).
+ */
+export async function getProjectStats(
     projectIds: string[],
     range: DateRange,
-    levels?: string[],
     environments?: string[],
-): Promise<Map<string, ProjectEventSummary>> {
+): Promise<Map<string, ProjectStats>> {
     if (projectIds.length === 0) return new Map();
     const { from, to } = range;
 
@@ -75,11 +93,15 @@ export async function getProjectSummaries(
     // An environment filter puts `errorCount` beyond the rollup's reach:
     // `by_env` gives totals per environment, `by_level` gives totals per level,
     // and "errors in production" needs both at once. That read stays on raw
-    // events. A level filter alone is fine — it is answerable from `by_level`.
+    // events.
+    //
+    // There is no level filter to consider since 2026-08-20 — the chips that
+    // fed one were removed (see `OverviewFilterBar.tsx`), which is what lets
+    // the rollup branch below read `total` and `errors` straight off the
+    // summary row instead of unrolling `by_level` per minute.
     const hasEnvFilter = !!environments && environments.length > 0;
-    const levelKeys = levels && levels.length > 0 ? levels : null;
 
-    const [statsRows, topMsgRows, envRows] = await Promise.all([
+    const [statsRows, envRows] = await Promise.all([
         hasEnvFilter
             ? db.execute<{ project_id: string; total: string; error_count: string }>(sql`
                 SELECT
@@ -90,32 +112,13 @@ export async function getProjectSummaries(
                 WHERE project_id = ANY(ARRAY[${uuidArray(projectIds)}])
                   AND timestamp >= ${toTs(from)}
                   AND timestamp <  ${toTs(to)}
-                  ${levelCond(levels)}
                   ${envCond(environments)}
                 GROUP BY project_id
             `)
             : db.execute<{ project_id: string; total: string; error_count: string }>(sql`
                 WITH rolled AS (
-                    ${
-                        levelKeys
-                            ? sql`
-                                SELECT project_id,
-                                       SUM(CASE WHEN key = ANY(ARRAY[${sql.join(
-                                           levelKeys.map((l) => sql`${l}`),
-                                           sql`, `,
-                                       )}]) THEN value::int ELSE 0 END)::int AS total,
-                                       SUM(CASE WHEN key = ANY(ARRAY[${sql.join(
-                                           levelKeys.map((l) => sql`${l}`),
-                                           sql`, `,
-                                       )}]) AND key IN ('error', 'fatal')
-                                                THEN value::int ELSE 0 END)::int AS errors
-                                FROM event_rollup_minutes, jsonb_each_text(by_level)
-                              `
-                            : sql`
-                                SELECT project_id, SUM(total)::int AS total, SUM(errors)::int AS errors
-                                FROM event_rollup_minutes
-                              `
-                    }
+                    SELECT project_id, SUM(total)::int AS total, SUM(errors)::int AS errors
+                    FROM event_rollup_minutes
                     WHERE project_id = ANY(ARRAY[${uuidArray(projectIds)}])
                       AND minute >= ${toTs(from)}
                       AND minute <  LEAST(${toTs(to)}, ${toTs(boundary)})
@@ -130,7 +133,6 @@ export async function getProjectSummaries(
                     WHERE project_id = ANY(ARRAY[${uuidArray(projectIds)}])
                       AND timestamp >= GREATEST(${toTs(from)}, ${toTs(boundary)})
                       AND timestamp <  ${toTs(to)}
-                      ${levelCond(levels)}
                     GROUP BY project_id
                 )
                 SELECT project_id::text, SUM(total)::text AS total, SUM(errors)::text AS error_count
@@ -138,28 +140,6 @@ export async function getProjectSummaries(
                 GROUP BY project_id
                 HAVING SUM(total) > 0
             `),
-        db.execute<{ project_id: string; message: string; dominant_level: string }>(sql`
-            WITH ranked AS (
-                SELECT
-                    project_id::text,
-                    SUBSTRING(message, 1, 120)                          AS message,
-                    mode() WITHIN GROUP (ORDER BY level)                AS dominant_level,
-                    ROW_NUMBER() OVER (
-                        PARTITION BY project_id
-                        ORDER BY COUNT(*) DESC
-                    )                                                   AS rn
-                FROM events
-                WHERE project_id = ANY(ARRAY[${uuidArray(projectIds)}])
-                  AND timestamp >= ${toTs(from)}
-                  AND timestamp <  ${toTs(to)}
-                  AND level IN ('error', 'fatal')
-                  ${envCond(environments)}
-                GROUP BY project_id, SUBSTRING(message, 1, 120)
-            )
-            SELECT project_id, message, dominant_level
-            FROM   ranked
-            WHERE  rn = 1
-        `),
         // Environments each project used in this range. Takes no filters, and
         // never did — the pills describe the project, not the current view.
         //
@@ -199,23 +179,72 @@ export async function getProjectSummaries(
         envMap.set(row.project_id, [...row.envs].sort());
     }
 
-    const map = new Map<string, ProjectEventSummary>();
+    const map = new Map<string, ProjectStats>();
     for (const row of statsRows) {
         map.set(row.project_id, {
             projectId: row.project_id,
             totalEvents: Number(row.total),
             errorCount: Number(row.error_count),
             environments: envMap.get(row.project_id) ?? [],
-            topMessage: null,
-            topMessageLevel: null,
         });
     }
-    for (const row of topMsgRows) {
-        const entry = map.get(row.project_id);
-        if (entry) {
-            entry.topMessage = row.message;
-            entry.topMessageLevel = row.dominant_level;
-        }
+    return map;
+}
+
+/**
+ * The most frequent error message per project.
+ *
+ * **The expensive half.** ~954 ms on staging at 1.3M events, against ~30 ms for
+ * everything in `getProjectStats`. It groups by `SUBSTRING(message, 1, 120)`
+ * over raw `events`, which the rollup cannot serve at any grain — 168k distinct
+ * messages per 500k events, and merging per-minute top-N lists is approximate
+ * in a way that would produce plausible wrong numbers.
+ *
+ * Note it does **not** read `rollupBoundary`: it never touches the summary
+ * table, so unlike `getProjectStats` it has no query to wait for first. The
+ * split removed that dependency as a side effect.
+ *
+ * Rendered behind its own `Suspense` boundary, so the projects table paints its
+ * numbers immediately and fills this column in when the query lands.
+ */
+export async function getProjectTopMessages(
+    projectIds: string[],
+    range: DateRange,
+    environments?: string[],
+): Promise<Map<string, ProjectTopMessage>> {
+    if (projectIds.length === 0) return new Map();
+    const { from, to } = range;
+
+    const rows = await db.execute<{
+        project_id: string;
+        message: string;
+        dominant_level: string;
+    }>(sql`
+        WITH ranked AS (
+            SELECT
+                project_id::text,
+                SUBSTRING(message, 1, 120)                          AS message,
+                mode() WITHIN GROUP (ORDER BY level)                AS dominant_level,
+                ROW_NUMBER() OVER (
+                    PARTITION BY project_id
+                    ORDER BY COUNT(*) DESC
+                )                                                   AS rn
+            FROM events
+            WHERE project_id = ANY(ARRAY[${uuidArray(projectIds)}])
+              AND timestamp >= ${toTs(from)}
+              AND timestamp <  ${toTs(to)}
+              AND level IN ('error', 'fatal')
+              ${envCond(environments)}
+            GROUP BY project_id, SUBSTRING(message, 1, 120)
+        )
+        SELECT project_id, message, dominant_level
+        FROM   ranked
+        WHERE  rn = 1
+    `);
+
+    const map = new Map<string, ProjectTopMessage>();
+    for (const row of rows) {
+        map.set(row.project_id, { message: row.message, level: row.dominant_level });
     }
     return map;
 }
@@ -281,16 +310,17 @@ export async function getOrgLevelBreakdown(
 export async function getOrgTopErrors(
     projectIds: string[],
     range: DateRange,
-    levels?: string[],
     environments?: string[],
     limit = 5,
 ): Promise<OrgTopError[]> {
     if (projectIds.length === 0) return [];
     const { from, to } = range;
 
-    const lc = levels && levels.length > 0
-        ? sql` AND level = ANY(ARRAY[${sql.join(levels.map((l) => sql`${l}`), sql`, `)}])`
-        : sql` AND level IN ('error', 'fatal')`;
+    // Fixed, not parameterised. Until 2026-08-20 a caller-supplied level list
+    // could widen this to any levels at all — so the widget labelled "top
+    // errors" would happily return debug lines. The only caller that passed
+    // one was the overview's level filter, now removed.
+    const lc = sql` AND level IN ('error', 'fatal')`;
 
     const rows = await db.execute<{
         message: string;
@@ -356,27 +386,6 @@ export async function getOrgEnvironments(projectIds: string[]): Promise<string[]
         ORDER BY environment
     `);
     return rows.map((r) => r.environment);
-}
-
-/**
- * The instant up to which the rollup is complete for **every** requested
- * project, or `null` when any of them has nothing rolled up yet.
- *
- * The minimum across projects, not each project's own boundary: it keeps the
- * read a single query. The cost is reading a little more from raw `events` than
- * strictly necessary when one project lags; the alternative is a per-project
- * boundary threaded through every aggregate, for an accuracy that is identical.
- */
-async function rollupBoundary(projectIds: string[]): Promise<Date | null> {
-    const rows = await db.execute<{ boundary: Date | null; missing: number }>(sql`
-        SELECT MIN(rolled_up_to) AS boundary,
-               COUNT(*) FILTER (WHERE rolled_up_to IS NULL)::int AS missing
-        FROM rollup_state
-        WHERE project_id = ANY(ARRAY[${uuidArray(projectIds)}])
-    `);
-    const row = rows[0];
-    if (!row || row.missing > 0 || row.boundary == null) return null;
-    return new Date(row.boundary);
 }
 
 /**

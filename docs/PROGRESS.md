@@ -2,7 +2,7 @@
 
 > Single source of truth for "where are we right now". Update after every work session.
 
-**Last updated**: 2026-08-20 (staging run, read-path audit, §16.1 Stages B–D — rollup complete)
+**Last updated**: 2026-08-21 (overview read path done; project dashboard §16.2 shipped in full — tests, ORDER BY fixes, streaming, rollup, cache)
 
 ---
 
@@ -71,7 +71,7 @@ Design points worth not re-deriving:
 - **Delete-then-insert, not upsert.** A minute whose events aged out has to lose its row; an upsert would leave a stale count that nothing would ever contradict.
 - **Late events** are handled by the ingest path pulling the watermark back with `LEAST(refresh_from, oldest in batch)`. `events` stores when an event happened, not when it arrived, so no query on that table could work this out.
 
-**Both increments are done.** `getOrgEventBuckets`, `getOrgLevelBreakdown` and `getProjectSummaries` all read the rollup; only the message-keyed queries still touch `events`.
+**Both increments are done.** `getOrgEventBuckets`, `getOrgLevelBreakdown` and `getProjectStats` all read the rollup; only the message-keyed queries still touch `events`. *(`getProjectSummaries` as written that day; it was split into `getProjectStats` and `getProjectTopMessages` later the same day — see the Stage E entry below.)*
 
 Measured on the 500k local corpus:
 
@@ -90,7 +90,9 @@ That leaves one lever: match fewer rows. **The widget's window is now capped at 
 
 Deliberately **not** a user-facing selector. That would buy the ability to choose a window — which nobody has asked for — at the price of a second time control on a page that already has one. The cap is a few lines and removes the cliff; a selector can follow a request that names the windows it needs.
 
-`getProjectSummaries` keeps two paths: `by_level` answers a level filter, but an **environment** filter needs errors-per-environment — a joint the marginals do not hold — so that read still goes to `events`. Both paths are pinned against direct counts.
+`getProjectStats` keeps two paths: without an environment filter it reads `total` and `errors` straight off the summary row, but an **environment** filter needs errors-per-environment — a joint the marginals do not hold — so that read still goes to `events`. Both paths are pinned against direct counts.
+
+*(As written that day there was a third path: `by_level` unrolled per minute to serve a level filter. The filter was removed later the same day and the branch with it — see the filter-bar entry below.)*
 
 **The comma-in-environment bug is fixed as a side effect.** The pills come from JSON keys now, so there is no `STRING_AGG`/`split(",")` pair left to break them. The test that pinned the bug was inverted, not deleted — it failed the moment the fix landed, which is exactly what it was for. New divergence in its place, deliberate and tested: above the 20-environment cap the pill list is the top 20 plus `(other)`, not the raw `DISTINCT`.
 
@@ -98,7 +100,7 @@ Deliberately **not** a user-facing selector. That would buy the ability to choos
 
 ⚠️ The first attempt at this measurement was **meaningless and nearly reported as a win**: the benchmark builds the rollup immediately before measuring, so the boundary landed past the newest event and the tail was empty. "The tail is free" was measuring nothing at all. The bench now pushes the boundary back deliberately (`BENCH_TAIL_MINUTES`, default 2) to match production. Same class of error as benchmarking the environments registry against an unpopulated table.
 
-Verification is mostly **agreement, not existence**: the integration tests compare rollup-backed reads against direct counts of `events` — total, per level, with and without a filter, and after a fresh insert that no rebuild has seen. 16 new integration tests, 65 in total.
+Verification is mostly **agreement, not existence**: the integration tests compare rollup-backed reads against direct counts of `events` — total, per level, with and without a filter, and after a fresh insert that no rebuild has seen. 16 new integration tests. *(67 in total as of 2026-08-20, after the level-filter removal deleted three.)*
 
 **Auto-refresh** is now `off | 30s | 60s | 5m`. `10s` went for its **cost** — six page loads a minute per viewer, for a difference nobody acts on. It was first justified here as "the rollup only changes once a minute, so a faster refresh sees the same numbers"; that is **wrong**, and corrected on the spot: reads union the rollup with a raw tail, so freshness is not gated by the rebuild cadence at all. A stored `10s` is **translated to `30s`** rather than falling back to the default, which would have silently switched auto-refresh off for everyone who had chosen it.
 
@@ -117,8 +119,8 @@ The 17 overview e2e tests written earlier the same day passed unchanged — whic
 Three things it turned up that reading two widgets would not have:
 
 - **`release` is the dimension that must never enter a rollup.** Environment cardinality was the risk everyone saw; a release identifier is *designed* to change on every deploy, so it is strictly worse and far less obvious. The releases facet stays on raw events.
-- **`EnvironmentBreakdownWidget` and `environmentBreakdown()` are dead code** — rendered nowhere, called nowhere. One of the three text-alias `ORDER BY` bugs lives in it and therefore cannot affect anyone; the other two are live.
-- **Two undocumented asymmetries on the overview**: the volume chart ignores the level and environment filters that narrow every other widget, and the per-project top error ignores the level filter that org-wide top errors respects.
+- **`EnvironmentBreakdownWidget` and `environmentBreakdown()` are dead code** — rendered nowhere, called nowhere. *(Superseded 2026-08-21: both deleted, along with `EnvCount` and the i18n key. The claim that the widget also had an orphaned SCSS module was wrong — it was the only widget in that folder without one.)* One of the three text-alias `ORDER BY` bugs lives in it and therefore cannot affect anyone; the other two are live.
+- **Two undocumented asymmetries on the overview**: the volume chart ignores the level and environment filters that narrow every other widget, and the per-project top error ignores the level filter that org-wide top errors respects. *(The second was closed later the same day by removing the level filter; the first now reads as "ignores the environment filter".)*
 
 Scope for the rollup falls out of it: **74% of measured overview cost is servable, 21% is not** (anything keyed by message), plus everything returning rows.
 
@@ -128,7 +130,146 @@ Two more things worth carrying forward. **The fan-out costs about what its slowe
 
 ⚠️ Note for whoever builds that harness: `e2e/support/cleanup.ts` does `DELETE FROM events` against `logger_test`, so a corpus seeded once by hand into that database is destroyed by the next `npm run test:e2e` run.
 
+**Verified on the droplet, 2026-08-20 — `v0.2.0`.** The rollup and streaming were measured on the constrained host, which is where the claims above said they had to be. Page wall-clock, ingest still running so the "after" column carries **2.4× more data** than the 540k the original figure came from:
+
+| range | before | after |
+|---|---|---|
+| 7d | 4.31 / 4.42 / 4.64 / 6.25 s | 1.03 / 1.08 / 1.15 / 1.28 / 1.34 s |
+| 30d | 4.78 s | 0.955 / 1.01 / 1.12 / 1.14 / 1.25 s |
+| 1h | — | 0.199 / 0.224 s |
+| 15m | — | 0.160 / 0.285 s |
+
+≈ **4.2× at 7 days, ≈ 4.4× at 30 days** — means of the samples above, which is the only figure that reconstructs from them; an earlier revision of this line said 3.6× and 4.7× and matched no method at all. The rollup caught up to **2,481 rows from 1,302,062 events — a 525× reduction**. Three defects in the `OPERATIONS.md` runbook were found and fixed during the deploy: the image tag carries no `v` prefix, `psql -U "$POSTGRES_USER"` must be wrapped in `sh -c`, and `git pull` fails on a host checked out at a tag.
+
+**`pg_stat_statements` over 5 page loads then said where the remaining second went**, and it was not where the plan assumed:
+
+| per load | query |
+|---|---|
+| **1006 ms** | `getOrgTopErrors` — org-wide top errors |
+| **954 ms** | per-project top message inside `getProjectSummaries` |
+| 35.5 ms | level breakdown *(rollup)* |
+| 23.3 ms | environment pills *(rollup)* |
+| 19.9 ms | volume buckets *(rollup)* |
+| 8.0 ms | per-project stats *(rollup)* |
+
+**The two message-keyed queries are ~96% of the page's database time.** Everything the rollup serves totals ~87 ms. Every read query recorded exactly **5 calls for 5 loads** — the promise-sharing design holds on a real production build, not just locally.
+
+Two corrections to expectations came out of this. Top errors is **already capped at 24h and is still the single most expensive query** — because the corpus spans ~3 days, so a 24h cap halves the range rather than shrinking it thirtyfold; the cap will earn its keep at 30 days of data, not now. And because the queries run in parallel, the page is bounded by the **slowest**, not the sum: capping the per-project top message would have cut database work without making the page faster at all. That killed the planned next change before it was written.
+
+**Caching landed, 2026-08-20 — Stage D item 5, for the org overview.** The trigger was a requirement, not a measurement: the target became **50–100 concurrent dashboards**. At ~2 s of database CPU per load that is ~6.8 cores to compute one answer two hundred times, and reducing the two message-keyed queries to zero would still leave ~0.29 cores spent on 200 identical computations a minute (~2.9 cores at 1,000 readers). At that point the problem stops being query speed.
+
+`shared/utils/ttl-cache.ts` (single-flight, stale-while-revalidate, hard staleness ceiling, injectable clock) with `features/overview/services/overview-cache.service.ts` in front of every overview query: 30-second TTL, 5-minute ceiling.
+
+Verified with `pg_stat_statements` against the running dev server, which is what makes it more than a unit test: a second load inside the window issues **none of the five aggregations** (the page keeps four cheap uncached calls — org, membership, project list, alert rules); a different preset misses; and both the environment filter list and top errors **hit** across a 7d→30d change — the first because it is keyed without a range, the second because `clampTopErrorsWindow` maps both presets to 24h, so the page's most expensive query is served from cache even when the range changes.
+
+The cache key is treated as an **authorization boundary** — it carries the full project scope, and both test files assert the separation. Today no two members of an organization have different scopes, so this is defence in depth; it is in the key because a key without it would not fail loudly the day per-project visibility arrives. See [`reference/security.md`](reference/security.md#cached-reads-and-the-scope-in-the-cache-key).
+
+⚠️ **What this does not do.** A cache bounds how *often* an expensive query runs, never what it costs. At 30 days of data the message-keyed aggregations will still be paid once per TTL, and the first reader past the 5-minute ceiling waits for one. The project dashboard is still uncached, and `aggregations.service.ts` still has no test beside it (`utils/aggregation-utils.ts` does).
+
+⚠️ **The 30-day question is still open.** Every measurement so far — local and droplet — is on a corpus spanning ~3 days against a 30-day retention. `range=30d` currently reads everything there is, not thirty days. The rollup-backed half is indifferent to that; the message-keyed half scales with it. `scripts/seed-bench.mjs` takes `BENCH_DAYS`, but `pg_partman` premakes only ±7 days, so anything older lands in `events_default` and measures the wrong thing — past partitions must be created first.
+
+**Overview filter bar reworked, 2026-08-20.** Two changes, both from looking at the page rather than at the code.
+
+**The level chips were removed.** They narrowed three of the page's eight widgets and left five visibly unchanged — the volume chart ignores level filters by construction, the level breakdown is *about* levels, and the per-project top message never received the filter at all. Three moving and five not does not read as a filter with a scope; it reads as a broken one.
+
+Removing it closed two open items for free rather than fixing them:
+
+- the **known inconsistency** between the per-project top message and org-wide top errors ([logging.md](reference/logging.md)) — both readings of it disappeared with the filter that produced them;
+- one of the two **documented asymmetries** in [widgets.md](reference/widgets.md). The other, the volume chart ignoring the environment filter, remains.
+
+`getOrgTopErrors` also lost its caller-supplied `levels` override — `error, fatal` is now fixed. The parameter existed only for this filter, and a widget labelled "top errors" that a caller can ask for debug lines is a defect waiting for a second caller.
+
+Deleted with it: two integration tests and two e2e tests. The e2e test that pinned the defect ("KNOWN BUG: a level filter does not reach the per-project top message") was replaced rather than dropped — what stands in its place asserts the property removal has to hold, that a bookmarked `?levels=info` URL now narrows nothing.
+
+**Auto-refresh was added — the overview was the only dashboard without it.** The control already existed, in `features/events/components/auto-refresh/`, and `features/dashboard` was importing it from there — a **§2.1 violation**. Adding a third consumer made the shared home unavoidable, so `AutoRefreshControl` moved to `shared/components/`, `use-auto-refresh` to `shared/hooks/`, and the strings from the `events` i18n namespace to `common`.
+
+⚠️ **Auditing that claim found something bigger.** An earlier draft of this entry called the violation "a single arrow that had gone unnoticed". It is not: the tree holds **54 cross-feature imports in non-test source across 19 feature pairs**, and `dashboard → events` alone is 14 of them. §2.1 is the most-violated rule in `PROJECT.md`, it has no lint backing it, and most of the 54 are actions reaching for `getMembership`/`getProjectBySlug` — an authorization helper that probably belongs in `shared/`. Recorded in `PROJECT.md` §2.2 as a baseline rather than fixed here; the real fix is an import-boundary rule, which is its own task.
+
+That move surfaced a live display bug: `getLabel` stripped `"s"` from the value and appended it back from a seconds-only template, so **`5m` rendered as "5ms"** from the day that option was added earlier the same session. Nothing failed, because a label assembled inline in a component is a branch no test can reach. The parsing is now `splitAutoRefresh()` in `shared/types/user-preferences.types.ts`, beside `parseAutoRefresh`, with two tests plus a parameterised case over every seconds value.
+
+⚠️ Worth knowing about the pairing: the shortest refresh interval is 30 s and the read-cache TTL is also 30 s, so a refresh can land on a value up to 30 s old — effective staleness on the overview reaches a minute.
+
+**Per-project queries split, 2026-08-20 — §16.1 Stage E.** `getProjectSummaries` became `getProjectStats` and `getProjectTopMessages`.
+
+They were one function returning one map behind one promise. The statistics and environment queries are rollup-backed and cost ~30 ms; the per-project top message is a `SUBSTRING(message, 1, 120)` aggregation over raw `events` and cost **~954 ms** on staging. Behind a single promise, every consumer of the cheap half waited for the expensive one — including the **KPI row**, whose four headline numbers are entirely rollup-backed and which does not render a message at all.
+
+| | before | after |
+|---|---|---|
+| KPI row | ~954 ms | ~30 ms |
+| project table numbers | ~954 ms | ~30 ms |
+| top-error column | ~954 ms | ~954 ms |
+
+⚠️ **This made no query faster.** Re-measured with `pg_stat_statements` after the split: still **10 SQL statements** per uncached load across 8 shapes, and `rollupBoundary` still 3 calls. Nothing was removed and nothing was optimised — the cheap things stopped waiting for the expensive one. The instinct on a slow page is to attack the slow query; here the larger win was available without touching it.
+
+It is the same mistake Stage D fixed one level up. That change split the page out of a single `Promise.all` into six `Suspense` boundaries; this one found the same shape *inside* one of those boundaries.
+
+**How the streaming cell works.** `ProjectsSection` is a client component (the Cards/Table toggle is `useState`), so a server `<Suspense>` cannot be written inside it. Rather than pass the promise down and unwrap it with `use()` on the client, `OverviewProjectsPanel` renders the cell on the server — `parts/TopMessageSlot.tsx`, wrapped in `Suspense` — and hands each row the finished `ReactNode`. Next's docs call this the slot pattern and confirm Server Components passed as props render on the server. It keeps the query, the await and the boundary together where the promise already lives.
+
+Two slot maps, one per view, because the table clips to one line and the card to two. Both share a single promise, so that costs extra elements in the payload and **not** a second query.
+
+Small fix carried along: the JS truncation (`slice(0, 64)` / `slice(0, 58)`) is gone. Both call sites already clip in CSS, so the character count did nothing the CSS was not already doing — while cutting by character on a proportional font, which drops text that would have fit.
+
+⚠️ An earlier draft of this entry said the two produced a *doubled ellipsis*. They cannot: `text-overflow` replaces the overflowing tail rather than appending to it. Caught by the audit — the removal was right and the reason written for it was invented, which is exactly what §3.3 says about rationale that nothing in the diff records.
+
 > ⚠️ **Each stage of §16.1 opens with a discussion, not with code.** A finished stage is not authorisation to start the next one — see the decision-log entry for 2026-08-20. Do not pick up Stage C because Stage B closed.
+
+---
+
+**§16.2 shipped in full, 2026-08-21 — all six items.** The project dashboard now follows the same read pattern as the org overview.
+
+**1–3, the §1/§2 debt.** `aggregations.service.ts` had zero tests; it has 26 integration tests against a `DASH` fixture project whose counts (10 error/api, 9 warn/worker, 2 info/cron) make ordering *as text* and *as a number* disagree on the **first** element. Twenty-one events expose both `ORDER BY` defects.
+
+Both were fixed with the failing test written first — all three targeted tests failed against the old code. The one that mattered was `topSources`: it applies a `LIMIT`, so a lexicographic sort did not merely mis-order the list. Asking for the top 2 of api (10), worker (9), cron (2) returned **worker and cron**, dropping the busiest source entirely. `environmentBreakdown()` and its widget were deleted rather than fixed — they carried the third occurrence and were rendered nowhere.
+
+`parseRange` went from two implementations and three preset lists to one of each, with `DASHBOARD_PRESETS` **derived** from the schema rather than restated. `export const dynamic = "force-dynamic"` went too; the build still reports the route as `ƒ (Dynamic)`.
+
+**4, streaming.** `DashboardPage` is a Server Component, the route hands down six unawaited promises, every widget is its own `Suspense` boundary. Verified by delaying `topMessages` three seconds: the page started streaming at **318 ms** while the stream stayed open to 3196.
+
+⚠️ **That conversion found a live defect nobody was looking for.** `DashboardPage` called `useAutoRefresh()` *and* rendered `DashboardHeader`, which renders `AutoRefreshControl`, which calls `useAutoRefresh()`. Two intervals, two `router.refresh()` per tick — **the dashboard reloaded itself twice as often as the setting said**, doubling its own database load on the page this workstream exists to make cheaper. No test here could have caught it: there are zero `.test.tsx` and a duplicated `setInterval` is invisible to every other kind. A Server Component cannot hold a hook, so the fix is structural rather than a deletion someone has to remember.
+
+**5, the rollup.** `eventsPerMinute`, `levelBreakdown` and `hasAnyEvents` read `by_level` — no migration. The boundary moved to `shared/services/rollup-boundary.service.ts` rather than being copied, reviving a folder empty since 2026-08-13, and gained a guard the overview's private copy lacked: a project absent from `rollup_state` used to inherit another project's watermark and then contribute no summary rows below it.
+
+⚠️ **Those tests are in `event-rollup.service.itest.ts`, not beside the service.** The shared fixture never builds a rollup, so `rollupBoundary` is null there and every read falls back to raw `events` — tests written next to the service would have passed without executing one line of the new code, which is this repository's recorded failure mode twice over. Confirmed by breaking the rollup CTE deliberately: exactly one test failed.
+
+**6, the cache.** `dashboard-cache.service.ts` over the same primitive, keyed by project id and preset. `hasAnyEvents` is excluded on purpose. Verified with `pg_stat_statements`: a second load leaves every aggregation at one call. An auto-refresh tick then costs only the uncached remainder — the gate plus the org, membership, project and alert-rule lookups — rather than six aggregations. Cheap, not free.
+
+**Three things moved to `shared/` rather than being copied** — the rollup boundary, the cache key builder (`query-cache-key.ts`) and the TTL settings (`read-cache-settings.ts`). Copying a cache-key builder in particular would have duplicated an authorization boundary, which is the worst instance of a pattern that had already cost this repository three separate defects in two days.
+
+**Totals:** 644 unit · 102 integration · 73 e2e.
+
+**Still open on this page:** `topMessages` (170 ms) and `recentErrors` cannot leave raw `events`; `topSources` needs a `by_source` rollup column, deferred until measured at 30 days. And every number here comes from a 24-hour window on a three-day corpus — the 30-day question is still unanswered for both pages.
+
+## The project dashboard, as planned — [`PLAN.md` §16.2](PLAN.md#162-the-project-dashboard--same-pattern-measured-first)
+
+**Measured 2026-08-21, before planning anything.** `features/dashboard/services/aggregations.service.bench.ts` against the 500k local corpus over a 24-hour window; baseline in `bench/baselines/2026-08-21-local-500k-dashboard.json`.
+
+| query | mean |
+|---|---|
+| `hasAnyEvents` | 0.79 ms |
+| `recentErrors` | 0.84 ms |
+| `topSources` | 11.1 ms |
+| `levelBreakdown` | 11.6 ms |
+| `eventsPerMinute` | 44.2 ms |
+| **`topMessages`** | **170.5 ms** |
+| fan-out of five, parallel | 169.0 ms |
+| what the route does (gate → fan-out) | 170.2 ms |
+
+**`topMessages` is the page** — 170 ms of a 170 ms fan-out, with the other four summing to 67 ms inside its shadow.
+
+⚠️ **A prediction was refuted.** The serialised `hasAnyEvents` gate — awaited *before* the `Promise.all` rather than inside it — was called out as a likely cause of the page's latency before anything was measured. It costs **1.2 ms**, 0.2% of the page. It stays where it is. Written down because the prediction was made out loud and used as an argument.
+
+**Agreed order** — 1 to 3 are §1/§2 debt owed regardless, and nothing touches a query before them:
+
+1. Tests for `aggregations.service.ts` (zero today).
+2. The two live `ORDER BY` defects, failing test first; delete the dead `environmentBreakdown()` and its widget.
+3. One `parseRange`, out of the route — there are **three** preset lists today (`TIME_RANGE_PRESETS`, `DASHBOARD_PRESETS`, and a hardcoded `Set` in the route, which also holds a second `parseRange`). They agree by coincidence, which is the same shape as the auto-refresh enum drift found earlier the same day.
+4. Streaming — everything but `topMessages` at ~44 ms instead of 170.
+5. The rollup for `eventsPerMinute`, `levelBreakdown`, `hasAnyEvents`. All from `by_level`; **no migration**.
+6. The cache, keyed by project.
+
+**Item 5 is on the list despite the benchmark showing no latency win**, and the reason is a correction to that benchmark rather than a decision against it: 0 ms was measured over a **24-hour window on a three-day corpus**, and `eventsPerMinute` scans in proportion to the window while the rollup form does not. Plus the non-numeric reason — one read pattern instead of two. Both recorded in §17.
+
+`topSources` stays off the list until measured at 30 days: it needs a `by_source` column, which is permanent width on every row for 11 ms today.
 
 **The storage engine decision is deferred until 1M+ events** and is deliberately *not* part of this workstream. Postgres stays. Reasoning, including why deferring is unusually cheap here and what does get more expensive with delay, is in `PLAN.md` §17.
 

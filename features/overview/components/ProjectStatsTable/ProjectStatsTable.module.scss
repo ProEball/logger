@@ -79,36 +79,6 @@
 .rateRed    { font-family: var(--font-mono); font-size: 12px; color: var(--lvl-error); }
 .rateDash   { font-family: var(--font-mono); font-size: 12px; color: var(--fg-4); }
 
-.topMsgWrap {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    vertical-align: middle;
-    max-width: 340px;
-}
-
-.lvlDot {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    flex-shrink: 0;
-}
-
-.topMsg {
-    font-family: var(--font-mono);
-    font-size: 11px;
-    color: var(--fg-3);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.noData {
-    color: var(--fg-4);
-    font-family: var(--font-mono);
-    font-size: 12px;
-}
-
 // ── Alert badge with pulse ─────────────────────────────────────────────
 .alertBadge {
     display: inline-flex;

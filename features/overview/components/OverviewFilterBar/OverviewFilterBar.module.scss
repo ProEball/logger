@@ -26,6 +26,13 @@
     flex-shrink: 0;
 }
 
+// Pushes auto-refresh to the trailing edge. It is a display preference, not a
+// filter, so it does not belong in the run of pills that narrow the page.
+.spacer {
+    margin-left: auto;
+    flex-shrink: 0;
+}
+
 // ── Universal pill ─────────────────────────────────────────────────────
 .pill {
     height: 28px;
@@ -65,38 +72,3 @@
     }
 }
 
-// Level active: set via inline style (level color)
-.pillLevelActive {
-    &:hover {
-        opacity: 0.85;
-    }
-}
-
-.levelDot {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    flex-shrink: 0;
-}
-
-.clearBtn {
-    height: 28px;
-    width: 28px;
-    padding: 0;
-    background: none;
-    border: none;
-    color: var(--fg-4);
-    font-size: 11px;
-    cursor: pointer;
-    border-radius: 4px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    transition: color var(--duration-fast) var(--ease-out),
-        background var(--duration-fast) var(--ease-out);
-
-    &:hover {
-        color: var(--fg-2);
-        background: var(--bg-hover);
-    }
-}

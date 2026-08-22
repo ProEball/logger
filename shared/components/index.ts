@@ -1,6 +1,8 @@
 export { AppShell } from './AppShell/AppShell';
 export type { AppShellProps } from './AppShell/AppShell';
 
+export { AutoRefreshControl } from './AutoRefreshControl/AutoRefreshControl';
+
 export { CommandPalette } from './CommandPalette/CommandPalette';
 export type { CommandGroup, CommandItem, CommandPaletteProps } from './CommandPalette/CommandPalette';
 

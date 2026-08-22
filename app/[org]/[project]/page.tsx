@@ -5,35 +5,24 @@ import { getOrgBySlug } from "@/features/organizations/services/organizations.se
 import { getMembership } from "@/features/organizations/services/organizations.service";
 import { getProjectBySlug } from "@/features/projects/services/projects.service";
 import { listApiKeysForProject } from "@/features/api-keys/services/api-keys.service";
+import { hasAnyEvents } from "@/features/dashboard/services/aggregations.service";
 import {
-    hasAnyEvents,
-    eventsPerMinute,
-    levelBreakdown,
-    topMessages,
-    recentErrors,
-    topSources,
-} from "@/features/dashboard/services/aggregations.service";
+    cachedEventsPerMinute,
+    cachedLevelBreakdown,
+    cachedRecentErrors,
+    cachedTopMessages,
+    cachedTopSources,
+} from "@/features/dashboard/services/dashboard-cache.service";
 import { listAlertRules } from "@/features/alerts/services/alert-rules.service";
 import { DashboardPage } from "@/features/dashboard/components/DashboardPage/DashboardPage";
 import { EmptyProjectState } from "@/features/dashboard/components/EmptyProjectState/EmptyProjectState";
-import type { TimeRange, TimeRangePreset } from "@/features/events/utils/event-filters.types";
+import { parseDashboardRange } from "@/features/dashboard/utils/dashboard-range";
 
 interface DashboardRouteProps {
     params: Promise<{ org: string; project: string }>;
     searchParams: Promise<SearchParams>;
 }
 
-export const dynamic = "force-dynamic";
-
-const VALID_PRESETS = new Set<string>(["15m", "1h", "6h", "24h", "7d", "30d"]);
-
-function parseRange(sp: SearchParams): TimeRange {
-    const r = typeof sp.range === "string" ? sp.range : "1h";
-    if (VALID_PRESETS.has(r)) {
-        return { type: "preset", value: r as TimeRangePreset };
-    }
-    return { type: "preset", value: "1h" };
-}
 
 export default async function DashboardRoute({ params, searchParams }: DashboardRouteProps) {
     const { org: orgSlug, project: projectSlug } = await params;
@@ -66,30 +55,34 @@ export default async function DashboardRoute({ params, searchParams }: Dashboard
         );
     }
 
-    const range = parseRange(sp);
+    const range = parseDashboardRange(sp.range);
 
-    // Run all queries in parallel
-    const [eventsPerMin, levelData, topMsgs, recentErrs, topSrcs, alertRulesList] = await Promise.all([
-        eventsPerMinute(project.id, range),
-        levelBreakdown(project.id, range),
-        topMessages(project.id, range),
-        recentErrors(project.id, range),
-        topSources(project.id, range),
-        listAlertRules(project.id, membership),
-    ]);
-
+    // NOT awaited. Each query is started here and handed to the section that
+    // draws it, so a slow aggregation delays only its own widget instead of the
+    // whole page — the same shape the org overview took in §16.1 Stage D.
+    //
+    // Measured before the change (`aggregations.service.bench.ts`): `topMessages`
+    // 170 ms, `eventsPerMinute` 44.2, `levelBreakdown` 11.6, `topSources` 11.2,
+    // `recentErrors` 0.84. Behind one `Promise.all` the page showed nothing for
+    // 170 ms; now everything but the last paints at ~45.
+    //
+    // These are the `cached*` wrappers: every reader of a project asks the same
+    // question, so it is answered once per 30 s and shared. `hasAnyEvents` is
+    // deliberately not among them — it gates the onboarding screen, and the one
+    // moment its answer changes is the one moment a stale "no events yet" would
+    // be worst.
     return (
         <DashboardPage
             projectName={project.name}
             orgSlug={orgSlug}
             projectSlug={projectSlug}
             range={range}
-            eventsPerMin={eventsPerMin}
-            levelBreakdown={levelData}
-            topMessages={topMsgs}
-            recentErrors={recentErrs}
-            topSrcs={topSrcs}
-            alertRules={alertRulesList}
+            eventsPerMinPromise={cachedEventsPerMinute(project.id, range)}
+            levelBreakdownPromise={cachedLevelBreakdown(project.id, range)}
+            topMessagesPromise={cachedTopMessages(project.id, range)}
+            recentErrorsPromise={cachedRecentErrors(project.id, range)}
+            topSourcesPromise={cachedTopSources(project.id, range)}
+            alertRulesPromise={listAlertRules(project.id, membership)}
         />
     );
 }

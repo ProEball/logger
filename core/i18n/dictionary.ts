@@ -1,5 +1,15 @@
 export const dictionary = {
     common: {
+        // Moved out of `events` on 2026-08-20 when AutoRefreshControl became a
+        // shared component used by the events list, the project dashboard and
+        // the org overview. A shared component reading a feature's namespace
+        // is the i18n version of the §2.1 import rule.
+        autoRefresh: {
+            label: "Auto-refresh",
+            off: "Off",
+            seconds: "{{n}}s",
+            minutes: "{{n}}m",
+        },
         save: "Save",
         cancel: "Cancel",
         loading: "Loading",
@@ -61,11 +71,6 @@ export const dictionary = {
             newer: "Newer",
             older: "Older",
         },
-        autoRefresh: {
-            label: "Auto-refresh",
-            off: "Off",
-            seconds: "{{n}}s",
-        },
         detail: {
             details: "Details",
             attributes: "Attributes",
@@ -109,7 +114,6 @@ export const dictionary = {
         widgets: {
             eventsPerMinute: "Events over time",
             levelBreakdown: "By level",
-            environmentBreakdown: "By environment",
             topMessages: "Top messages",
             recentErrors: "Recent errors",
         },

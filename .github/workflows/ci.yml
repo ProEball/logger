@@ -1,4 +1,4 @@
-# The four gates from .claude/rules/WORKFLOW.md §3, enforced on every push and
+# The four gates from .claude/rules/WORKFLOW.md §4, enforced on every push and
 # pull request. Until this existed nothing ran them automatically — every merge
 # up to and including the production-hardening pass was verified by hand.
 name: CI

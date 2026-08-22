@@ -1,10 +1,13 @@
 import Link from "next/link";
+import type { ReactNode } from "react";
 import type { ProjectRow } from "@/features/overview/services/overview.service";
 import styles from "./ProjectCards.module.scss";
 
 interface ProjectCardsProps {
     rows: ProjectRow[];
     orgSlug: string;
+    /** Per-project top-error blocks, rendered on the server and streamed in. */
+    topMessages: Record<string, ReactNode>;
 }
 
 function envClassName(env: string): string {
@@ -15,14 +18,14 @@ function envClassName(env: string): string {
     return styles.envDefault;
 }
 
-export function ProjectCards({ rows, orgSlug }: ProjectCardsProps) {
+export function ProjectCards({ rows, orgSlug, topMessages }: ProjectCardsProps) {
     if (rows.length === 0) {
         return <div className={styles.empty}>No projects found</div>;
     }
 
     return (
         <div className={styles.grid}>
-            {rows.map(({ project, totalEvents, errorCount, environments, topMessage, topMessageLevel, firingAlertsCount }) => {
+            {rows.map(({ project, totalEvents, errorCount, environments, firingAlertsCount }) => {
                 const isFiring = firingAlertsCount > 0;
                 const errorRate = totalEvents > 0 ? (errorCount / totalEvents) * 100 : 0;
                 const rateLabel = totalEvents === 0
@@ -82,19 +85,7 @@ export function ProjectCards({ rows, orgSlug }: ProjectCardsProps) {
                             </div>
                         </div>
 
-                        {topMessage && (
-                            <div className={styles.topError}>
-                                {topMessageLevel && (
-                                    <span
-                                        className={styles.lvlDot}
-                                        style={{ background: `var(--lvl-${topMessageLevel})` }}
-                                    />
-                                )}
-                                <span className={styles.topErrorMsg} title={topMessage}>
-                                    {topMessage.length > 58 ? topMessage.slice(0, 58) + "…" : topMessage}
-                                </span>
-                            </div>
-                        )}
+                        {topMessages[project.id]}
                     </Link>
                 );
             })}

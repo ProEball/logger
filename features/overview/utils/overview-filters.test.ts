@@ -41,43 +41,6 @@ describe("parseOverviewFilters — range preset", () => {
     });
 });
 
-describe("parseOverviewFilters — levels", () => {
-    it("returns no filter when `levels` is absent", () => {
-        const filters = parseOverviewFilters({});
-        expect(filters.levels).toEqual([]);
-        expect(filters.levelsFilter).toBeUndefined();
-    });
-
-    it("splits a comma-separated list", () => {
-        expect(parseOverviewFilters({ levels: "error,fatal" }).levels).toEqual(["error", "fatal"]);
-    });
-
-    it("drops empty segments from a trailing or doubled comma", () => {
-        expect(parseOverviewFilters({ levels: "error,,fatal," }).levels).toEqual(["error", "fatal"]);
-    });
-
-    it("treats an all-commas value as no filter, not as a list of blanks", () => {
-        const filters = parseOverviewFilters({ levels: ",,," });
-        expect(filters.levels).toEqual([]);
-        expect(filters.levelsFilter).toBeUndefined();
-    });
-
-    it("passes a non-empty list through as the service-shaped filter", () => {
-        expect(parseOverviewFilters({ levels: "warn" }).levelsFilter).toEqual(["warn"]);
-    });
-
-    it("ignores a repeated `levels` param", () => {
-        expect(parseOverviewFilters({ levels: ["error", "warn"] }).levels).toEqual([]);
-    });
-
-    it("does not validate level names — an unknown level reaches the query", () => {
-        // Deliberate: the service parameterises levels, so an unknown one
-        // returns no rows rather than being a risk. Documented so a future
-        // reader does not mistake it for an oversight.
-        expect(parseOverviewFilters({ levels: "banana" }).levelsFilter).toEqual(["banana"]);
-    });
-});
-
 describe("parseOverviewFilters — environment", () => {
     it("returns no filter when `env` is absent", () => {
         const filters = parseOverviewFilters({});
@@ -106,8 +69,8 @@ describe("parseOverviewFilters — searchString", () => {
     });
 
     it("keeps the params the filter bar needs to round-trip", () => {
-        const filters = parseOverviewFilters({ range: "24h", levels: "error" });
-        expect(filters.searchString).toBe("range=24h&levels=error");
+        const filters = parseOverviewFilters({ range: "24h", env: "production" });
+        expect(filters.searchString).toBe("range=24h&env=production");
     });
 
     it("omits params with an empty value", () => {

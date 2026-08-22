@@ -29,6 +29,18 @@ export const BETA = "aaaaaaaa-0000-4000-8000-000000000002";
 export const QUIET = "aaaaaaaa-0000-4000-8000-000000000003";
 export const OTHER_ORG_PROJECT = "bbbbbbbb-0000-4000-8000-000000000001";
 
+/**
+ * The project dashboard's fixture, deliberately in **org B**.
+ *
+ * The dashboard is per-project, so which organization owns it does not matter —
+ * but `ORG_A_PROJECTS` is the array every overview test passes in, and a fourth
+ * project in org A would either have to join that array (changing every
+ * expected total in `overview.service.itest.ts`) or sit outside it while
+ * `listProjectsForOrg(ORG_A)` still returned it. The second is a trap laid for
+ * whoever writes the next test.
+ */
+export const DASH = "bbbbbbbb-0000-4000-8000-000000000002";
+
 /** The projects a test normally passes to the service. */
 export const ORG_A_PROJECTS = [ALPHA, BETA, QUIET];
 
@@ -77,8 +89,13 @@ export const LONG_MESSAGE_GROUPED = LONG_PREFIX;
 /**
  * An environment name containing a comma — accepted by the ingest schema,
  * which validates `environment` only as `z.string().max(128)`.
- * `getProjectSummaries` joins environments with `STRING_AGG(…, ',')` and then
- * splits the result on "," in TypeScript, so this one value arrives as two.
+ * It exists because the read path **used to** join environments with
+ * `STRING_AGG(…, ',')` and split the result on "," in TypeScript, so this one
+ * value arrived on the project card as two. Fixed 2026-08-20 by aggregating
+ * into a real array; `getProjectStats` now uses `ARRAY_AGG(DISTINCT env)` and
+ * nothing splits a string. The row stays, and the test that pinned the bug was
+ * inverted rather than deleted — see `overview.service.itest.ts`, "keeps an
+ * environment name that contains a comma intact".
  */
 export const COMMA_ENVIRONMENT = "eu,prod";
 
@@ -92,6 +109,8 @@ interface EventSpec {
     /** Minutes after the anchor; negative is before it. */
     offsetMinutes: number;
     environment?: string | null;
+    /** Absent means NULL, which the dashboard's `topSources` labels "(unknown)". */
+    source?: string | null;
     /** What this row is here to prove. Not decoration — read it before editing counts. */
     why: string;
 }
@@ -193,6 +212,41 @@ export const CORPUS: EventSpec[] = [
         offsetMinutes: 5, environment: "production",
         why: "loud enough to dominate every aggregate if project scoping ever leaks",
     },
+
+    // ── DASH: the project dashboard's cases ─────────────────────────────────
+    //
+    // The counts 10 / 9 / 2 are the whole point and must not be "tidied".
+    // Sorted as text descending they read "9", "2", "10"; sorted as numbers
+    // they read 10, 9, 2. The two orders disagree on the *first* element, which
+    // is what makes `ORDER BY count DESC` against a `COUNT(*)::text` alias
+    // visible instead of merely wrong. The same three counts are reused for
+    // both `level` and `source` so one project covers `levelBreakdown` and
+    // `topSources` at once.
+    {
+        project: DASH, count: 10, level: "error", message: "dash api failure",
+        offsetMinutes: 5, environment: "production", source: "api",
+        why: "the true top by count, and the row a text sort ranks last",
+    },
+    {
+        project: DASH, count: 9, level: "warn", message: "dash worker retry",
+        offsetMinutes: 5, environment: "production", source: "worker",
+        why: "9 sorts above 10 as text — the row a text sort ranks first",
+    },
+    {
+        project: DASH, count: 2, level: "info", message: "dash cron tick",
+        offsetMinutes: 5, environment: "production", source: "cron",
+        why: "a third group, so `limit: 2` has something to cut and the cut is visible",
+    },
+    {
+        project: DASH, count: 1, level: "fatal", message: "dash meltdown",
+        offsetMinutes: 40, environment: "production", source: null,
+        why: "newest error, so recentErrors must return it first; NULL source is \"(unknown)\"",
+    },
+    {
+        project: DASH, count: 1, level: "debug", message: "dash noise",
+        offsetMinutes: 70, environment: "production", source: "api",
+        why: "outside the canonical range and not an error — must appear in no dashboard widget",
+    },
 ];
 
 // ── seeding ──────────────────────────────────────────────────────────────────
@@ -217,7 +271,8 @@ export async function seedCorpus(sql: Sql): Promise<void> {
             (${ALPHA}::uuid, ${ORG_A}::uuid, 'Alpha', 'alpha'),
             (${BETA}::uuid,  ${ORG_A}::uuid, 'Beta',  'beta'),
             (${QUIET}::uuid, ${ORG_A}::uuid, 'Quiet', 'quiet'),
-            (${OTHER_ORG_PROJECT}::uuid, ${ORG_B}::uuid, 'Other', 'other')
+            (${OTHER_ORG_PROJECT}::uuid, ${ORG_B}::uuid, 'Other', 'other'),
+            (${DASH}::uuid, ${ORG_B}::uuid, 'Dash', 'dash')
     `;
 
     // `events.id` has no database default — the ingest service generates it —
@@ -233,12 +288,13 @@ export async function seedCorpus(sql: Sql): Promise<void> {
             level: spec.level,
             message: spec.message,
             environment: spec.environment ?? null,
+            source: spec.source ?? null,
         })),
     );
 
     // One statement: postgres.js expands the array into a multi-row INSERT.
     await sql`
-        INSERT INTO events ${sql(rows, "id", "project_id", "timestamp", "level", "message", "environment")}
+        INSERT INTO events ${sql(rows, "id", "project_id", "timestamp", "level", "message", "environment", "source")}
     `;
 
     // The environment registry is maintained at ingest, and this fixture writes

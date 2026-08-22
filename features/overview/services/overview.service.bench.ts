@@ -6,7 +6,8 @@ import {
     getOrgEventBuckets,
     getOrgLevelBreakdown,
     getOrgTopErrors,
-    getProjectSummaries,
+    getProjectStats,
+    getProjectTopMessages,
 } from "@/features/overview/services/overview.service";
 import { benchRange, describeTarget, resolveBenchTarget } from "@/bench/support/target";
 import { markRollupDirty, rebuildRollupForProject } from "@/features/ingest/services/event-rollup.service";
@@ -15,8 +16,12 @@ import { markRollupDirty, rebuildRollupForProject } from "@/features/ingest/serv
  * The organization overview's read path, one aggregation at a time.
  *
  * This is the page measured at 1.4–1.6 s on 540k events during the staging run
- * (`PROGRESS.md`, read-path audit). One page load issues **eight** queries: the
- * five below, with `getProjectSummaries` itself being three in parallel.
+ * (`PROGRESS.md`, read-path audit). One page load issues **10 SQL statements**
+ * across 8 distinct shapes: the six service calls benched below, of which
+ * `getProjectStats` is a rollup boundary plus two queries in parallel, and
+ * `getOrgLevelBreakdown` and `getOrgEventBuckets` are a boundary plus one each.
+ * Re-counted with `pg_stat_statements` on 2026-08-20 after the per-project top
+ * message was split onto its own call — the split changed neither number.
  *
  * What this file can and cannot show:
  * - It measures the queries, so it can prove or disprove Stage E.
@@ -113,8 +118,16 @@ describe("organization overview", () => {
         await db.execute(sql`SELECT 1`);
     });
 
-    bench("getProjectSummaries — 3 queries in parallel", async () => {
-        await getProjectSummaries(ids, range);
+    // Split on 2026-08-20: these were one function, so this benchmark reported
+    // the max of the two rather than either. Measured separately, the gap is the
+    // whole point — the stats are rollup-backed milliseconds and the message
+    // aggregation is hundreds.
+    bench("getProjectTopMessages — the message aggregation alone", async () => {
+        await getProjectTopMessages(ids, range);
+    });
+
+    bench("getProjectStats — 2 queries in parallel, rollup-backed", async () => {
+        await getProjectStats(ids, range);
     });
 
     bench("getOrgTopErrors — group by SUBSTRING(message, 1, 200)", async () => {
@@ -144,11 +157,14 @@ describe("organization overview", () => {
     /**
      * All of it, the way the page actually does it. Not the sum of the parts:
      * the queries run concurrently and contend for the same connection pool,
-     * which has ten slots for the eight queries one page load issues.
+     * which has ten slots for the ten statements one page load issues. That
+     * margin used to be comfortable and is now exactly none — worth watching
+     * before adding a seventh call.
      */
     bench("whole page fan-out (what /[org] awaits)", async () => {
         await Promise.all([
-            getProjectSummaries(ids, range),
+            getProjectStats(ids, range),
+            getProjectTopMessages(ids, range),
             getOrgTopErrors(ids, range),
             getOrgLevelBreakdown(ids, range),
             getOrgEnvironments(ids),

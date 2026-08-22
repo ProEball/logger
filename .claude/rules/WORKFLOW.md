@@ -59,7 +59,47 @@ A file opts out with a **`test-exempt: <reason>`** comment. Same shape as the ru
 
 **Know what a green hook means.** It sees that a file exists and what it imports — not whether it asserts anything true. On 2026-08-20 three tests in this repository passed against broken code (a top-N ordering bug, an environment name split in two, and a test asserting on text that CSS had uppercased); every one of them would have satisfied this hook. It closes the "nobody wrote a test" gap and none of the others.
 
-## 3. Gates before declaring done
+## 3. What a subagent may do
+
+Two kinds of work go to a subagent. Everything else stays with whoever is doing the change.
+
+### 3.1 Audit — it reports, it never writes
+
+Use the **`Explore`** agent, which has no `Edit` or `Write` tool at all. That is the reason to pick it: "report, do not modify" is then a property of the toolset rather than a sentence in a prompt that can be reinterpreted halfway through. Same principle as everything else here — the constraint lives in the mechanism, not in good intentions.
+
+Briefs that work:
+
+- "Read this diff. List every claim in `docs/reference/` it contradicts — file, line, and the sentence quoted."
+- "Which statements in `<doc>` are not supported by the code as it stands?"
+- "Where else does this pattern appear in the tree?"
+
+**The output must be checkable at a glance**: file, line, quotation. A finding that has to be re-derived from scratch cost more than it saved.
+
+The cold start is an *advantage* here. An auditor who was not in the room cannot confirm its own earlier reasoning from memory; it has to go and read.
+
+### 3.2 The descriptive half of `docs/reference/`
+
+Delegate by **kind of claim, not by file**. What a subagent maintains is anything verifiable against the code by someone who was not in the room: schema tables, environment-variable lists, script inventories, route and status-code tables, counts, signatures, which query backs which widget.
+
+What it does not maintain — *in those same files* — is the reasoning. `security.md` explaining why a cache key is an authorization boundary, and `architecture.md` explaining why that key carries a range preset rather than a resolved range, live under `docs/reference/` and are not delegable. See §3.3.
+
+### 3.3 What never goes to a subagent
+
+**Tests for logic you just wrote.** The test *is* the verification, and the person who wrote the code is the one holding a hypothesis about what breaks. A cold agent produces exactly the failure this repository has already had twice: `aggregations.service.test.ts`, named after a service it never imported, and the three tests that passed against broken code on 2026-08-20. Every one of them would satisfy the mechanical gate in §2.
+
+**Anything answering "why".** `PLAN.md` §17, decision logs, superseded-notes, rationale paragraphs. A decision's reasoning usually lives in the conversation that produced it and nowhere in the diff — the caching work on 2026-08-20 turned entirely on one sentence from the user revising the target from one concurrent reader to fifty, and no line of code records that. A subagent given the diff either invents a rationale or asks for the conversation back, and the second defeats the point of delegating.
+
+### 3.4 A floor, so this does not become noise
+
+Delegate when the work is big enough that a cold start costs less than doing it: a sweep over several files, an audit of a whole document, a search whose answer is a conclusion rather than a file dump. A one-line correction noticed in passing gets fixed in passing.
+
+Same judgement the hooks are tuned by — a rule that fires on everything gets tuned out.
+
+### 3.5 Delegation moves the work, never the responsibility
+
+A subagent's report is **input, not a verdict**. Findings get verified before they are acted on; delegated edits get read before the gates in §4 run. If a subagent was wrong, that is not a smaller mistake for having been made elsewhere, and §5 applies to what a subagent did exactly as it applies to what you did.
+
+## 4. Gates before declaring done
 
 ```bash
 npx tsc --noEmit    # 0 errors
@@ -72,6 +112,6 @@ npm run build       # succeeds
 
 Fix failures at the root. Do not suppress them with `any`, `@ts-ignore`, `eslint-disable`, or a skipped test. If a suppression is genuinely correct, the comment must explain *why* it is correct — see `seed-system-roles.ts` for the bar.
 
-## 4. Report honestly
+## 5. Report honestly
 
 State what you verified and how. If a check was skipped, say which and why. If part of the work is incomplete, say which part — do not let a summary imply more than was done.

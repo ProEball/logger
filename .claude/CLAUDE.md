@@ -72,5 +72,7 @@ Two rules apply to **every** change, no exceptions — details and the exact doc
 1. **Behaviour change → docs updated in the same change.** Undocumented behaviour is treated as a defect, not a shortcut.
 2. **Logic added or changed → covered by tests in the same change.** A change that cannot be tested needs its untestability explained, not waived silently.
 
+Neither is delegable. `WORKFLOW.md` §3 says what a subagent *is* for — auditing (read-only, so it reports rather than writes) and the descriptive half of `docs/reference/` — and why tests for code you just wrote, and anything answering "why", are not on that list.
+
 @rules/WORKFLOW.md
 @rules/PROJECT.md

@@ -5,12 +5,13 @@ import { listProjectsForOrg } from "@/features/projects/services/projects.servic
 import { listAlertRules } from "@/features/alerts/services/alert-rules.service";
 import { resolveRange } from "@/features/dashboard/utils/aggregation-utils";
 import {
-    getProjectSummaries,
-    getOrgLevelBreakdown,
-    getOrgTopErrors,
-    getOrgEnvironments,
-    getOrgEventBuckets,
-} from "@/features/overview/services/overview.service";
+    cachedProjectStats,
+    cachedProjectTopMessages,
+    cachedOrgLevelBreakdown,
+    cachedOrgTopErrors,
+    cachedOrgEnvironments,
+    cachedOrgEventBuckets,
+} from "@/features/overview/services/overview-cache.service";
 import { parseOverviewFilters } from "@/features/overview/utils/overview-filters";
 import { clampTopErrorsWindow } from "@/features/overview/utils/top-errors-window";
 import type { AlertRuleFlags } from "@/features/overview/utils/build-project-rows";
@@ -50,25 +51,55 @@ export default async function OrgPage({ params, searchParams }: OrgPageProps) {
     // cross-feature calls — projects, alert rules — in the route, which §2.3
     // permits, instead of making `features/overview` import two other features
     // against §2.1.
-    const summariesPromise = getProjectSummaries(
+    //
+    // These are the `cached*` wrappers, not the services themselves: every
+    // reader of an organization asks the same question, so it is answered once
+    // per 30 s and shared (`overview-cache.service.ts`). Both the preset and
+    // the resolved range are passed — the preset keys the cache, the range is
+    // used only when the query actually runs. Keying on the range instead
+    // would key on `Date.now()` and never hit.
+    // Two promises where there was one until 2026-08-20. The statistics are
+    // rollup-backed and land in ~30 ms; the per-project top message is a
+    // message-keyed aggregation over raw `events` and took ~954 ms on staging.
+    // Behind a single promise, every consumer of the cheap half waited for the
+    // expensive one — including the KPI row, which does not display a message
+    // at all.
+    const statsPromise = cachedProjectStats(
         projectIds,
+        filters.preset,
         dateRange,
-        filters.levelsFilter,
+        filters.environmentsFilter,
+    );
+    const topMessagesPromise = cachedProjectTopMessages(
+        projectIds,
+        filters.preset,
+        dateRange,
         filters.environmentsFilter,
     );
     // Top errors is the one widget that cannot come from the rollup, so its
     // cost scales with the rows it matches. Its window is capped independently
-    // of the page's — see `clampTopErrorsWindow`.
+    // of the page's — see `clampTopErrorsWindow` — and the cache is keyed on
+    // the capped window, which is the range this actually asks for.
     const topErrorsWindow = clampTopErrorsWindow(filters.preset);
-    const topErrorsPromise = getOrgTopErrors(
+    const topErrorsPromise = cachedOrgTopErrors(
         projectIds,
+        topErrorsWindow.preset,
         resolveRange({ type: "preset", value: topErrorsWindow.preset }),
-        filters.levelsFilter,
         filters.environmentsFilter,
     );
-    const levelBreakdownPromise = getOrgLevelBreakdown(projectIds, dateRange, filters.environmentsFilter);
-    const environmentsPromise = getOrgEnvironments(projectIds);
-    const bucketsPromise = getOrgEventBuckets(projectIds, dateRange, filters.bucketSecs);
+    const levelBreakdownPromise = cachedOrgLevelBreakdown(
+        projectIds,
+        filters.preset,
+        dateRange,
+        filters.environmentsFilter,
+    );
+    const environmentsPromise = cachedOrgEnvironments(projectIds);
+    const bucketsPromise = cachedOrgEventBuckets(
+        projectIds,
+        filters.preset,
+        dateRange,
+        filters.bucketSecs,
+    );
 
     const alertRulesPromise = Promise.all(
         projects.map((p) => listAlertRules(p.id, membership, true)),
@@ -83,11 +114,11 @@ export default async function OrgPage({ params, searchParams }: OrgPageProps) {
             orgSlug={org.slug}
             projects={projects}
             range={filters.preset}
-            levels={filters.levels}
             environment={filters.environment}
             environmentsPromise={environmentsPromise}
             searchString={filters.searchString}
-            summariesPromise={summariesPromise}
+            statsPromise={statsPromise}
+            topMessagesPromise={topMessagesPromise}
             alertRulesPromise={alertRulesPromise}
             topErrorsPromise={topErrorsPromise}
             topErrorsWindow={topErrorsWindow}

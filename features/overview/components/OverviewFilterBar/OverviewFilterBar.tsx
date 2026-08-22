@@ -1,24 +1,32 @@
 "use client";
 import { useCallback } from "react";
 import { useRouter } from "next/navigation";
+import { AutoRefreshControl } from "@/shared/components/AutoRefreshControl/AutoRefreshControl";
 import styles from "./OverviewFilterBar.module.scss";
 
 const PRESETS = ["15m", "1h", "6h", "24h", "7d", "30d"] as const;
 
-const ALL_LEVELS = ["fatal", "error", "warn", "info", "debug"] as const;
-type Level = (typeof ALL_LEVELS)[number];
-
-const LEVEL_COLORS: Record<Level, string> = {
-    fatal: "var(--lvl-fatal)",
-    error: "var(--lvl-error)",
-    warn:  "var(--lvl-warn)",
-    info:  "var(--lvl-info)",
-    debug: "var(--lvl-debug)",
-};
-
+/**
+ * The org overview filters by **range and environment only**.
+ *
+ * Level chips were removed on 2026-08-20. They reached three of the page's
+ * eight widgets — the KPI row, the per-project stats and org-wide top errors —
+ * and left the other five visibly unchanged: the volume chart ignores level
+ * filters by construction, the level breakdown is *about* levels so narrowing
+ * to one would empty it, and the per-project top message never received the
+ * filter at all (a defect with its own e2e test, deleted with the filter).
+ *
+ * A control that moves three things and leaves five alone does not read as a
+ * filter with a documented scope; it reads as a broken filter. The drill-down
+ * it offered still exists per project on the events page, where filtering
+ * applies to everything on screen.
+ *
+ * Rejected: making it reach all eight instead. That means teaching the volume
+ * chart to read `by_level` from the rollup and fixing the top-message defect —
+ * real work, in service of a control nobody asked to keep.
+ */
 interface OverviewFilterBarProps {
     range: string;
-    levels: string[];
     environment: string;
     environments: string[];
     searchString: string;
@@ -26,7 +34,6 @@ interface OverviewFilterBarProps {
 
 export function OverviewFilterBar({
     range,
-    levels,
     environment,
     environments,
     searchString,
@@ -46,16 +53,6 @@ export function OverviewFilterBar({
         [router, searchString],
     );
 
-    const toggleLevel = useCallback(
-        (level: string) => {
-            const next = levels.includes(level)
-                ? levels.filter((l) => l !== level)
-                : [...levels, level];
-            update("levels", next.join(","));
-        },
-        [levels, update],
-    );
-
     return (
         <div className={styles.bar}>
             {/* Range presets */}
@@ -70,43 +67,6 @@ export function OverviewFilterBar({
                         {p}
                     </button>
                 ))}
-            </div>
-
-            <div className={styles.sep} />
-
-            {/* Level chips */}
-            <div className={styles.group} role="group" aria-label="Levels">
-                {ALL_LEVELS.map((level) => {
-                    const active = levels.includes(level);
-                    return (
-                        <button
-                            key={level}
-                            type="button"
-                            className={`${styles.pill} ${active ? styles.pillLevelActive : ""}`}
-                            style={active ? {
-                                borderColor: LEVEL_COLORS[level],
-                                color: LEVEL_COLORS[level],
-                                background: `color-mix(in srgb, ${LEVEL_COLORS[level]} 12%, transparent)`,
-                            } : undefined}
-                            onClick={() => toggleLevel(level)}
-                        >
-                            <span
-                                className={styles.levelDot}
-                                style={{ background: LEVEL_COLORS[level] }}
-                            />
-                            {level}
-                        </button>
-                    );
-                })}
-                {levels.length > 0 && (
-                    <button
-                        type="button"
-                        className={styles.clearBtn}
-                        onClick={() => update("levels", "")}
-                    >
-                        ✕
-                    </button>
-                )}
             </div>
 
             {environments.length > 0 && (
@@ -133,6 +93,22 @@ export function OverviewFilterBar({
                     </div>
                 </>
             )}
+
+            {/*
+              * Auto-refresh, added 2026-08-20 — the overview was the only
+              * dashboard without it. Trailing edge and behind a spacer,
+              * because it changes how often the page reloads rather than what
+              * it shows, and sitting in the run of filter pills would read as
+              * a third filter.
+              *
+              * Worth knowing: the shortest interval is 30 s and the read cache
+              * TTL is also 30 s, so a refresh can land on a value up to 30 s
+              * old — effective staleness reaches a minute. See
+              * `overview-cache.service.ts`.
+              */}
+            <div className={styles.spacer}>
+                <AutoRefreshControl />
+            </div>
         </div>
     );
 }

@@ -5,15 +5,22 @@ import { useIsHydrated } from "@/shared/hooks/use-is-hydrated";
 import { setAutoRefresh, selectAutoRefresh } from "@/core/store/slices/user";
 import { updatePreferencesAction } from "@/features/auth/actions/update-preferences.action";
 import { t } from "@/core/i18n/t";
-import type { AutoRefreshValue } from "@/shared/types/user-preferences.types";
-import { useAutoRefresh } from "@/features/events/hooks/use-auto-refresh";
+import {
+    AUTO_REFRESH_VALUES,
+    splitAutoRefresh,
+    type AutoRefreshValue,
+} from "@/shared/types/user-preferences.types";
+import { useAutoRefresh } from "@/shared/hooks/use-auto-refresh";
 import styles from "./AutoRefreshControl.module.scss";
 
-const OPTIONS: AutoRefreshValue[] = ["off", "30s", "60s", "5m"];
+const OPTIONS = AUTO_REFRESH_VALUES;
 
+/** Renders "Off", "30s", "60s", "5m". Unit handling is in `splitAutoRefresh`. */
 function getLabel(v: AutoRefreshValue): string {
-    if (v === "off") return t("events.autoRefresh.off");
-    return t("events.autoRefresh.seconds").replace("{{n}}", v.replace("s", ""));
+    if (v === "off") return t("common.autoRefresh.off");
+    const { amount, unit } = splitAutoRefresh(v);
+    const key = unit === "m" ? "common.autoRefresh.minutes" : "common.autoRefresh.seconds";
+    return t(key).replace("{{n}}", amount);
 }
 
 export function AutoRefreshControl() {
@@ -38,8 +45,8 @@ export function AutoRefreshControl() {
     };
 
     return (
-        <div className={styles.control} role="group" aria-label={t("events.autoRefresh.label")}>
-            <span className={styles.label}>{t("events.autoRefresh.label")}</span>
+        <div className={styles.control} role="group" aria-label={t("common.autoRefresh.label")}>
+            <span className={styles.label}>{t("common.autoRefresh.label")}</span>
             <div className={styles.options}>
                 {OPTIONS.map((opt) => (
                     <button

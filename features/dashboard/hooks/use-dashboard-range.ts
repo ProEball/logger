@@ -2,21 +2,9 @@
 
 import { useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import type { TimeRange, TimeRangePreset } from "@/features/events/utils/event-filters.types";
+import type { TimeRange } from "@/features/events/utils/event-filters.types";
+import { parseDashboardRange } from "@/features/dashboard/utils/dashboard-range";
 
-export const DASHBOARD_PRESETS: TimeRangePreset[] = ["15m", "1h", "6h", "24h", "7d", "30d"];
-
-const VALID_PRESETS = new Set<string>(DASHBOARD_PRESETS);
-
-const DEFAULT_RANGE: TimeRange = { type: "preset", value: "1h" };
-
-function parseRange(params: URLSearchParams): TimeRange {
-    const r = params.get("range");
-    if (r && VALID_PRESETS.has(r)) {
-        return { type: "preset", value: r as TimeRangePreset };
-    }
-    return DEFAULT_RANGE;
-}
 
 export type UseDashboardRange = {
     range: TimeRange;
@@ -31,7 +19,7 @@ export function useDashboardRange(): UseDashboardRange {
     const searchParams = useSearchParams();
     const router = useRouter();
 
-    const range = parseRange(searchParams);
+    const range = parseDashboardRange(searchParams.get("range"));
 
     const setRange = useCallback(
         (newRange: TimeRange) => {

@@ -136,7 +136,13 @@ These aggregations return counts as `COUNT(*)::text` (to avoid `bigint` serialis
 
 Fixed 2026-08-20 in `getOrgTopErrors` and `getOrgLevelBreakdown` by ordering on `COUNT(*)` instead; covered by `e2e/overview.spec.ts` ("orders top errors by count, not by the text of the count"), whose fixture deliberately uses counts of 10 and 9 because any pair below 10 hides the bug.
 
-⚠️ **The same slip is still present in `features/dashboard/services/aggregations.service.ts`** — `levelBreakdown` (line 109), `environmentBreakdown` (132) and `topSources` (256). `levelBreakdown` is masked because `LevelBreakdownWidget` re-sorts numerically; the other two are not — `topSources` has `LIMIT 10` in SQL and `EnvironmentBreakdownWidget` takes `.slice(0, 8)` of whatever order it receives. `topMessages` in the same file already uses `ORDER BY COUNT(*) DESC`, which is what identifies this as a slip rather than a convention. Not fixed here: those paths have no test that would prove the fix, and building one is part of §16.1.
+**Fixed everywhere 2026-08-21.** The three remaining occurrences were in `features/dashboard/services/aggregations.service.ts`: `levelBreakdown`, `topSources` and `environmentBreakdown`. The first two now order on the aggregate; the third was deleted with its widget, which had been rendered nowhere since before the audit.
+
+What kept them alive for a day was not difficulty — the fix is one identifier — but that nothing could prove it. `PLAN.md` §17 recorded the decision explicitly: fix it only where a test can demonstrate it, because a service with no tests is a service where a "fix" is a guess. `aggregations.service.itest.ts` closed that, and the three tests targeting these defects **failed against the old code before passing against the new** — the fixture project uses counts of 10, 9 and 2, whose text and numeric orderings disagree on the *first* element.
+
+`topSources` was the one that mattered. It applies a `LIMIT`, so the lexicographic sort did not merely mis-order the list: asking for the top 2 of `api` (10), `worker` (9) and `cron` (2) returned `worker` and `cron`, dropping the busiest source entirely.
+
+⚠️ One trap survives the fix. `levelBreakdown` now reads the rollup unioned with a raw tail, so it re-aggregates — and `ORDER BY COUNT(*)` would be wrong there too, for a different reason: the count it needs is `SUM(n)` over the union, not a count of union rows. Ordering on the alias, on `COUNT(*)`, or on `SUM(n)` are three different queries and only the last is right.
 
 ### The rollup
 
@@ -175,7 +181,7 @@ There is deliberately **no selector**. It would buy the ability to choose a wind
 **What it does not cover:**
 
 - **Anything keyed by message** — top errors, top messages. 168k distinct messages per 500k events cannot be pre-aggregated at a fixed grain, and merging per-minute top-N lists is *approximate*: a message ranked eleventh every minute can be first over the hour and appear in no bucket at all. Since the point of the rollup is that everyone sees the same numbers, making them quietly wrong would defeat it.
-- **A level filter combined with an environment filter.** `by_level` and `by_env` are marginals, not a joint distribution; that combination falls back to `events`. Storing the cross product would make every 30-day read walk a nested object across 43,200 rows per project to serve a rare filter.
+- **A level filter combined with an environment filter.** `by_level` and `by_env` are marginals, not a joint distribution; that combination would fall back to `events`. Storing the cross product would make every 30-day read walk a nested object across 43,200 rows per project to serve a rare filter. *Moot on the overview since 2026-08-20 — it has no level filter — but the constraint is a property of the rollup's shape, so it still governs anything built on it.*
 - **`release`**, and it never will. A release identifier is *designed* to change on every deploy, so as a rollup dimension it grows without bound — a worse version of the environment-cardinality problem, and less obvious.
 
 **Retention.** `pruneRollup()` drops rollup rows past 30 days on every run; without it the rollup would keep counting events whose partitions retention had already dropped, and the two would disagree silently.
@@ -192,19 +198,29 @@ The filter bar's environment list comes from **`project_environments`**, a per-p
 
 **Why:** `pg_stat_statements` measured the old 30-day scan at **13.4% of the org overview's total database time** on 2026-08-20 — 30 days of events read on every page load to produce a list of a handful of values. Measured after the change: 39.3 ms → 0.67 ms, and the query no longer appears among the page's costs at all. Page wall-clock barely moved (~106 ms → ~92 ms, within run-to-run noise) because the query ran in parallel with slower ones — what dropped is total database work, which is what matters under concurrency. See `PLAN.md` §16.1 Stage D.
 
-**Not covered by the registry:** the environment pills on each *project card* still come from `STRING_AGG(DISTINCT environment)` over `events`, scoped to the selected range — now the second most expensive query on the page at 23.8%. A registry cannot answer "which environments appeared between X and Y" without storing per-range data, so replacing it needs a decision about what the pills mean. Deferred, deliberately.
+**Not covered by the registry:** the environment pills on each *project card*, which are scoped to the selected range — a registry cannot answer "which environments appeared between X and Y" without storing per-range data.
 
-### Known bug: an environment name containing a comma is split in two
+*Superseded later on 2026-08-20.* They were not left on `events`: the **rollup** answers them, from `by_env` per minute unioned with a raw tail, and the query is `ARRAY_AGG(DISTINCT env)` over that union (`overview.service.ts`). The 23.8% figure this paragraph quoted was the cost of the version it describes and no longer measures anything. The product question about what the pills *mean* was never answered — it stopped mattering, because a per-minute `by_env` can be summed over any range.
+
+### ~~Known bug: an environment name containing a comma is split in two~~ — fixed 2026-08-20
 
 `getProjectSummaries` collects a project's environments with `STRING_AGG(DISTINCT environment, ',')` and then splits the result on `","` in TypeScript. The ingest schema validates `environment` only as `z.string().max(128)`, so a comma is a legal value — and `eu,prod` arrives on the project card as two environments, `eu` and `prod`.
 
-Reachable through the public ingest API without anything unusual. Pinned by `overview.service.itest.ts` ("KNOWN BUG: splits an environment name that contains a comma"). The fix is to aggregate into a real array (`ARRAY_AGG(DISTINCT environment)`) and drop the split; not done yet because it changes a shipped query and belongs with the read-path work rather than inside a test change.
+Reachable through the public ingest API without anything unusual, and found by the integration suite on the day it was written.
 
-### Known inconsistency: level filter and the per-project top message
+**Fixed 2026-08-20**, as a side effect of moving the environment pills to the rollup rather than as a change of its own: the union now aggregates with `ARRAY_AGG(DISTINCT env)` and nothing splits a string, so a comma in an environment name is carried through intact. The pinned test was inverted rather than deleted — `overview.service.itest.ts` now asserts *"keeps an environment name that contains a comma intact"*.
 
-`getProjectSummaries` applies the level filter to its statistics query but **not** to its top-message query, which is hardcoded to `level IN ('error','fatal')`. Filtering the overview to `levels=info` therefore shows a project with an error count of 0 and an error message displayed beside it. `getOrgTopErrors`, on the same page and under the same filter, *does* respect the level filter — so the two widgets disagree.
+Worth keeping the paragraph above: the bug is a good example of a query and its consumer disagreeing about a separator, which is the same shape as the cache-key collision `shared/utils/query-cache-key.ts` guards against.
 
-Current behaviour is pinned by `e2e/overview.spec.ts` ("KNOWN BUG: a level filter does not reach the per-project top message") so that changing it fails loudly rather than silently. Not fixed yet because which of the two readings is correct — "top error regardless of filter" or "top message within the filter" — is a product question, not a bug with one obvious answer.
+### ~~Known inconsistency: level filter and the per-project top message~~ — closed 2026-08-20
+
+*What follows describes behaviour that no longer exists; it is kept because the closure below only makes sense with it.* `getProjectSummaries` applied the level filter to its statistics query but **not** to its top-message query, which was hardcoded to `level IN ('error','fatal')`. Filtering the overview to `levels=info` therefore showed a project with an error count of 0 and an error message displayed beside it. `getOrgTopErrors`, on the same page and under the same filter, *does* respect the level filter — so the two widgets disagree.
+
+**Closed 2026-08-20 by removing the level filter, not by answering the product question.** The two readings — "top error regardless of filter" and "top message within the filter" — are both gone with the filter that produced them; the overview now narrows by range and environment only. Neither of the two functions involved accepts a `levels` argument any more — `getProjectSummaries` itself was split into `getProjectStats` and `getProjectTopMessages` later the same day — so the disagreement is unreachable rather than merely unfixed.
+
+Why removal rather than a fix: the filter reached three of the overview's eight widgets and left five visibly unchanged, which reads as a broken control rather than one with a documented scope. Full reasoning in `OverviewFilterBar.tsx`; the per-project drill-down it offered still exists on the events page, where filtering applies to everything on screen.
+
+The e2e test that pinned the defect is gone with it. What replaced it asserts the property the removal has to hold: a bookmarked `?levels=info` URL now narrows nothing. The integration tests for the same pair were removed for the same reason.
 
 ## Alerts
 

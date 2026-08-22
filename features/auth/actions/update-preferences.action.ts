@@ -5,9 +5,15 @@ import { z } from "zod";
 import { db } from "@/core/db/client";
 import { users } from "@/core/db/schema";
 import { getCurrentUser } from "@/core/auth/server";
+import { AUTO_REFRESH_VALUES, THEME_VALUES } from "@/shared/types/user-preferences.types";
 
-const themeEnum = z.enum(["dark", "light", "system"]);
-const autoRefreshEnum = z.enum(["off", "10s", "30s", "60s"]);
+// Built from the shared constants, never restated. These were literals until
+// 2026-08-20, when `5m` reached the type and the UI but not this enum: the
+// control flipped optimistically, `safeParse` rejected the write, and the
+// setting silently reverted on the next load. `data: unknown` means no type
+// error was possible, so only a test or a user could have caught it.
+const themeEnum = z.enum(THEME_VALUES);
+const autoRefreshEnum = z.enum(AUTO_REFRESH_VALUES);
 
 // Each feature that extends preferences widens this schema (see Decision log CC1).
 // Feature 04 added: autoRefresh

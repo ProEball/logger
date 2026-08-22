@@ -270,13 +270,14 @@ test.describe.serial("Organization overview", () => {
         await expect(page.getByRole("group", { name: "Total events" })).toContainText("40");
     });
 
-    test("filtering to one level narrows the totals to that level", async ({ page }) => {
+    test("offers no level filter", async ({ page }) => {
+        // Removed 2026-08-20. The chips narrowed three of the page's eight
+        // widgets and left five visibly unchanged, which reads as a broken
+        // filter rather than one with a documented scope — reasoning in
+        // `OverviewFilterBar.tsx`. Asserting their absence is what stops them
+        // reappearing by habit.
         await openOverview(page);
-        await page.getByRole("group", { name: "Levels" }).getByRole("button", { name: "info" }).click();
-        await page.waitForURL(/levels=info/);
-        // 12 alpha + 6 beta info events, and no errors among them.
-        await expect(page.getByRole("group", { name: "Total events" })).toContainText("18");
-        await expect(page.getByRole("group", { name: "Errors and fatals" })).toContainText("0");
+        await expect(page.getByRole("group", { name: "Levels" })).toHaveCount(0);
     });
 
     test("filtering by environment narrows the totals to that environment", async ({ page }) => {
@@ -304,22 +305,18 @@ test.describe.serial("Organization overview", () => {
         await expect(page.getByRole("group", { name: "Total events" })).toContainText("40");
     });
 
-    // ── Known inconsistency, pinned deliberately ─────────────────────────────
-
-    test("KNOWN BUG: a level filter does not reach the per-project top message", async ({ page }) => {
-        // `getProjectSummaries` applies the level filter to its stats query but
-        // not to its top-message query, which is hardcoded to error/fatal
-        // (overview.service.ts:101). Filtering to `info` therefore shows a
-        // project with zero errors and an error message next to it.
+    test("ignores a stale `levels` param left in a bookmarked URL", async ({ page }) => {
+        // The predecessor of this test pinned a real defect: the level filter
+        // reached the stats query but not the top-message query, so filtering
+        // to `info` showed a project with zero errors and an error message
+        // beside it. Removing the filter removed the disagreement rather than
+        // resolving it, so the test that pinned it is gone too.
         //
-        // This test pins the current, wrong behaviour so that fixing it fails
-        // loudly here instead of silently changing what the page shows. When
-        // the fix lands, invert it — do not delete it.
+        // What replaces it is the property that removal has to hold: a URL
+        // someone bookmarked while the chips existed must now narrow nothing,
+        // rather than half-narrowing the page it used to.
         await openOverview(page, "?levels=info");
-        await projectsSection(page).getByRole("button", { name: "Table", exact: true }).click();
 
-        const alphaRow = projectsSection(page).getByRole("row", { name: /Ovw Alpha/ });
-        await expect(alphaRow.getByRole("cell").nth(2)).toHaveText("0");
-        await expect(alphaRow.getByRole("cell").nth(4)).toContainText("alpha boom");
+        await expect(page.getByRole("group", { name: "Total events" })).toContainText("40");
     });
 });

@@ -12,8 +12,13 @@ import {
 import {
     getOrgEventBuckets,
     getOrgLevelBreakdown,
-    getProjectSummaries,
+    getProjectStats,
 } from "@/features/overview/services/overview.service";
+import {
+    eventsPerMinute,
+    hasAnyEvents,
+    levelBreakdown,
+} from "@/features/dashboard/services/aggregations.service";
 import { ORG_A } from "@/itest/support/fixture";
 
 /**
@@ -275,7 +280,7 @@ describe("reads combine the rollup with the un-rolled-up tail", () => {
 
     it("gives per-project totals that match a direct count", async () => {
         const range = { from: ANCHOR, to: new Date(Date.now() + 1000) };
-        const map = await getProjectSummaries([projectId], range);
+        const map = await getProjectStats([projectId], range);
 
         const [row] = await db.execute<{ total: string; errors: string }>(sql`
             SELECT COUNT(*)::text AS total,
@@ -289,22 +294,85 @@ describe("reads combine the rollup with the un-rolled-up tail", () => {
         expect(map.get(projectId)?.errorCount).toBe(Number(row.errors));
     });
 
-    it("applies a level filter through by_level rather than falling back", async () => {
-        const range = { from: ANCHOR, to: new Date(Date.now() + 1000) };
-        const map = await getProjectSummaries([projectId], range, ["info"]);
+    // Removed 2026-08-20: "applies a level filter through by_level rather than
+    // falling back". It covered the `levelKeys` branch of the rollup CTE, which
+    // unrolled `by_level` per minute to serve the overview's level filter. Both
+    // are gone — the filter was removed (see `OverviewFilterBar.tsx`) and the
+    // branch with it, so the rollup read is now the plain `SUM(total)`,
+    // `SUM(errors)` path. The property that survived — rollup-backed counts
+    // matching a direct count of `events` — is asserted by the test above.
 
-        const [row] = await db.execute<{ total: string }>(sql`
-            SELECT COUNT(*)::text AS total FROM events
+    /**
+     * The project dashboard's three rollup-backed reads, added 2026-08-21 with
+     * §16.2 item 5.
+     *
+     * They belong **here** rather than in `aggregations.service.itest.ts`
+     * because that file runs against the shared fixture, which inserts events
+     * directly and never builds a rollup — so `rollupBoundary` is null there
+     * and every read falls back to raw `events`. Those tests would pass without
+     * executing one line of the new code. This file owns a project and rebuilds
+     * the rollup for real, which is the only place the union is exercised.
+     */
+    it("buckets events per minute to the same totals a raw count gives", async () => {
+        const range = { type: "custom" as const, from: ANCHOR.toISOString(), to: new Date(Date.now() + 1000).toISOString() };
+        const buckets = await eventsPerMinute(projectId, range);
+
+        expect(buckets.reduce((s, b) => s + b.total, 0)).toBe(await rawCount(0, 120));
+    });
+
+    it("splits each bucket by level exactly as the raw rows do", async () => {
+        const range = { type: "custom" as const, from: ANCHOR.toISOString(), to: new Date(Date.now() + 1000).toISOString() };
+        const buckets = await eventsPerMinute(projectId, range);
+
+        const summed: Record<string, number> = {};
+        for (const b of buckets) {
+            for (const [level, n] of Object.entries(b.byLevel)) {
+                summed[level] = (summed[level] ?? 0) + n;
+            }
+        }
+
+        const raw = await db.execute<{ level: string; n: string }>(sql`
+            SELECT level, COUNT(*)::text AS n FROM events
             WHERE project_id = ${projectId}::uuid
               AND timestamp >= ${ANCHOR.toISOString()}::timestamptz
-              AND level = 'info'
+            GROUP BY level
         `);
 
-        expect(map.get(projectId)?.totalEvents).toBe(Number(row.total));
-        // No info event is an error, so the filtered error count must be zero —
-        // the rollup has to intersect the selected levels with error/fatal, not
-        // carry the unfiltered `errors` column through.
-        expect(map.get(projectId)?.errorCount).toBe(0);
+        expect(summed).toEqual(Object.fromEntries(raw.map((r) => [r.level, Number(r.n)])));
+    });
+
+    it("breaks the dashboard's levels down to the raw numbers too", async () => {
+        const range = { type: "custom" as const, from: ANCHOR.toISOString(), to: new Date(Date.now() + 1000).toISOString() };
+        const fromRollup = await levelBreakdown(projectId, range);
+
+        const raw = await db.execute<{ level: string; n: string }>(sql`
+            SELECT level, COUNT(*)::text AS n FROM events
+            WHERE project_id = ${projectId}::uuid
+              AND timestamp >= ${ANCHOR.toISOString()}::timestamptz
+            GROUP BY level
+        `);
+
+        expect(Object.fromEntries(fromRollup.map((r) => [r.level, r.count]))).toEqual(
+            Object.fromEntries(raw.map((r) => [r.level, Number(r.n)])),
+        );
+    });
+
+    it("still orders the dashboard's levels numerically off the rollup", async () => {
+        const range = { type: "custom" as const, from: ANCHOR.toISOString(), to: new Date(Date.now() + 1000).toISOString() };
+        const counts = (await levelBreakdown(projectId, range)).map((r) => r.count);
+
+        // The union re-aggregates, so the ORDER BY had to move from COUNT(*) to
+        // SUM(n). Getting that wrong would reintroduce the text-alias defect
+        // through the back door.
+        expect(counts).toEqual([...counts].sort((a, b) => b - a));
+    });
+
+    it("reports a project with rollup rows as non-empty", async () => {
+        expect(await hasAnyEvents(projectId)).toBe(true);
+    });
+
+    it("reports a project with neither rollup rows nor events as empty", async () => {
+        expect(await hasAnyEvents(randomUUID())).toBe(false);
     });
 
     it("lists the same environments a direct DISTINCT gives", async () => {
@@ -312,7 +380,7 @@ describe("reads combine the rollup with the un-rolled-up tail", () => {
         // environments than the cap allows. Below the cap the rollup-backed
         // list must match `SELECT DISTINCT environment` exactly.
         const range = { from: ANCHOR, to: at(5) };
-        const map = await getProjectSummaries([projectId], range);
+        const map = await getProjectStats([projectId], range);
 
         const raw = await db.execute<{ environment: string }>(sql`
             SELECT DISTINCT environment FROM events
@@ -331,7 +399,7 @@ describe("reads combine the rollup with the un-rolled-up tail", () => {
         // trade the cap buys, and hiding the fold would make the pills claim a
         // project uses fewer environments than it does.
         const range = { from: at(9), to: at(11) };
-        const envs = (await getProjectSummaries([projectId], range)).get(projectId)?.environments ?? [];
+        const envs = (await getProjectStats([projectId], range)).get(projectId)?.environments ?? [];
 
         expect(envs.length).toBeLessThanOrEqual(ENVIRONMENT_KEY_CAP + 1);
         expect(envs).toContain("(other)");
@@ -342,7 +410,7 @@ describe("reads combine the rollup with the un-rolled-up tail", () => {
         // "errors in production" needs both at once, which marginals cannot
         // give. That read has to reach `events`.
         const range = { from: ANCHOR, to: new Date(Date.now() + 1000) };
-        const map = await getProjectSummaries([projectId], range, undefined, ["production"]);
+        const map = await getProjectStats([projectId], range, ["production"]);
 
         const [row] = await db.execute<{ total: string; errors: string }>(sql`
             SELECT COUNT(*)::text AS total,
