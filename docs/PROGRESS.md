@@ -2,11 +2,36 @@
 
 > Single source of truth for "where are we right now". Update after every work session.
 
-**Last updated**: 2026-08-22 (v0.4.0: loading states + responsive range chips; read path hit a ceiling at 8.9M events — §16.3)
+**Last updated**: 2026-08-23 (§16.3 steps 0–4: message normaliser, fingerprint, template rollup, two-path topMessages — built, not deployed)
 
 ---
 
 ## Current Phase
+
+**§16.3 steps 0–4 shipped 2026-08-23 — the template rollup is built, and nothing
+is deployed.** `normalizeMessage` and a stable FNV-1a fingerprint; migrations
+0009–0010 (`events.template_hash`, `message_templates`,
+`event_template_rollup`, a coverage interval on `rollup_state`); ingest computes
+and stores the hash and registers the template; the rollup job builds the table
+in the same window and transaction as the level rollup; and `topMessages` reads
+it wherever coverage allows, falling back to raw text where it does not.
+
+The number that justified all of it: **674,634 distinct messages in a day
+collapse to 18,080 templates, a factor of 37.3** — measured on staging *before*
+anything was built, against a threshold set before the measurement (build at
+20×, stop below 3×).
+
+Two things this cost that were not in the plan. The coverage model needed a
+second migration, because a single watermark cannot describe a rollup that has a
+floor as well as a ceiling — found while writing the job, not while designing
+the schema. And the first version of the read-path tests measured nothing: the
+fixture's message and its template were the same string, so both
+implementations returned identical rows and disabling the rollup branch entirely
+still passed.
+
+**Still to do:** the backfill script (step 6). Until it runs, the rollup only
+covers events ingested after the deploy, so 7-day and 30-day reads keep taking
+the slow path — the win arrives gradually rather than at the release.
 
 **v0.4.0 shipped 2026-08-22** — loading states on both dashboards and the range
 chips answering the click. Verified on staging: the chip goes active at 829 ms
@@ -267,7 +292,7 @@ Both were fixed with the failing test written first — all three targeted tests
 
 **Three things moved to `shared/` rather than being copied** — the rollup boundary, the cache key builder (`query-cache-key.ts`) and the TTL settings (`read-cache-settings.ts`). Copying a cache-key builder in particular would have duplicated an authorization boundary, which is the worst instance of a pattern that had already cost this repository three separate defects in two days.
 
-**Totals:** 671 unit · 104 integration · 73 e2e.
+**Totals:** 718 unit · 112 integration · 73 e2e.
 
 **Still open on this page:** `topMessages` (170 ms) and `recentErrors` cannot leave raw `events`; `topSources` needs a `by_source` rollup column, deferred until measured at 30 days. And every number here comes from a 24-hour window on a three-day corpus — the 30-day question is still unanswered for both pages.
 

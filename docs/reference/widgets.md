@@ -86,7 +86,7 @@ Say "the five", not "everything": the page also issues `getOrgBySlug`, `getMembe
 |---|---|---|---|---|
 | **Events per minute** (stacked area) | `eventsPerMinute` — **rollup + raw tail** since 2026-08-21 | epoch-floored bucket × level | range | ✅ done |
 | **Level breakdown** | `levelBreakdown` — **rollup + raw tail** since 2026-08-21 | level | range | ✅ done |
-| **Top messages** | `topMessages` — raw `events`, its own `Suspense` boundary | `SUBSTRING(message, 1, 200)` | range | ❌ cardinality |
+| **Top messages** | `topMessages` — template rollup where covered, raw `events` otherwise; its own `Suspense` boundary | `template_hash`, or `SUBSTRING(message, 1, 200)` on the fallback | range | ✅ since 2026-08-23, by template |
 | **Top sources** | `topSources` — raw `events` | `COALESCE(source, '(unknown)')` | range | ⚠️ needs a `by_source` column; deferred until measured at 30 days |
 | **Recent errors** | `recentErrors` — raw `events` | none — returns whole rows | range | ❌ needs rows |
 | **KPI row** | derived in `dashboard-kpis.ts` from the buckets, levels and alert rules | — | — | follows its inputs |
@@ -159,6 +159,35 @@ forgotten in the query leaves that message with no positive count, and
 **This is 40% of the problem, not the whole of it.** Seventeen seconds is still
 seventeen seconds, and it grows with the corpus. The structural answer is in
 §16.3.
+
+### `topMessages` has two implementations, chosen by coverage
+
+Since 2026-08-23. Where the **template rollup** covers the requested range, the
+widget groups pre-aggregated rows by a `bigint` fingerprint. Where it does not,
+it groups `SUBSTRING(message, 1, 200)` over raw `events` — the query that has
+always backed this widget.
+
+| | rollup path | fallback |
+|---|---|---|
+| reads | `event_template_rollup` + raw tail (≤1 minute) | `events` over the whole range |
+| groups by | `template_hash` (`bigint`) | 200 characters of text |
+| at 8.9M events, 7 days | ~899k rows → ~18k groups | 4.5M rows → 1.13M groups, **~17 s** |
+| displays | the template, `User *** signed in` | the raw message, `User u_487 signed in` |
+
+**The fallback is not a safety net that never fires.** Events ingested before
+`template_hash` shipped carry no fingerprint, so every range reaching into that
+history takes the slow path and will until 30-day retention rolls them out.
+Removing it would silently drop every older message from the list.
+
+That difference in *displayed text* is also what makes the two paths testable
+against each other. An earlier version of the integration tests used a fixture
+whose message and template were the same string; both paths returned identical
+rows, and disabling the rollup branch entirely still passed. See
+`event-rollup.service.itest.ts`.
+
+The row shape is unchanged, so `TopMessagesWidget` did not move. `dominantLevel`
+comes from `pickDominantLevel` on both paths — summed `by_level` on one, five
+`COUNT(*) FILTER` counters on the other.
 
 ## Loading states, and why they are a diagnostic
 

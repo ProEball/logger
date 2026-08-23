@@ -222,6 +222,80 @@ Why removal rather than a fix: the filter reached three of the overview's eight 
 
 The e2e test that pinned the defect is gone with it. What replaced it asserts the property the removal has to hold: a bookmarked `?levels=info` URL now narrows nothing. The integration tests for the same pair were removed for the same reason.
 
+### The template rollup
+
+Added 2026-08-23. A second rollup, keyed by the **shape** of a message rather
+than by its text, so `topMessages` stops scaling with the number of events.
+
+The problem it solves is in [`PLAN.md` §16.3](../PLAN.md): at 8.9M events a
+7-day `topMessages` read scanned 4.5M rows and hashed **1,133,715 groups** in
+~17 s, and that grew linearly with traffic. Grouping by template instead makes
+the cost track the number of *kinds* of message, which does not grow when
+traffic does.
+
+**How a template is derived.** `normalizeMessage` (`features/ingest/utils/`)
+replaces value-shaped tokens with `***`:
+
+```
+User u_487 signed in              → User *** signed in
+Payment d6ffe13f done in 2417ms   → Payment *** done in ***
+Third-party API returned 503      → Third-party API returned 503
+```
+
+Nine ordered rules, all matching *form* rather than meaning: UUIDs, ISO
+timestamps, emails, IPs, URLs, numeric path segments, hex blobs of 8+, prefixed
+identifiers, digits immediately followed by letters, and bare digit runs of 4+.
+Order is load-bearing — a digit rule ahead of the UUID rule eats a UUID
+piecemeal and the UUID rule never matches again.
+
+Boundaries are Unicode lookarounds over `\p{L}\p{Nd}` rather than `\b`, which
+JavaScript defines over ASCII and which does nothing at all in a script without
+spaces. Measured collapse on staging over 24 hours: **674,634 distinct messages
+→ 18,080 templates, a factor of 37.3**.
+
+⚠️ **It removes machine variability, not semantic variability.** A name, a
+hostname, a role word or free text in quotes has no form distinguishing it from
+the words around it, so `User Alice signed in` and `User Bob signed in` remain
+two templates. No regular expression fixes that — only the author of the
+application knows which word was the variable, which is what makes the
+`message`/`attributes` rule in `PLAN.md` §17 the other half of this.
+
+It also **under-collapses deliberately**: short bare numbers survive, so
+`returned 503` and `returned 500` stay apart. The same choice keeps `Retry 1 of
+3` and `Retry 2 of 3` apart, which is wrong. Telling the two cases apart needs
+the sentence read, so the rule takes the side where the mistake is cheaper — two
+groups that should be one is noise, one group that should be two hides a
+distinction.
+
+**The raw message is never modified.** Ingest stores what was sent and adds
+`events.template_hash` beside it. Normalising is a heuristic and will sometimes
+be wrong; ingest is a one-way door, so destroying `sess_ai6h2q` because a rule
+said so would be irreversible. A bad rule is fixed by bumping
+`NORMALIZER_VERSION`, which is folded into the hash input so two generations of
+rules can never be summed under one key.
+
+**Coverage is an interval, not a prefix** — the one way this rollup differs from
+`event_rollup_minutes`. Events ingested before `template_hash` shipped carry no
+fingerprint and never will, so `rollup_state` records both
+`templates_rolled_up_from` and `templates_rolled_up_to`. `topMessages` uses the
+rollup only when the requested range starts at or after the floor; otherwise it
+falls back to grouping raw text. That fallback is load-bearing until 30-day
+retention rolls the pre-deploy events out, and deleting it would silently drop
+every older message from the list.
+
+**Grain is one minute**, matching `event_rollup_minutes`, and chosen on a
+measurement rather than symmetry. Hour grain would be six times smaller (850
+rows/hour against 5,344) but leaves a raw tail of up to an hour — ~114,000
+events to scan on every read against ~1,900 at minute grain. Short ranges are
+the common case and that is where the tail dominates. At 5,344 rows/hour the
+table costs ~3.85M rows a month, about 385 MB, against an `events` table heading
+for 38 GB.
+
+`message_templates` holds the display text, one row per `(project, hash)`. It is
+**not** pruned with the rollup: it is a vocabulary rather than a measurement, and
+dropping a template whose last event just aged out would lose the text for a
+fingerprint that reappears the next time that shape is logged.
+
 ## Alerts
 
 An **alert rule** (`alert_rules`, scoped to one project) consists of:

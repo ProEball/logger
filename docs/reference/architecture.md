@@ -142,7 +142,7 @@ Key convention: **actions never throw to the caller** — every failure path (va
 
 ## Database schema
 
-Schema source: `core/db/schema/*.ts` (Drizzle), barrel-exported from `core/db/schema/index.ts`. Migrations: `core/db/migrations/0000`–`0006` (7 migrations as of 2026-08-12), applied via `drizzle-kit migrate`.
+Schema source: `core/db/schema/*.ts` (Drizzle), barrel-exported from `core/db/schema/index.ts`. Migrations: `core/db/migrations/0000`–`0010` (11 migrations as of 2026-08-23), applied via `drizzle-kit migrate`.
 
 ### Auth tables (better-auth managed, plural table names)
 
@@ -203,6 +203,30 @@ See [logging.md](logging.md#the-events-table) for the full column list and [Even
 | 0006 | Adds `attributeKeyTypes` (2026-08-12) |
 | 0007 | Adds `projectEnvironments` (2026-08-20). **Generated, then hand-extended** with a backfill: `INSERT … SELECT project_id, environment, MIN(timestamp), MAX(timestamp) FROM events GROUP BY …`. Without it an existing install loses its environment filter until fresh events arrive from every environment it had, since the registry is written at ingest and knows no history. That statement reads every row of `events` once and will dominate the migration's runtime on a large table |
 | 0008 | Adds `eventRollupMinutes` and `rollupState` (most recent, 2026-08-20). **Generated, then hand-extended** to seed `rollup_state.refresh_from` from each project's oldest event. The rollup itself is deliberately *not* built here: a migration that aggregates the whole events table would make deployment time proportional to data volume, and a failure mid-way would block the release instead of retrying on its own. `rolled_up_to` stays NULL, which readers treat as "nothing rolled up yet" and answer entirely from `events` — that is what makes this safe to deploy before the first job run |
+
+### Template rollup tables (added 2026-08-23, migrations 0009–0010)
+
+| Table | Key columns | Notes |
+|---|---|---|
+| `message_templates` | PK `(project_id, template_hash)` | Display text per template, plus `normalizer_version`. Never pruned — a vocabulary, not a measurement. |
+| `event_template_rollup` | PK `(project_id, minute, template_hash)`, index `(project_id, template_hash, minute)` | Per-minute counts per template, with `by_level` and `latest_at`. Pruned at 30 days with the level rollup. |
+| `events.template_hash` | `bigint`, nullable | Fingerprint computed at ingest. Permanently nullable: pre-2026-08-23 rows have none and no SQL can derive one, since the normaliser is TypeScript. |
+| `rollup_state.templates_rolled_up_from` / `_to` | — | The **interval** the template rollup covers. Two columns, not one: see below. |
+
+Both tables cascade on `projects.id` delete, like every other per-project table.
+
+**Why coverage needs two columns.** `event_rollup_minutes` can summarise any
+event, so its coverage is a prefix and `rolled_up_to` describes it completely.
+The template rollup can only summarise events carrying a fingerprint, so it has
+a floor as well as a ceiling. A reader holding only the ceiling would take a
+7-day range, see it ends below the watermark, read the rollup for all of it and
+silently miss every pre-deploy event — on a "top messages" widget,
+indistinguishable from a message nobody sent. `templates_rolled_up_from` moves
+backwards only, so a catch-up run rebuilding an older window widens the interval
+instead of claiming a prefix it never had.
+
+The index on `(project_id, template_hash, minute)` covers one template's history
+— the direction the primary key does not lead on.
 
 ## Events partitioning
 
