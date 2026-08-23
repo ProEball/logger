@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { sql } from "drizzle-orm";
+import { templateHashForStorage } from "@/features/ingest/utils/normalize-message";
 import { db } from "@/core/db/client";
 import {
     ENVIRONMENT_KEY_CAP,
@@ -43,7 +44,19 @@ function at(offsetMinutes: number): Date {
 }
 
 async function insertEvents(
-    specs: Array<{ count: number; level: string; environment: string | null; offsetMinutes: number }>,
+    specs: Array<{
+        count: number;
+        level: string;
+        environment: string | null;
+        offsetMinutes: number;
+        /**
+         * Defaults to a fixed string, so existing cases keep one template. Pass
+         * a message to exercise the template rollup; pass `null` to write an
+         * event with **no** fingerprint, standing in for one ingested before
+         * the column existed.
+         */
+        message?: string | null;
+    }>,
 ): Promise<void> {
     const values = specs.flatMap((spec) =>
         Array.from({ length: spec.count }, () => ({
@@ -51,12 +64,22 @@ async function insertEvents(
             ts: at(spec.offsetMinutes).toISOString(),
             level: spec.level,
             environment: spec.environment,
+            message: spec.message === undefined ? "rollup test" : spec.message,
         })),
     );
     for (const v of values) {
+        // `null` message means "legacy row": stored text, no fingerprint. The
+        // hash is computed here rather than by ingest because this fixture
+        // writes raw SQL — the point is to reproduce what the column holds, not
+        // to re-test how it gets there.
+        const hash = v.message === null ? null : templateHashForStorage(v.message).toString();
         await db.execute(sql`
-            INSERT INTO events (id, project_id, timestamp, level, message, environment)
-            VALUES (${v.id}::uuid, ${projectId}::uuid, ${v.ts}::timestamptz, ${v.level}, 'rollup test', ${v.environment})
+            INSERT INTO events (id, project_id, timestamp, level, message, environment, template_hash)
+            VALUES (
+                ${v.id}::uuid, ${projectId}::uuid, ${v.ts}::timestamptz, ${v.level},
+                ${v.message ?? "legacy event"}, ${v.environment},
+                ${hash}::bigint
+            )
         `);
     }
 }
@@ -456,5 +479,77 @@ describe("pruneRollup", () => {
             WHERE project_id = ${projectId}::uuid AND minute < now() - interval '30 days'
         `);
         expect(Number(row.n)).toBe(0);
+    });
+});
+
+/**
+ * The template rollup, built in the same transaction and the same window as the
+ * one above. These live here rather than beside `aggregations.service.ts` for
+ * the reason recorded in `PLAN.md` §17 on 2026-08-21: the shared itest fixture
+ * never builds a rollup, so tests written there would pass without executing a
+ * single line of this code.
+ */
+describe("rebuildRollupForProject — templates", () => {
+    it("writes one row per template per minute, not one per event", async () => {
+        const rows = await db.execute<{ n: string }>(sql`
+            SELECT count(*)::text AS n FROM event_template_rollup
+            WHERE project_id = ${projectId}::uuid
+        `);
+        // The fixture's events all carry the same message, so however many were
+        // written they collapse to one template per minute that had any.
+        const minutes = await db.execute<{ n: string }>(sql`
+            SELECT count(DISTINCT minute)::text AS n FROM event_template_rollup
+            WHERE project_id = ${projectId}::uuid
+        `);
+        expect(Number(rows[0].n)).toBe(Number(minutes[0].n));
+    });
+
+    it("counts agree with a direct count of the events behind them", async () => {
+        const [rollup] = await db.execute<{ n: string }>(sql`
+            SELECT COALESCE(SUM(count), 0)::text AS n FROM event_template_rollup
+            WHERE project_id = ${projectId}::uuid
+        `);
+        const [raw] = await db.execute<{ n: string }>(sql`
+            SELECT count(*)::text AS n FROM events
+            WHERE project_id = ${projectId}::uuid
+              AND template_hash IS NOT NULL
+              AND timestamp < date_trunc('minute', now())
+        `);
+        expect(rollup.n).toBe(raw.n);
+    });
+
+    it("keeps per-level counts, so the badge survives the rollup", async () => {
+        const [row] = await db.execute<{ by_level: Record<string, number> }>(sql`
+            SELECT by_level FROM event_template_rollup
+            WHERE project_id = ${projectId}::uuid
+            ORDER BY count DESC LIMIT 1
+        `);
+        expect(Object.keys(row.by_level).length).toBeGreaterThan(0);
+    });
+
+    it("records the coverage interval, not just an upper bound", async () => {
+        const [row] = await db.execute<{ from_ts: Date | null; to_ts: Date | null }>(sql`
+            SELECT templates_rolled_up_from AS from_ts, templates_rolled_up_to AS to_ts
+            FROM rollup_state WHERE project_id = ${projectId}::uuid
+        `);
+        expect(row.from_ts).not.toBeNull();
+        expect(row.to_ts).not.toBeNull();
+        expect(new Date(row.from_ts as Date).getTime()).toBeLessThan(
+            new Date(row.to_ts as Date).getTime(),
+        );
+    });
+
+    it("is idempotent — rebuilding the same window does not double the counts", async () => {
+        const before = await db.execute<{ n: string }>(sql`
+            SELECT COALESCE(SUM(count), 0)::text AS n FROM event_template_rollup
+            WHERE project_id = ${projectId}::uuid
+        `);
+        await markRollupDirty(projectId, at(0));
+        await rebuildFully();
+        const after = await db.execute<{ n: string }>(sql`
+            SELECT COALESCE(SUM(count), 0)::text AS n FROM event_template_rollup
+            WHERE project_id = ${projectId}::uuid
+        `);
+        expect(after[0].n).toBe(before[0].n);
     });
 });

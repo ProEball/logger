@@ -1,0 +1,1 @@
+ALTER TABLE "rollup_state" ADD COLUMN "templates_rolled_up_from" timestamp with time zone;

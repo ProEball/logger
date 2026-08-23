@@ -172,13 +172,69 @@ export async function rebuildRollupForProject(
             LEFT JOIN envs e ON e.minute = l.minute
         `);
 
+
+        // ── template rollup ──────────────────────────────────────────────
+        // Same window, same transaction, same delete-then-insert as above, so
+        // the two rollups can never describe different slices of time.
+        //
+        // `template_hash IS NOT NULL` excludes events ingested before the
+        // fingerprint shipped. They are not skipped rows to be recovered later
+        // — nothing in SQL can derive a hash for them, because the normaliser
+        // is TypeScript. What keeps that from becoming a silent undercount is
+        // the coverage interval maintained below, not this filter.
+        await tx.execute(sql`
+            DELETE FROM event_template_rollup
+            WHERE project_id = ${projectId}::uuid
+              AND minute >= ${from.toISOString()}::timestamptz
+              AND minute <  ${to.toISOString()}::timestamptz
+        `);
+
+        await tx.execute(sql`
+            WITH cells AS (
+                SELECT
+                    date_trunc('minute', timestamp)  AS minute,
+                    template_hash,
+                    level,
+                    COUNT(*)::int                    AS n,
+                    MAX(timestamp)                   AS latest
+                FROM events
+                WHERE project_id = ${projectId}::uuid
+                  AND timestamp >= ${from.toISOString()}::timestamptz
+                  AND timestamp <  ${to.toISOString()}::timestamptz
+                  AND template_hash IS NOT NULL
+                GROUP BY 1, 2, 3
+            )
+            INSERT INTO event_template_rollup
+                (project_id, minute, template_hash, count, by_level, latest_at)
+            SELECT
+                ${projectId}::uuid,
+                minute,
+                template_hash,
+                SUM(n)::int,
+                jsonb_object_agg(level, n),
+                MAX(latest)
+            FROM cells
+            GROUP BY minute, template_hash
+        `);
         await tx.execute(sql`
             UPDATE rollup_state
             SET refresh_from = ${to.toISOString()}::timestamptz - (${OVERLAP_MINUTES} || ' minutes')::interval,
                 -- Only advance the completeness boundary; a catch-up run that
                 -- rebuilt an old window must not claim the rollup is complete
                 -- up to a point it has not reached.
-                rolled_up_to = GREATEST(rolled_up_to, ${to.toISOString()}::timestamptz)
+                rolled_up_to = GREATEST(rolled_up_to, ${to.toISOString()}::timestamptz),
+                -- The template rollup's coverage is an *interval*, not a prefix:
+                -- events older than the fingerprint can never enter it, so a
+                -- reader needs both ends to know whether its range is
+                -- answerable here at all.
+                templates_rolled_up_from = LEAST(
+                    COALESCE(templates_rolled_up_from, ${from.toISOString()}::timestamptz),
+                    ${from.toISOString()}::timestamptz
+                ),
+                templates_rolled_up_to = GREATEST(
+                    templates_rolled_up_to,
+                    ${to.toISOString()}::timestamptz
+                )
             WHERE project_id = ${projectId}::uuid
         `);
     });
@@ -198,6 +254,21 @@ export async function pruneRollup(): Promise<void> {
         DELETE FROM event_rollup_minutes
         WHERE minute < date_trunc('minute', now()) - interval '30 days'
     `);
+
+    // The template rollup ages out on the same boundary and for the same
+    // reason: retention drops event partitions at 30 days, and a summary that
+    // outlives the events it summarises makes the two disagree silently.
+    await db.execute(sql`
+        DELETE FROM event_template_rollup
+        WHERE minute < date_trunc('minute', now()) - interval '30 days'
+    `);
+
+    // `message_templates` is deliberately **not** pruned here. It is a
+    // vocabulary, not a measurement: one row per shape a project has ever sent,
+    // measured at 18,080 a day on staging against millions of events. Dropping
+    // a template whose last event just aged out would lose the display text for
+    // a fingerprint that reappears the next time that shape is logged, and
+    // rewriting it costs more than keeping it.
 }
 
 export interface RollupCycleResult {

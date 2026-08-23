@@ -107,6 +107,24 @@ export const rollupState = pgTable("rollup_state", {
      * the query that exists today. That is slow and correct, and it stops being
      * needed as 30-day retention rolls the pre-deploy events out.
      */
+    /**
+     * Oldest minute the template rollup actually covers. `NULL` until its first
+     * run.
+     *
+     * The upper watermark alone cannot express this rollup's coverage, and
+     * finding that out is why this column exists. Events ingested before
+     * `template_hash` shipped carry no fingerprint and can never enter the
+     * template rollup — so coverage is an *interval*, not a prefix. A reader
+     * holding only `templates_rolled_up_to` would take a 7-day range, see it
+     * ends below the watermark, read the rollup for all of it, and silently
+     * miss every pre-deploy event. On "top messages" that undercount looks
+     * exactly like a message nobody sent.
+     *
+     * Moves backwards, never forwards: a catch-up run that rebuilds an older
+     * window widens the covered interval, so this takes the `LEAST` of what is
+     * stored and what was just built.
+     */
+    templatesRolledUpFrom: timestamp("templates_rolled_up_from", { withTimezone: true }),
     templatesRolledUpTo: timestamp("templates_rolled_up_to", { withTimezone: true }),
 });
 
