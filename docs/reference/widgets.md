@@ -125,6 +125,56 @@ Two of the five are usually worth little: on any install with a single release a
 
 ---
 
+## Loading states, and why they are a diagnostic
+
+Both dashboards give **every widget its own `Suspense` boundary**. That is a
+deliberate constraint, not an implementation detail: each skeleton disappears
+the moment its own query returns, so a cell still showing a skeleton is a slow
+query — visible to anyone looking at the page, without a profiler and without
+`pg_stat_statements`. Measured on staging at 5.5M events, a 30-day project
+dashboard fills five of its six widgets in under 300 ms and leaves `topMessages`
+holding its cell for roughly seventeen seconds.
+
+⚠️ **Do not group widgets under a shared boundary.** It is tempting whenever two
+widgets share a row, and it makes them all wait for the slowest — which costs
+the fast ones their early paint and throws the signal above away. That matters
+more as widgets are added, not less.
+
+### Two entry paths, and they behave differently
+
+Streaming per widget applies to a **document load**. A client-side navigation —
+clicking a project in the sidebar, or a range chip — is wrapped in a React
+transition, and a transition deliberately does *not* show `Suspense` fallbacks:
+it holds the current UI rather than flashing back to skeletons. What gives a
+navigation an immediate loading state is the segment `loading.tsx`.
+
+| route | `loading.tsx` | renders |
+|---|---|---|
+| `/[org]` | added 2026-08-22 | `OverviewSkeleton` |
+| `/[org]/[project]` | yes | `DashboardSkeleton` (was the generic `PageSkeleton`) |
+
+The overview had **none** until 2026-08-22, so navigating into it held the
+previous page on screen, unchanged, until the whole RSC payload was ready —
+four to five seconds on staging with no indication anything had been clicked.
+The §16.1 streaming work was invisible on that path, because it only ever
+applied to a document load.
+
+Both skeletons now **mirror their page layout** rather than showing a generic
+placeholder, and both import the page stylesheet instead of restating its grid,
+so the two cannot drift. The handover from the route fallback to the page's own
+per-widget fallbacks is then seamless: cells fill in one at a time from the
+first frame, instead of a grey page being replaced wholesale by a differently
+shaped one.
+
+**Still open:** switching the range *within* a page still shows nothing, because
+the boundaries are not remounted — the transition keeps the resolved widgets on
+screen and swaps them when the new ones are ready. At 1h that is right; at 30d
+it is seventeen seconds of a page that looks frozen. Fixing it means keying the
+slow boundary on the range, or surfacing `isPending` on the range chips, and
+neither is done.
+
+---
+
 ## Rollup feasibility
 
 Splitting the table above by what a `(project, minute)` rollup could actually serve:

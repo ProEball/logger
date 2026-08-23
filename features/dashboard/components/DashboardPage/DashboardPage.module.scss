@@ -16,6 +16,21 @@
 .span8  { grid-column: span 8; }
 .span12 { grid-column: span 12; }
 
+// Stands in for DashboardHeader while the route prologue runs. Mirrors that
+// header box exactly - same padding, same border, same height - so handing
+// over from the route fallback to the real page does not shift the grid down
+// by a few pixels. Lives here rather than in the skeleton folder because it is
+// this page layout it has to match, and the two should move together.
+.headerFallback {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: var(--space-3) var(--space-6);
+    border-bottom: 1px solid var(--border-1);
+    flex: 0 0 auto;
+}
+
+
 // ── Firing alerts list inside KpiCard children slot ────────────────────
 .firingList {
     list-style: none;
