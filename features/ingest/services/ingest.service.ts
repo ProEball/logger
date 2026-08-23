@@ -5,6 +5,7 @@ import type { IngestEvent } from "../utils/event-schema";
 import { AttributeTypeConflictError } from "../utils/attribute-types";
 import { checkAttributeTypeConflicts } from "./attribute-type-registry.service";
 import { recordEnvironments } from "./environment-registry.service";
+import { recordTemplates } from "./template-registry.service";
 import { markRollupDirty } from "./event-rollup.service";
 import { logger } from "@/core/logger";
 
@@ -25,13 +26,19 @@ import { logger } from "@/core/logger";
  * moment ago. This is the only place that knows.
  */
 async function updateDerivedTablesSafely(
-    rows: Array<{ environment?: string | null; timestamp: Date }>,
+    rows: Array<{ environment?: string | null; timestamp: Date; message: string }>,
     projectId: string,
 ): Promise<void> {
     try {
         await recordEnvironments(rows, projectId);
     } catch (err) {
         logger.error({ err, projectId }, "failed to update the project environment registry");
+    }
+
+    try {
+        await recordTemplates(rows, projectId);
+    } catch (err) {
+        logger.error({ err, projectId }, "failed to update the message template registry");
     }
 
     try {

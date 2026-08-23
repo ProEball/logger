@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { events, projectEnvironments } from "@/core/db/schema";
+import { events, messageTemplates, projectEnvironments } from "@/core/db/schema";
 
 /**
  * Only the database is mocked. `checkAttributeTypeConflicts` and
@@ -29,6 +29,7 @@ function chain(result: unknown) {
             return c;
         },
         onConflictDoUpdate: () => c,
+        onConflictDoNothing: () => c,
         returning: () => c,
         then: (resolve: (v: unknown) => void) => resolve(result),
     };
@@ -38,11 +39,13 @@ function chain(result: unknown) {
 /** Insert behaviour per table; `undefined` means "succeed silently". */
 let environmentInsertError: Error | null = null;
 let eventInsertError: Error | null = null;
+let templateInsertError: Error | null = null;
 
 beforeEach(() => {
     vi.clearAllMocks();
     insertCalls.length = 0;
     environmentInsertError = null;
+    templateInsertError = null;
     eventInsertError = null;
 
     insertMock.mockImplementation((table: unknown) => {
@@ -51,6 +54,12 @@ beforeEach(() => {
         if (table === projectEnvironments) {
             c.then = (_res: unknown, rej: (e: unknown) => void) => {
                 if (environmentInsertError) return rej(environmentInsertError);
+                return (_res as (v: unknown) => void)([]);
+            };
+        }
+        if (table === messageTemplates) {
+            c.then = (_res: unknown, rej: (e: unknown) => void) => {
+                if (templateInsertError) return rej(templateInsertError);
                 return (_res as (v: unknown) => void)([]);
             };
         }
@@ -113,6 +122,34 @@ describe("ingestSingle", () => {
         eventInsertError = new Error("connection terminated");
         await expect(ingestSingle(event(), ctx)).rejects.toThrow("connection terminated");
     });
+
+    /**
+     * The template registry, added 2026-08-23. Its absence from this stub was
+     * invisible: `updateDerivedTablesSafely` swallows registry failures by
+     * design, so a chain without `onConflictDoNothing` threw, was logged, and
+     * every test here still passed while no template was ever recorded. That is
+     * a green test on broken code, which this repository has shipped three
+     * times.
+     */
+    it("records the message template alongside the event", async () => {
+        await ingestSingle(event({ message: "User u_487 signed in" }), ctx);
+
+        const [call] = insertsInto(messageTemplates);
+        expect(call).toBeDefined();
+        expect(call.values).toEqual([
+            expect.objectContaining({ template: "User *** signed in", projectId: ctx.projectId }),
+        ]);
+    });
+
+    it("still returns the event id when the template registry write fails", async () => {
+        templateInsertError = new Error("templates down");
+
+        await expect(ingestSingle(event(), ctx)).resolves.toHaveProperty("id");
+        expect(loggerErrorMock).toHaveBeenCalledWith(
+            expect.objectContaining({ projectId: ctx.projectId }),
+            expect.stringContaining("template"),
+        );
+    });
 });
 
 describe("ingestBatch", () => {
@@ -162,5 +199,19 @@ describe("ingestBatch", () => {
             expect.objectContaining({ projectId: ctx.projectId }),
             expect.stringContaining("environment registry"),
         );
+    });
+
+    it("records one template for many messages of the same shape", async () => {
+        await ingestBatch(
+            [
+                event({ message: "User u_1 signed in" }),
+                event({ message: "User u_2 signed in" }),
+                event({ message: "User u_3 signed in" }),
+            ],
+            ctx,
+        );
+
+        const [call] = insertsInto(messageTemplates);
+        expect(call.values).toHaveLength(1);
     });
 });

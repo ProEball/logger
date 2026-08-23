@@ -1,6 +1,7 @@
 import { randomUUID } from "crypto";
 import type { IngestEvent } from "./event-schema";
 import { sanitizeTimestamp } from "./sanitize-timestamp";
+import { templateHashForStorage } from "./normalize-message";
 import type { NewEvent } from "@/core/db/schema";
 
 export interface RequestContext {
@@ -34,6 +35,13 @@ export function enrichEvent(raw: IngestEvent, ctx: RequestContext): NewEvent {
         // Server-filled — override any client value
         userAgent: ctx.userAgent,
         ip: ctx.ip,
+
+        // Computed here so the value is written with the event in one
+        // statement. The registry normalises the same message again for its
+        // display text: two passes rather than threading one result through
+        // two functions, because the normaliser costs microseconds against a
+        // 0.2 ms insert and PROJECT.md §10 asks for evidence before cleverness.
+        templateHash: templateHashForStorage(raw.message),
     };
 }
 
