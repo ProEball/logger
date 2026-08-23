@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import { db } from "@/core/db/client";
-import { rollupBoundary } from "@/shared/services/rollup-boundary.service";
+import { rollupBoundary, templateCoverage } from "@/shared/services/rollup-boundary.service";
 import type { TimeRange } from "@/features/events/utils/event-filters.types";
 import type { Event } from "@/core/db/schema";
 import { resolveRange, pickBucket, fillBuckets, BUCKET_SECONDS } from "@/features/dashboard/utils/aggregation-utils";
@@ -175,8 +175,109 @@ export async function levelBreakdown(
 }
 
 /**
+
+ * `topMessages` served from the template rollup.
+ *
+ * Rollup rows below the coverage ceiling, raw `events` above it — the same
+ * union every other rollup-backed read uses. What differs is that the grouping
+ * key is a `bigint` rather than 200 characters of text, which is the entire
+ * point: the sort disappears and the work stops scaling with the number of
+ * events.
+ *
+ * Measured on staging at 8.9M events over 7 days, the raw-text form reads
+ * 4.5M rows and hashes 1.13M groups in ~17 s. This form reads ~899k rollup rows
+ * and groups ~18k. `PLAN.md` §16.3 has the arithmetic.
+ *
+ * The caller has already established that `range` sits inside coverage; this
+ * function does not re-check, because the decision needs the fallback branch
+ * and belongs where both are visible.
+ */
+async function topMessagesFromRollup(
+    projectId: string,
+    from: Date,
+    to: Date,
+    boundary: Date,
+    limit: number,
+): Promise<TopMessage[]> {
+    const rows = await db.execute<{
+        message: string;
+        count: string;
+        latest_at: Date;
+        by_level: Record<string, number>;
+    }>(sql`
+        WITH cells AS (
+            SELECT r.template_hash, l.key AS level, SUM(l.value::int)::int AS n,
+                   MAX(r.latest_at) AS latest
+            FROM event_template_rollup r, jsonb_each_text(r.by_level) l
+            WHERE r.project_id = ${projectId}::uuid
+              AND r.minute >= ${toTs(from)}
+              AND r.minute <  ${toTs(boundary)}
+            GROUP BY 1, 2
+
+            UNION ALL
+
+            -- The tail: at minute grain this is at most one minute of events,
+            -- which is why the grain was chosen. At hour grain it would be up
+            -- to ~114,000 rows on every read.
+            SELECT e.template_hash, e.level, COUNT(*)::int, MAX(e.timestamp)
+            FROM events e
+            WHERE e.project_id = ${projectId}::uuid
+              AND e.timestamp >= ${toTs(boundary)}
+              AND e.timestamp <  ${toTs(to)}
+              AND e.template_hash IS NOT NULL
+            GROUP BY 1, 2
+        ),
+        merged AS (
+            SELECT template_hash, level, SUM(n)::int AS n, MAX(latest) AS latest
+            FROM cells GROUP BY 1, 2
+        ),
+        totals AS (
+            SELECT template_hash, SUM(n)::int AS total, MAX(latest) AS latest
+            FROM merged
+            GROUP BY 1
+            ORDER BY total DESC
+            LIMIT ${limit}
+        )
+        SELECT
+            COALESCE(mt.template, '(unknown template)') AS message,
+            t.total::text                               AS count,
+            t.latest                                    AS latest_at,
+            jsonb_object_agg(m.level, m.n)              AS by_level
+        FROM totals t
+        JOIN merged m ON m.template_hash = t.template_hash
+        LEFT JOIN message_templates mt
+               ON mt.project_id = ${projectId}::uuid
+              AND mt.template_hash = t.template_hash
+        GROUP BY t.template_hash, t.total, t.latest, mt.template
+        ORDER BY t.total DESC
+    `);
+
+    return rows.map((r) => ({
+        message: r.message,
+        count: Number(r.count),
+        latestAt: new Date(r.latest_at),
+        dominantLevel: pickDominantLevel(r.by_level as Partial<Record<EventLevel, number>>),
+    }));
+}
+
+/**
  * Top N most frequent messages.
- * Messages are truncated to 200 chars for grouping to avoid cardinality explosion.
+ *
+ * **Two implementations, chosen by coverage.** Where the template rollup covers
+ * the requested range, this groups by a `bigint` fingerprint over pre-aggregated
+ * rows. Where it does not, it falls back to grouping `SUBSTRING(message, 1, 200)`
+ * over raw events — the query that has always been here.
+ *
+ * The fallback is not a safety net that never fires. Events ingested before
+ * `template_hash` shipped carry no fingerprint and never will, so every range
+ * reaching back into that history takes the slow path, and will until 30-day
+ * retention rolls those events out. Deleting the fallback the day the rollup
+ * works would silently return a top-messages list missing everything older than
+ * the deploy.
+ *
+ * Measured on staging, 8.9M events, a 7-day range: the raw form reads 4.5M rows
+ * and hashes 1.13M groups in ~17 s; the rollup form reads ~899k rows and groups
+ * ~18k. `PLAN.md` §16.3.
  */
 export async function topMessages(
     projectId: string,
@@ -184,6 +285,28 @@ export async function topMessages(
     limit = 10,
 ): Promise<TopMessage[]> {
     const { from, to } = resolveRange(range);
+
+    const coverage = await templateCoverage(projectId);
+    if (coverage && from >= coverage.from) {
+        // Rollup below the ceiling, raw events above it. When the range ends
+        // inside coverage there is no tail at all.
+        const boundary = to < coverage.to ? to : coverage.to;
+        return topMessagesFromRollup(projectId, from, to, boundary, limit);
+    }
+
+    return topMessagesFromEvents(projectId, from, to, limit);
+}
+
+/**
+ * The original implementation, kept because it is the only one that can answer
+ * for events with no fingerprint. See `topMessages` above for when it runs.
+ */
+async function topMessagesFromEvents(
+    projectId: string,
+    from: Date,
+    to: Date,
+    limit: number,
+): Promise<TopMessage[]> {
 
     // Five plain counters instead of `mode() WITHIN GROUP (ORDER BY level)`.
     // That was an *ordered-set* aggregate, and one in the select list forbids

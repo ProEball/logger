@@ -62,3 +62,45 @@ export async function rollupBoundary(projectIds: string[]): Promise<Date | null>
     if (row.boundary == null) return null;
     return new Date(row.boundary);
 }
+
+/**
+ * The interval the **template** rollup actually covers for one project, or
+ * `null` when it covers nothing usable.
+ *
+ * An interval rather than a boundary, and that is the whole difference from
+ * `rollupBoundary` above. The level rollup can summarise any event, so its
+ * coverage is a prefix and one watermark describes it. The template rollup can
+ * only summarise events carrying a `template_hash`, and nothing ingested before
+ * that column shipped has one — so it covers a window with a floor as well as a
+ * ceiling.
+ *
+ * A caller whose range starts before `from` must not use the template rollup at
+ * all. Reading it anyway would return rows for the covered part and nothing for
+ * the rest: an undercount with no error, which on a "top messages" widget is
+ * indistinguishable from a message nobody sent.
+ */
+export interface TemplateCoverage {
+    from: Date;
+    to: Date;
+}
+
+export async function templateCoverage(projectId: string): Promise<TemplateCoverage | null> {
+    const rows = await db.execute<{ from_ts: Date | null; to_ts: Date | null }>(sql`
+        SELECT templates_rolled_up_from AS from_ts,
+               templates_rolled_up_to   AS to_ts
+        FROM rollup_state
+        WHERE project_id = ${projectId}::uuid
+    `);
+
+    const row = rows[0];
+    if (!row || row.from_ts == null || row.to_ts == null) return null;
+
+    const from = new Date(row.from_ts);
+    const to = new Date(row.to_ts);
+
+    // An empty or inverted interval covers nothing. Cheap, and it keeps a
+    // half-written state from being read as "everything is covered".
+    if (!(from < to)) return null;
+
+    return { from, to };
+}

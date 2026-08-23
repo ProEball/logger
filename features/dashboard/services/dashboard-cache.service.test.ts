@@ -53,14 +53,28 @@ describe("dashboard cache", () => {
             expect(queryCount()).toBe(afterFirst);
         });
 
+        /**
+         * Compared against a single uncached read rather than a literal `1`.
+         * `topMessages` grew a second query on 2026-08-23 — it now asks how far
+         * the template rollup covers before choosing which implementation to
+         * run — and a hard-coded count made this test fail for a change that
+         * did not touch the property it exists to protect. The property is that
+         * N concurrent readers cost what one reader costs, whatever that is.
+         */
         it("collapses concurrent readers into one set of queries", async () => {
             await Promise.all([
                 cachedTopMessages(P1, HOUR),
                 cachedTopMessages(P1, HOUR),
                 cachedTopMessages(P1, HOUR),
             ]);
+            const concurrent = queryCount();
 
-            expect(queryCount()).toBe(1);
+            clearDashboardCaches();
+            executeMock.mockClear();
+            await cachedTopMessages(P1, HOUR);
+
+            expect(concurrent).toBe(queryCount());
+            expect(concurrent).toBeGreaterThan(0);
         });
     });
 

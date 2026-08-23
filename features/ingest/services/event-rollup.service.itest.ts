@@ -2,6 +2,8 @@ import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { sql } from "drizzle-orm";
 import { templateHashForStorage } from "@/features/ingest/utils/normalize-message";
+import { topMessages } from "@/features/dashboard/services/aggregations.service";
+import { templateCoverage } from "@/shared/services/rollup-boundary.service";
 import { db } from "@/core/db/client";
 import {
     ENVIRONMENT_KEY_CAP,
@@ -551,5 +553,106 @@ describe("rebuildRollupForProject — templates", () => {
             WHERE project_id = ${projectId}::uuid
         `);
         expect(after[0].n).toBe(before[0].n);
+    });
+});
+
+
+/**
+ * The read path, tested here rather than beside the aggregation service for the
+ * same reason as everything else in this file: the shared fixture never builds
+ * a rollup, so `templateCoverage` returns null there and `topMessages` would
+ * silently take the fallback branch — passing without executing a line of the
+ * rollup implementation.
+ *
+ * **The fixture is built so the two paths give *different* text.** Events carry
+ * `User u_487 signed in`; the registered template is `User *** signed in`. The
+ * rollup path reports the template, the fallback reports the raw message, and
+ * that difference is the only thing that can prove which branch ran. An earlier
+ * version of these tests used a message identical to its own template — both
+ * paths agreed, both breaks of the dispatcher passed, and the tests measured
+ * nothing.
+ */
+describe("topMessages over the template rollup", () => {
+    const RAW = "User u_487 signed in";
+    const TEMPLATE = "User *** signed in";
+
+    beforeAll(async () => {
+        await insertEvents([
+            { count: 6, level: "error", environment: "production", offsetMinutes: 3, message: RAW },
+        ]);
+        await db.execute(sql`
+            INSERT INTO message_templates (project_id, template_hash, template, normalizer_version)
+            VALUES (
+                ${projectId}::uuid,
+                ${templateHashForStorage(RAW).toString()}::bigint,
+                ${TEMPLATE},
+                1
+            )
+            ON CONFLICT DO NOTHING
+        `);
+        await markRollupDirty(projectId, at(0));
+        await rebuildFully();
+    });
+
+    async function coverageRange() {
+        const coverage = await templateCoverage(projectId);
+        expect(coverage).not.toBeNull();
+        return coverage!;
+    }
+
+    it("reports the template, not the raw message, when the range sits inside coverage", async () => {
+        const c = await coverageRange();
+        const rows = await topMessages(
+            projectId,
+            { type: "custom", from: c.from.toISOString(), to: c.to.toISOString() },
+            10,
+        );
+
+        const found = rows.find((r) => r.message === TEMPLATE);
+        expect(found).toBeDefined();
+        expect(found!.count).toBe(6);
+        expect(rows.some((r) => r.message === RAW)).toBe(false);
+    });
+
+    it("falls back to raw text when the range reaches before coverage", async () => {
+        const c = await coverageRange();
+        const before = new Date(c.from.getTime() - 86_400_000);
+
+        const rows = await topMessages(
+            projectId,
+            { type: "custom", from: before.toISOString(), to: c.to.toISOString() },
+            10,
+        );
+
+        // The fallback groups the message itself, so the identifier survives.
+        expect(rows.some((r) => r.message === RAW)).toBe(true);
+        expect(rows.some((r) => r.message === TEMPLATE)).toBe(false);
+    });
+
+    /**
+     * Two implementations of one question must not disagree on the numbers.
+     * Counts come from pre-aggregated integers on one path and from grouping
+     * 200 characters of text on the other, and nothing else would notice them
+     * drifting.
+     */
+    it("agrees with the raw-text implementation on the count and the badge", async () => {
+        const c = await coverageRange();
+        const inside = await topMessages(
+            projectId,
+            { type: "custom", from: c.from.toISOString(), to: c.to.toISOString() },
+            10,
+        );
+        const before = new Date(c.from.getTime() - 60_000);
+        const overlapping = await topMessages(
+            projectId,
+            { type: "custom", from: before.toISOString(), to: c.to.toISOString() },
+            10,
+        );
+
+        const viaRollup = inside.find((r) => r.message === TEMPLATE)!;
+        const viaEvents = overlapping.find((r) => r.message === RAW)!;
+
+        expect(viaRollup.count).toBe(viaEvents.count);
+        expect(viaRollup.dominantLevel).toBe(viaEvents.dominantLevel);
     });
 });
