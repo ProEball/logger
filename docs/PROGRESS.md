@@ -2,11 +2,43 @@
 
 > Single source of truth for "where are we right now". Update after every work session.
 
-**Last updated**: 2026-08-21 (overview read path done; project dashboard §16.2 shipped in full — tests, ORDER BY fixes, streaming, rollup, cache)
+**Last updated**: 2026-08-22 (v0.4.0: loading states + responsive range chips; read path hit a ceiling at 8.9M events — §16.3)
 
 ---
 
 ## Current Phase
+
+**v0.4.0 shipped 2026-08-22** — loading states on both dashboards and the range
+chips answering the click. Verified on staging: the chip goes active at 829 ms
+with `aria-busy`, and the per-widget skeletons make the expensive query visible
+from the page itself.
+
+**And the read path hit a ceiling the same day — [`PLAN.md` §16.3](PLAN.md#163-the-read-path-ceiling-and-what-a-message-ought-to-be).**
+The staging corpus reached **8,895,570 events**, +3.4M in twenty-four hours, and
+the project dashboard's cold 7d went **17.5 s → 40.1 s**. Warm loads stayed at
+300–500 ms, so the cache still does exactly what it was documented to do and
+nothing more. At this rate the corpus levels off near **100M** under 30-day
+retention.
+
+Three hypotheses were tested and refuted in one session, with session-scoped
+`SET` and no server change: `work_mem` bought **7%** and 512 MB made it *worse*;
+JIT costs 2,098 ms of the ~29 s; and hashing turned out not to be rejected but
+**forbidden** — `mode() WITHIN GROUP (ORDER BY level)` is an ordered-set
+aggregate, and one in the select list rules out `HashAggregate` at any
+`work_mem`. Removing it: **26,855 ms → 17,021 ms, −37%**.
+
+That fix is queued rather than shipped — a query change the night before a demo
+is exactly what this workstream keeps telling itself not to do. The demo runs on
+a warmed cache.
+
+The structural answer is recorded as a rule in §17: **`message` is the name of an
+event; variable data belongs in `attributes`.** `Session sess_pw62y expired` is a
+unique string and also the same event forty thousand times; the identifier
+belongs in `attributes.session_id`, where this product already types and filters
+it. What blocks sizing a template rollup is that our own load generator was built
+deliberately high-cardinality to stress the hash aggregate, so the 7.4% distinct
+it reports is a worst case rather than an expectation. A realistic generator
+profile comes first.
 
 **Read-path performance — [`PLAN.md` §16.1](PLAN.md#161-post-beta-workstream-read-path-performance).** The numbered roadmap features are all complete and the app is deployable (Feature 08, 30/30, live-checked 2026-08-13; deployment procedures in [`OPERATIONS.md`](OPERATIONS.md)). The staging run on 2026-08-19/20 then put real volume behind it for the first time, and the org overview came back at **1.4–1.6 s on 540k events** with the host at 8% CPU — so the cost is query and page structure, not resources. That opened the workstream.
 

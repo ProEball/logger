@@ -1197,10 +1197,151 @@ should be a number rather than a symmetry argument.
 
 ---
 
+### 16.3 The read-path ceiling, and what a message ought to be
+
+Opened **2026-08-22**, when the staging corpus reached **8,895,570 events** — up
+from 5,494,912 the day before, +3.4M in twenty-four hours — and the project
+dashboard's cold times went superlinear against it:
+
+| range | at 5.5M (2026-08-21) | at 8.9M (2026-08-22) |
+|---|---|---|
+| 1h | 0.25 s | 0.24 s |
+| 6h | — | 5.6 s |
+| 24h | — | 7.9 s |
+| **7d** | **17.5 s** | **40.1 s** |
+| 30d | 17.4 s | worse |
+
+62% more data, 2.3x the time. Warm loads stayed at 300-500 ms throughout, so the
+cache still works exactly as designed: it bounds how *often* the cost is paid and
+does nothing about the cost itself, which is what it was always documented to do.
+
+**The trajectory is the point, not the number.** At ~3.4M/day against 30-day
+retention the corpus levels off near **100M events**, roughly eleven times
+today's. Nothing in 16.1 or 16.2 addresses that: the rollup does not cover
+message-keyed reads, and the cache multiplies a cost it cannot reduce.
+
+#### What was eliminated, and what it cost to find out
+
+Four hypotheses, tested in one session with session-scoped SET, changing nothing
+on the server. Three failed. They are recorded because each was stated out loud
+as a likely cause, which is the failure the stage gate exists to catch.
+
+- **work_mem - refuted.** The 4 MB default made the sort spill ~250 MB to disk,
+  which looked like the whole explanation. Removing the spill entirely bought
+  **7%**: 28,991 ms at 4 MB, 28,491 ms at 64 MB (still spilling), 26,855 ms at
+  256 MB (quicksort in memory, no spill). **512 MB was worse - 37,670 ms** -
+  memory pressure on a 4 GB host. The spill was a symptom.
+- **JIT - real but small.** 136 functions, **2,098 ms** of compile on every
+  execution, because the query cost (1,258,241) sits far above jit_above_cost.
+  Worth disabling for this workload; worth 7% of the problem.
+- **Hashing was not being rejected, it was forbidden.** With enable_sort=off,
+  which adds a ten-billion penalty to every sort, the planner **took the penalty
+  and sorted anyway** - visible in the plan as cost=10001166953. That is not
+  "sorting is cheaper", that is "there is no alternative".
+- **The planner is also flying blind.** It estimates **200 groups** where there
+  are **1,133,715** - a 5,600x underestimate, because SUBSTRING(message,1,200)
+  is an expression and Postgres keeps no n-distinct statistics for expressions.
+
+#### What actually locks the plan: mode() WITHIN GROUP
+
+topMessages computes dominant_level with `mode() WITHIN GROUP (ORDER BY level)`.
+Ordered-set aggregates require sorted input per group, so while one is in the
+select list **HashAggregate is unavailable at any work_mem**. The whole query was
+pinned to sort-then-group by a coloured dot in the widget.
+
+Removing it, same settings: **26,855 ms -> 17,021 ms, -37%**, and the plan gains
+Partial HashAggregate with Batches: 1 and no spill.
+
+The replacement is `COUNT(*) FILTER (WHERE level = ...)` per level - ordinary
+aggregates, which do not forbid hashing - with the dominant level picked from
+five integers in application code. Also *more* correct: mode() breaks ties
+arbitrarily, while an explicit rule can break them toward the more severe level,
+which is what a "what should I look at" widget wants.
+
+**This is 40% of an answer, not an answer.** Seventeen seconds is still seventeen
+seconds, and it grows with the corpus.
+
+#### The structural answer: a message is a name, not an instance
+
+The cost is 1,133,715 groups over seven days, and it is that large because the
+grouping key is raw text.
+
+`Session sess_pw62y expired` is a unique string occurring once. It is also the
+same event forty thousand times. Sentry and Datadog both resolve this the same
+way, and it is the only approach that scales: **collapse the variable parts into
+a template**, so `Session sess_* expired` is one row with a count of 40,000.
+
+That is not merely cheaper, it is **more useful**. Nobody wants forty thousand
+session identifiers ranked by frequency; they want to know that sessions expired
+forty thousand times.
+
+**And the values are not lost, because this product already has somewhere to put
+them.** Events carry typed attributes with a registry enforcing their types
+(reference/logging.md). `sess_pw62y` belongs in `attributes.session_id`, where it
+is already filterable and already covered by the attribute machinery - not melted
+into a prose string where the only thing anyone can do with it is read it.
+
+So the rule this settles is about the **data model**, ahead of any optimisation:
+
+> **`message` is the name of an event. Variable data belongs in `attributes`.**
+
+Recorded in 17. It costs nothing to adopt in the docs and the ingest guide today,
+and everything downstream gets easier: grouping, alerting on a class of event
+rather than one instance, and eventually a template rollup keyed by a hash
+instead of by text.
+
+#### Where that leads, and the one number that decides it
+
+With templates, topMessages becomes a fingerprint computed **at ingest** -
+template_hash stored on the event, rolled up per (project, hour, hash), read as a
+sum over a small integer key. Exact rather than approximate, because the grouping
+key is stable; and it scales with the number of *kinds* of message rather than
+the number of events. An application with five hundred distinct messages costs
+the same at 100M events as at 1M.
+
+Ingest can afford it: measured at **0.2 ms per insert**, the write path does not
+appear in the page's cost profile at all.
+
+**The blocker is that we cannot yet size it honestly.** Measured on staging:
+2,477,278 rows in one day, **674,924 distinct raw messages (27.2%)**, and
+**183,289 after a crude normalising regex (7.4%)** - a 3.7x collapse, not enough
+on its own.
+
+But that number describes **our load generator, not logs**. reference/misc.md
+records that its message templates were deliberately built across three
+cardinality classes, some effectively unique per event, precisely so the hash
+aggregate would be stressed rather than flattered. We built an instrument to make
+this query hard, and are now using it to decide whether the query is hard.
+
+So 7.4% is a **worst case, not an expectation**, and the rollup cannot be sized
+against it. What is needed first is a second generator profile shaped like real
+application logs - few templates, high repetition, variables in attributes - and
+the same measurement against that.
+
+If templates collapse cardinality by one to two orders of magnitude, the template
+rollup solves this outright and Postgres stays. If they do not, the storage
+engine decision deferred in 17 on 2026-08-20 stops being deferrable: that entry
+set the threshold at 1M events, and there are nine million.
+
+#### Order
+
+1. **Replace mode().** Measured, -37%, one query, needs a test. Not deployed the
+   night before a demo - the same rule this workstream keeps.
+2. **Choose work_mem against the hash's real appetite** (82 MB peak per process
+   once hashing is possible), not against a guess. And jit=off for this workload.
+3. **Adopt the message/attributes rule in the docs and the ingest guide.** Zero
+   code, and it is what makes step 5 possible at all.
+4. **A realistic generator profile, then size the template rollup against it.**
+5. **Fingerprint at ingest** - or the engine conversation, depending on 4.
+
+---
+
 ## 17. Decision Log
 
 | Date | Decision | Rationale |
 |---|---|---|
+| 2026-08-22 | **`message` is the name of an event; variable data belongs in `attributes`** | Arrived at from a performance problem and kept for a product reason. `topMessages` groups raw text, and on staging that is 1,133,715 groups over seven days — `Session sess_pw62y expired` is a unique string that is also the same event forty thousand times. Sentry and Datadog both collapse the variable parts into a template, and it is the only shape that scales: cost then tracks the number of *kinds* of message, not the number of events. But the stronger argument is that the templated form is **what a reader actually wants** — "sessions expired 40,000 times", not forty thousand session identifiers ranked by frequency. The objection to normalising ("I need to know *which* session") does not survive contact with this product's own data model: events already carry typed `attributes` with a registry enforcing their types, so `sess_pw62y` belongs in `attributes.session_id`, where it is filterable, rather than melted into prose where the only available operation is reading it. Adopting the rule costs nothing today — it is documentation and ingest guidance — and it is the precondition for a template rollup keyed by hash instead of by text. Recorded as a rule rather than a task because it changes what we tell users to send, and every day it is not written down is another day of data that cannot be grouped. |
+| 2026-08-22 | `work_mem` is **not** the read path's problem, and the measurement that looked like proof was a symptom | The 4 MB default made `topMessages` spill ~250 MB to disk, which is exactly what a superlinear jump against data volume looks like. Removing the spill entirely bought **7%** (28,991 → 26,855 ms), and 512 MB made it **worse** (37,670 ms) through memory pressure on a 4 GB host. Written down because the hypothesis was stated confidently, the disk numbers appeared to confirm it, and it was wrong — the ladder took ten minutes and would have taken a deploy and a week of believing the wrong thing. The real lock was `mode() WITHIN GROUP (ORDER BY level)`: an ordered-set aggregate forbids `HashAggregate` outright, which the plan proves by taking a ten-billion sort penalty under `enable_sort=off` and sorting anyway. |
 | 2026-08-21 | `shared/services/` revived for the rollup boundary, rather than copying it into the second reader | Both dashboards read `rollup rows below a watermark UNION raw events above it`, so both need the watermark. The alternative was a second implementation, and by this point the day had produced three separate cases of exactly that going wrong — a Zod enum that lost `5m`, three preset lists, four copies of one option array. `shared/services/` is what `PROJECT.md` §2.1 prescribes and had been empty since 2026-08-13 only because its last occupant was dead code. The move also fixed something the private copy had: `MIN` and the NULL filter both ignore rows that are *absent*, so a project missing from `rollup_state` inherited another project's boundary and then contributed no summary rows below it — an undercount that reads as a quiet project. It cannot happen today, because `markRollupDirty` writes a row on every ingest and migration 0008 seeded one per project; that is the problem, and the guard is one comparison. |
 | 2026-08-21 | The dashboard's rollup tests live in `event-rollup.service.itest.ts`, **not** beside the service they cover | Colocation is the rule (`PROJECT.md` §11) and this is a deliberate exception with a reason that outranks it. `aggregations.service.itest.ts` runs against the shared fixture, which inserts events with direct SQL and never builds a rollup — so `rollupBoundary` returns null there and every read falls back to raw `events`. Tests written next to the service would have passed without executing a single line of the rollup branch, which is the precise failure this repository already recorded twice: a test file named after a service it never imported, and three tests that passed against broken code. `event-rollup.service.itest.ts` owns a project and rebuilds the rollup for real. Verified by breaking the rollup CTE on purpose and confirming exactly one test failed. |
 | 2026-08-21 | The project dashboard was double-refreshing itself, found while converting `DashboardPage` to a Server Component | `DashboardPage` called `useAutoRefresh()` and also rendered `DashboardHeader`, which renders `AutoRefreshControl`, which calls `useAutoRefresh()`. Two intervals, two `router.refresh()` per tick: the page reloaded twice as often as the setting said, doubling its own database load — on the page this workstream exists to make cheaper. Logged because of how it was found. Nobody was looking for it; it fell out of asking which hooks had to move when the component stopped being a client component, and no test in this repository could have caught it — there are zero `.test.tsx` and a duplicated `setInterval` is invisible to every other kind. The structural fix is that a Server Component cannot hold a hook at all. |
