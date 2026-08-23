@@ -116,3 +116,64 @@ export function normalizeMessage(message: string): string {
 
 /** The rule names, in the order they are applied. Exposed for tests. */
 export const NORMALIZER_RULES: readonly string[] = RULES.map((r) => r.name);
+
+/**
+ * A stable 64-bit fingerprint of a message's template.
+ *
+ * FNV-1a, written out rather than taken from a dependency, because this value
+ * is **persisted**: every row in `event_template_rollup` is keyed by it, so the
+ * function must produce the same number next year, on another Node version, on
+ * another architecture. A hand-written integer loop has no version to drift.
+ *
+ * **The normalizer version is folded into the input, not stored beside it.**
+ * Rules change; when they do, the same message yields a different template and
+ * therefore must yield a different key. Mixing generations under one key would
+ * merge two different groupings and report a change in the data that never
+ * happened. Folding the version in makes that impossible rather than merely
+ * discouraged — old rows keep their old keys, new rows get new ones, and the
+ * two never silently add up.
+ *
+ * Returned as a `bigint` because Postgres `bigint` is what stores it, and
+ * `number` cannot hold 64 bits without losing the low ones.
+ */
+export function templateHash(message: string): bigint {
+    return hash64(`${NORMALIZER_VERSION}\u0000${normalizeMessage(message)}`);
+}
+
+/** FNV-1a over UTF-16 code units, 64-bit, wrapped to an unsigned range. */
+function hash64(input: string): bigint {
+    // `BigInt("…")` rather than a `123n` literal: `tsconfig.json` targets
+    // ES2017, where the literal form is a compile error. Raising the target for
+    // one function would change output for the whole application, which is a
+    // much larger decision than this hash deserves.
+    const PRIME = BigInt("1099511628211");
+    const MASK = BigInt("18446744073709551615");
+    let h = BigInt("14695981039346656037");
+
+    // Hashing code units rather than bytes: JavaScript strings *are* code
+    // units, so this needs no encoder and cannot disagree with one.
+    for (let i = 0; i < input.length; i++) {
+        h = ((h ^ BigInt(input.charCodeAt(i))) * PRIME) & MASK;
+    }
+    return h;
+}
+
+/**
+ * Postgres `bigint` is signed, so the unsigned 64-bit value has to be folded
+ * into the signed range before it is stored.
+ *
+ * A bijection from `[0, 2^64)` onto `[-2^63, 2^63)`, so it introduces no
+ * collisions: two templates that hashed differently still store differently.
+ * It is **not** an involution — applying it to an already-folded value returns
+ * that value unchanged — so it must be applied exactly once, on the way in.
+ */
+export function toSignedBigint(value: bigint): bigint {
+    const TWO_63 = BigInt("9223372036854775808");
+    const TWO_64 = BigInt("18446744073709551616");
+    return value >= TWO_63 ? value - TWO_64 : value;
+}
+
+/** The value actually written to `events.template_hash`. */
+export function templateHashForStorage(message: string): bigint {
+    return toSignedBigint(templateHash(message));
+}

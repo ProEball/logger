@@ -1,5 +1,12 @@
 import { describe, it, expect } from "vitest";
-import { normalizeMessage, NORMALIZER_RULES, NORMALIZER_VERSION } from "./normalize-message";
+import {
+    normalizeMessage,
+    templateHash,
+    templateHashForStorage,
+    toSignedBigint,
+    NORMALIZER_RULES,
+    NORMALIZER_VERSION,
+} from "./normalize-message";
 
 describe("normalizeMessage", () => {
     describe("identifiers", () => {
@@ -142,5 +149,67 @@ describe("normalizeMessage", () => {
         it("has a version, because hashes from different rule sets are not comparable", () => {
             expect(NORMALIZER_VERSION).toBeGreaterThan(0);
         });
+    });
+});
+
+/**
+ * Frozen because the value is **persisted**: every row of the template rollup
+ * is keyed by it. Recomputing the expectation at runtime would compare the
+ * function with a copy of itself and could never fail.
+ *
+ * If this test fails, the fingerprint changed. That is not a number to update —
+ * it means every stored key just became wrong, and the correct response is a
+ * `NORMALIZER_VERSION` bump so the two generations cannot be summed.
+ */
+const FROZEN_UNSIGNED = "12497911170121219274";
+const FROZEN_STORED = "-5948832903588332342";
+
+describe("templateHash", () => {
+    it("gives two messages of the same shape one key", () => {
+        expect(templateHash("User u_487 signed in")).toBe(templateHash("User u_912 signed in"));
+    });
+
+    it("gives different shapes different keys", () => {
+        expect(templateHash("User u_487 signed in")).not.toBe(
+            templateHash("User u_487 signed out"),
+        );
+    });
+
+    it("matches a frozen value, so a silent algorithm change cannot pass", () => {
+        expect(templateHash("User u_487 signed in").toString()).toBe(FROZEN_UNSIGNED);
+    });
+
+    it("survives an empty message", () => {
+        expect(typeof templateHash("")).toBe("bigint");
+    });
+});
+
+describe("templateHashForStorage", () => {
+    it("matches its own frozen value", () => {
+        expect(templateHashForStorage("User u_487 signed in").toString()).toBe(FROZEN_STORED);
+    });
+
+    it("fits the range Postgres bigint provides", () => {
+        const MIN = BigInt("-9223372036854775808");
+        const MAX = BigInt("9223372036854775807");
+        for (const m of ["", "a", "User u_487 signed in", "щ".repeat(200)]) {
+            const v = templateHashForStorage(m);
+            expect(v >= MIN && v <= MAX).toBe(true);
+        }
+    });
+
+    it("keeps distinct templates distinct through the fold", () => {
+        expect(templateHashForStorage("alpha u_1 done").toString()).not.toBe(
+            templateHashForStorage("beta u_1 done").toString(),
+        );
+    });
+
+    it("folds the top half of the range into negatives, and only once", () => {
+        // The fold is a bijection, not an involution: applying it twice must
+        // leave an already-folded value alone rather than send it back.
+        const unsigned = templateHash("User u_487 signed in");
+        const once = toSignedBigint(unsigned);
+        expect(toSignedBigint(once)).toBe(once);
+        expect(once).not.toBe(unsigned);
     });
 });
