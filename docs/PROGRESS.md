@@ -29,7 +29,7 @@ fixture's message and its template were the same string, so both
 implementations returned identical rows and disabling the rollup branch entirely
 still passed.
 
-**Still to do:** the backfill script (step 6). Until it runs, the rollup only
+**Step 6 shipped the same day** — `dist/backfill-template-hash.js`, run once per install (see [OPERATIONS.md](OPERATIONS.md)). Verified locally against 21,474 events: every row fingerprinted, 1,112 templates registered against 1,112 distinct hashes, no orphans. Until it runs, the rollup only
 covers events ingested after the deploy, so 7-day and 30-day reads keep taking
 the slow path — the win arrives gradually rather than at the release.
 
@@ -292,7 +292,7 @@ Both were fixed with the failing test written first — all three targeted tests
 
 **Three things moved to `shared/` rather than being copied** — the rollup boundary, the cache key builder (`query-cache-key.ts`) and the TTL settings (`read-cache-settings.ts`). Copying a cache-key builder in particular would have duplicated an authorization boundary, which is the worst instance of a pattern that had already cost this repository three separate defects in two days.
 
-**Totals:** 718 unit · 112 integration · 73 e2e.
+**Totals:** 726 unit · 112 integration · 73 e2e.
 
 **Still open on this page:** `topMessages` (170 ms) and `recentErrors` cannot leave raw `events`; `topSources` needs a `by_source` rollup column, deferred until measured at 30 days. And every number here comes from a 24-hour window on a three-day corpus — the 30-day question is still unanswered for both pages.
 

@@ -197,6 +197,53 @@ docker compose exec postgres sh -c \
 done. It requires the `worker` service to be running — without it the rollup
 never builds and the dashboards silently keep reading raw events.
 
+### Backfilling template fingerprints (one-shot, after the §16.3 release)
+
+`events.template_hash` is computed at ingest, so events written before that
+release have none — and the template rollup can only summarise events that have
+one. Left alone, `topMessages` keeps taking the raw-text path for any range
+reaching into that history, and only stops when 30-day retention rolls those
+events out. This script closes the gap now instead.
+
+Check the size of the job first — it writes nothing:
+
+```bash
+docker compose run --rm --entrypoint node app dist/backfill-template-hash.js --dry-run
+```
+
+Then run it:
+
+```bash
+docker compose run --rm --entrypoint node app dist/backfill-template-hash.js --batch 5000 --sleep 50
+```
+
+It reads events with no fingerprint oldest-first, writes the hash and registers
+the template, then pulls each project's rollup watermark back to its oldest
+event so the existing `event-rollup` job rebuilds history — a day per run, with
+its existing cap and its existing self-healing. No second rebuild path exists,
+deliberately.
+
+**Safe to interrupt.** Work is selected by `template_hash IS NULL`, so a killed
+run leaves the rest for the next one. Nothing is destroyed: every write is
+derived, and a normaliser rule found to be wrong is corrected by bumping
+`NORMALIZER_VERSION` and running this again.
+
+⚠️ **It rewrites rows.** Every updated event leaves a dead tuple — roughly one
+heap row each, ~255 bytes on staging — so it temporarily grows the table until
+autovacuum reclaims them. Check headroom with `df -h /` first, and prefer
+off-peak: 9M events is a couple of gigabytes of churn.
+
+⚠️ **The rebuild is the slow half.** The hashes take minutes; the rollup then
+catches up one day of history per run, so 30 days of history is ~30 job cycles.
+Watch it with:
+
+```bash
+docker compose exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT project_id, templates_rolled_up_from, templates_rolled_up_to FROM rollup_state;"'
+```
+
+`templates_rolled_up_from` moving backwards is the rebuild working. When it
+reaches the oldest event, every range is served from the rollup.
+
 ### Building on the host
 
 ```bash

@@ -1,5 +1,5 @@
 /**
- * Bundles the two Node entrypoints that live outside the Next.js build:
+ * Bundles the Node entrypoints that live outside the Next.js build:
  * the standalone worker and the one-shot migration runner.
  *
  * `next build` only compiles what is reachable from `app/`, so neither
@@ -27,6 +27,9 @@ const outDir = path.resolve(
 const ENTRYPOINTS = {
     worker: "core/worker/main.ts",
     migrate: "core/db/migrate.ts",
+    // One-shot, run by hand. Bundled with the others so it carries the real
+    // normaliser rather than a copy of its rules.
+    "backfill-template-hash": "core/db/backfill-template-hash.ts",
 };
 
 await build({
