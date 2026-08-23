@@ -166,12 +166,36 @@ per-widget fallbacks is then seamless: cells fill in one at a time from the
 first frame, instead of a grey page being replaced wholesale by a differently
 shaped one.
 
-**Still open:** switching the range *within* a page still shows nothing, because
-the boundaries are not remounted — the transition keeps the resolved widgets on
-screen and swaps them when the new ones are ready. At 1h that is right; at 30d
-it is seventeen seconds of a page that looks frozen. Fixing it means keying the
-slow boundary on the range, or surfacing `isPending` on the range chips, and
-neither is done.
+**Still open, and worse than it first looked.** Switching the range *within* a
+page shows no loading state at all, because the boundaries are not remounted.
+Verified locally on 2026-08-22 by staggering artificial delays through the
+widget queries and sampling the DOM every 350 ms after clicking a range chip:
+across 30 samples over 28 seconds there were **zero** skeletons of either kind —
+and `location.search` never changed either. The router does not commit the URL
+until the new payload is ready, so the chips, which read the range from
+`useSearchParams()`, do not restyle. The clicked chip does not even highlight.
+
+So this is not "the page looks frozen for seventeen seconds"; it is "the button
+does not appear to respond at all". At 1h, where everything returns in about
+250 ms, the current behaviour is correct and a skeleton flash would be worse.
+At 30d it is indefensible. The fix is either keying the slow boundary on the
+range so it remounts, or surfacing `isPending` from `useTransition` on the
+chips; neither is done.
+
+### Reproducing loading states locally
+
+There is no data volume on a developer machine that makes these visible — every
+query returns in milliseconds. Stagger artificial delays instead. Two things
+are easy to get wrong:
+
+- **Delay at both levels.** `loading.tsx` is only on screen while the route
+  *prologue* runs, so slowing the widget queries alone shows the per-widget
+  fallbacks and never the route one.
+- **Bypass the cache**, or the second load skips the delay and measures nothing.
+
+Different delays per widget is what makes the ordering legible: the widgets
+should appear one at a time, slowest last. That is also the cheapest way to
+confirm the boundaries really are per widget and have not been quietly grouped.
 
 ---
 
