@@ -34,8 +34,9 @@ ARG NEXT_PUBLIC_BUILD_TIME=""
 ENV NEXT_PUBLIC_BUILD_SHA=${NEXT_PUBLIC_BUILD_SHA} \
     NEXT_PUBLIC_BUILD_TIME=${NEXT_PUBLIC_BUILD_TIME}
 
-# Produces `.next/standalone` (app) and `dist/{worker,migrate}.js` (the two
-# Node entrypoints Next does not build — see scripts/build-worker.mjs).
+# Produces `.next/standalone` (app) and one bundle per entrypoint in
+# `dist/*.js` — the Node processes Next does not build. See
+# scripts/build-worker.mjs; the runtime stage copies them by glob.
 #
 # `next build` imports the env schema in `core/env`, which requires
 # DATABASE_URL and AUTH_SECRET to be present and well-formed. No database is
@@ -78,8 +79,16 @@ COPY --from=builder --chown=node:node /app/.next/static ./.next/static
 COPY --from=builder --chown=node:node /app/public ./public
 
 # Self-contained esbuild bundles: no node_modules resolution at run time.
-COPY --from=builder --chown=node:node /app/dist/worker.js ./worker.js
-COPY --from=builder --chown=node:node /app/dist/migrate.js ./migrate.js
+# Every bundle from scripts/build-worker.mjs, by glob rather than by name.
+# Naming them individually is how `backfill-template-hash.js` was added to the
+# bundler on 2026-08-23, shipped in the image's build stage, and then failed at
+# runtime with MODULE_NOT_FOUND because nothing copied it out. The glob makes a
+# new entrypoint arrive automatically; `*.js` still leaves the sourcemaps
+# behind, which is deliberate — they are ~3 MB each and nothing reads them here.
+#
+# Note the flattening: `dist/worker.js` becomes `/app/worker.js`, so commands
+# run it as `node worker.js`, not `node dist/worker.js`.
+COPY --from=builder --chown=node:node /app/dist/*.js ./
 COPY --from=builder --chown=node:node /app/core/db/migrations ./migrations
 
 EXPOSE 3000

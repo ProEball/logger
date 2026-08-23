@@ -208,13 +208,13 @@ events out. This script closes the gap now instead.
 Check the size of the job first — it writes nothing:
 
 ```bash
-docker compose run --rm --entrypoint node app dist/backfill-template-hash.js --dry-run
+docker compose run --rm --entrypoint node app backfill-template-hash.js --dry-run
 ```
 
 Then run it:
 
 ```bash
-docker compose run --rm --entrypoint node app dist/backfill-template-hash.js --batch 5000 --sleep 50
+docker compose run --rm --entrypoint node app backfill-template-hash.js --batch 5000 --sleep 50
 ```
 
 It reads events with no fingerprint oldest-first, writes the hash and registers
