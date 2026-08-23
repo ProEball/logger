@@ -5,6 +5,7 @@ import type { TimeRange } from "@/features/events/utils/event-filters.types";
 import type { Event } from "@/core/db/schema";
 import { resolveRange, pickBucket, fillBuckets, BUCKET_SECONDS } from "@/features/dashboard/utils/aggregation-utils";
 import type { BucketRow } from "@/features/dashboard/utils/aggregation-utils";
+import { pickDominantLevel, type EventLevel } from "@/features/dashboard/utils/dominant-level";
 
 // Re-export pure helpers so callers can import from one place.
 export { resolveRange, pickBucket, fillBuckets } from "@/features/dashboard/utils/aggregation-utils";
@@ -26,7 +27,7 @@ export type TopMessage = {
     message: string;
     count: number;
     latestAt: Date;
-    dominantLevel: string;
+    dominantLevel: EventLevel;
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -184,12 +185,30 @@ export async function topMessages(
 ): Promise<TopMessage[]> {
     const { from, to } = resolveRange(range);
 
-    const rows = await db.execute<{ message: string; count: string; latest_at: Date; dominant_level: string }>(sql`
+    // Five plain counters instead of `mode() WITHIN GROUP (ORDER BY level)`.
+    // That was an *ordered-set* aggregate, and one in the select list forbids
+    // `HashAggregate` outright, at any `work_mem` — it pinned this query to
+    // sort-then-group over every matching row. Measured on staging at 8.9M
+    // events over a 7-day range: 26,855 ms with it, 17,021 ms without, the plan
+    // gaining `Partial HashAggregate`, one batch, no spill. `COUNT(*) FILTER`
+    // is an ordinary aggregate and hashes fine. See `PLAN.md` §16.3.
+    //
+    // The level list is restated here rather than derived, because building it
+    // from `EVENT_LEVELS` would mean generating aliases into raw SQL for a
+    // fixed five-element enum. The drift that costs is covered instead by a
+    // test that iterates `EVENT_LEVELS` and fails if any level is missing.
+    const rows = await db.execute<
+        { message: string; count: string; latest_at: Date } & Record<string, unknown>
+    >(sql`
         SELECT
             SUBSTRING(message, 1, 200)                         AS message,
             COUNT(*)::text                                     AS count,
             MAX(timestamp)                                     AS latest_at,
-            mode() WITHIN GROUP (ORDER BY level)               AS dominant_level
+            COUNT(*) FILTER (WHERE level = 'debug')::int       AS n_debug,
+            COUNT(*) FILTER (WHERE level = 'info')::int        AS n_info,
+            COUNT(*) FILTER (WHERE level = 'warn')::int        AS n_warn,
+            COUNT(*) FILTER (WHERE level = 'error')::int       AS n_error,
+            COUNT(*) FILTER (WHERE level = 'fatal')::int       AS n_fatal
         FROM events
         WHERE project_id = ${projectId}
           AND timestamp >= ${toTs(from)}
@@ -203,7 +222,13 @@ export async function topMessages(
         message: r.message,
         count: Number(r.count),
         latestAt: new Date(r.latest_at),
-        dominantLevel: r.dominant_level,
+        dominantLevel: pickDominantLevel({
+            debug: Number(r.n_debug ?? 0),
+            info: Number(r.n_info ?? 0),
+            warn: Number(r.n_warn ?? 0),
+            error: Number(r.n_error ?? 0),
+            fatal: Number(r.n_fatal ?? 0),
+        }),
     }));
 }
 

@@ -10,6 +10,7 @@ import {
 import type { TimeRange } from "@/features/events/utils/event-filters.types";
 import { ALPHA, DASH, QUIET, canonicalRange } from "@/itest/support/fixture";
 import { readAnchor } from "@/itest/support/read-anchor";
+import { EVENT_LEVELS } from "@/shared/utils/event-filters.schema";
 
 /**
  * Integration tests for the project dashboard's raw-SQL aggregations.
@@ -167,6 +168,52 @@ describe("topMessages", () => {
         const messages = (await topMessages(DASH, range)).map((r) => r.message);
 
         expect(messages).not.toContain("dash noise"); // +70 min, past `to`
+    });
+
+    /**
+     * The drift guard for the level counters.
+     *
+     * `topMessages` restates the five levels as `COUNT(*) FILTER` columns rather
+     * than deriving them from `EVENT_LEVELS`, because deriving would mean
+     * generating column aliases into raw SQL. This is what pays for that: every
+     * DASH message carries exactly one level, so the five dominant levels the
+     * query returns must be the five the schema defines.
+     *
+     * A level added to `EVENT_LEVELS` and forgotten in the SQL fails here
+     * loudly rather than quietly — the missing counter leaves that message with
+     * no positive count at all, and `pickDominantLevel` throws instead of
+     * badging it wrongly.
+     */
+    it("returns a dominant level for every level the schema defines", async () => {
+        // A wider window than the canonical hour on purpose: DASH puts its
+        // debug message 70 minutes past the anchor, outside the range every
+        // other test here uses. Covering all five counters needs all five
+        // messages, so this one test reaches past that boundary.
+        const wide: TimeRange = {
+            type: "custom",
+            from: anchor.toISOString(),
+            to: new Date(anchor.getTime() + 120 * 60_000).toISOString(),
+        };
+        const rows = await topMessages(DASH, wide, 10);
+
+        expect([...new Set(rows.map((r) => r.dominantLevel))].sort()).toEqual(
+            [...EVENT_LEVELS].sort(),
+        );
+    });
+
+    /**
+     * `mode() WITHIN GROUP (ORDER BY level)` was replaced by five plain counters
+     * on 2026-08-22 because an ordered-set aggregate forbids `HashAggregate` —
+     * 26,855 ms to 17,021 ms on staging. This asserts the replacement kept the
+     * answer, not just the speed: `dash api failure` is ten error events and
+     * nothing else, so its badge is `error`.
+     */
+    it("badges a single-level message with that level", async () => {
+        const rows = await topMessages(DASH, range, 10);
+        const apiFailure = rows.find((r) => r.message === "dash api failure");
+
+        expect(apiFailure?.dominantLevel).toBe("error");
+        expect(apiFailure?.count).toBe(10);
     });
 });
 

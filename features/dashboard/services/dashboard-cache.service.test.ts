@@ -138,7 +138,16 @@ describe("dashboard cache", () => {
 
         it("still returns the data", async () => {
             executeMock.mockResolvedValue([
-                { message: "boom", count: "3", latest_at: new Date(), dominant_level: "error" },
+                {
+                    message: "boom",
+                    count: "3",
+                    latest_at: new Date(),
+                    n_debug: 0,
+                    n_info: 0,
+                    n_warn: 0,
+                    n_error: 3,
+                    n_fatal: 0,
+                },
             ]);
 
             await expect(cachedTopMessages(P1, custom)).resolves.toHaveLength(1);

@@ -125,6 +125,41 @@ Two of the five are usually worth little: on any install with a single release a
 
 ---
 
+### `topMessages` no longer uses `mode()`
+
+Changed 2026-08-22. The widget's level badge was computed with `mode() WITHIN
+GROUP (ORDER BY level)`. That is an **ordered-set aggregate**, and one in the
+select list makes `HashAggregate` unavailable to the planner at any `work_mem` —
+the whole query was pinned to sort-then-group over every matching row. The plan
+proves it: under `enable_sort=off`, which prices every sort at ten billion, the
+planner took the penalty and sorted anyway.
+
+Measured on staging at 8.9M events over a 7-day range: **26,855 ms with `mode()`,
+17,021 ms without**, the plan gaining `Partial HashAggregate` with `Batches: 1`
+and no spill. Full evidence, including the three hypotheses this refuted, in
+[`PLAN.md` §16.3](../PLAN.md).
+
+It now selects five `COUNT(*) FILTER (WHERE level = …)` counters — ordinary
+aggregates, which hash fine — and `pickDominantLevel` picks the badge in
+TypeScript.
+
+**The tie-break changed, deliberately.** `mode()` resolves equal frequencies
+arbitrarily; `pickDominantLevel` resolves them toward the **more severe** level,
+because a widget answering "what should I look at" should point at the thing more
+worth looking at. `TopMessage.dominantLevel` is also now the level union rather
+than `string`, which removed a cast in `TopMessagesWidget`.
+
+The five levels are restated in the SQL rather than derived from `EVENT_LEVELS`,
+since deriving would mean generating column aliases into raw SQL. The drift that
+risks is covered by an integration test that iterates `EVENT_LEVELS` and asserts
+every one comes back as some message's badge — a level added to the schema and
+forgotten in the query leaves that message with no positive count, and
+`pickDominantLevel` throws rather than badging it wrongly.
+
+**This is 40% of the problem, not the whole of it.** Seventeen seconds is still
+seventeen seconds, and it grows with the corpus. The structural answer is in
+§16.3.
+
 ## Loading states, and why they are a diagnostic
 
 Both dashboards give **every widget its own `Suspense` boundary**. That is a

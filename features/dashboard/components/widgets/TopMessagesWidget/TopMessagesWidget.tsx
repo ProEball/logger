@@ -131,7 +131,7 @@ export function TopMessagesWidget({
                             </div>
                             <div className={`${styles.td} ${styles.colLevel}`}>
                                 <LevelBadge
-                                    level={row.dominantLevel as "debug" | "info" | "warn" | "error" | "fatal"}
+                                    level={row.dominantLevel}
                                     size="sm"
                                 />
                             </div>
