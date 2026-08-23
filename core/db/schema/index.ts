@@ -8,3 +8,4 @@ export * from "./alerts";
 export * from "./attributeKeyTypes";
 export * from "./projectEnvironments";
 export * from "./eventRollup";
+export * from "./messageTemplates";

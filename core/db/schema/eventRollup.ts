@@ -89,6 +89,25 @@ export const rollupState = pgTable("rollup_state", {
      * where the data is complete to.
      */
     rolledUpTo: timestamp("rolled_up_to", { withTimezone: true }),
+    /**
+     * Exclusive upper bound the **template** rollup is complete to. `NULL`
+     * until its first run.
+     *
+     * Separate from `rolledUpTo`, and that separation is the whole point rather
+     * than tidiness. The two rollups start at different moments: the level
+     * rollup has run since 2026-08-20, while the template rollup can only cover
+     * events that carry a `template_hash`, and nothing ingested before its
+     * deploy does. Sharing one watermark would have the template read claim
+     * coverage it does not have and return **zero** for older minutes — a
+     * silent wrong answer, which on a "top messages" widget looks exactly like
+     * a quiet project.
+     *
+     * A read whose range starts before this boundary therefore cannot use the
+     * template rollup at all, and falls back to grouping raw `events` by text —
+     * the query that exists today. That is slow and correct, and it stops being
+     * needed as 30-day retention rolls the pre-deploy events out.
+     */
+    templatesRolledUpTo: timestamp("templates_rolled_up_to", { withTimezone: true }),
 });
 
 export type EventRollupMinute = typeof eventRollupMinutes.$inferSelect;

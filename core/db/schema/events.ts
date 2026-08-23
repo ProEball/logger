@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, timestamp, jsonb, index } from "drizzle-orm/pg-core";
+import { bigint, pgTable, uuid, text, timestamp, jsonb, index } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { projects } from "./projects";
 
@@ -29,6 +29,19 @@ export const events = pgTable(
         context: jsonb("context").default(sql`'{}'::jsonb`),
         userAgent: text("user_agent"),
         ip: text("ip"),
+        /**
+         * Fingerprint of the message template, computed at ingest by
+         * `templateHashForStorage`. Nullable, and permanently so: every event
+         * ingested before this column existed has none, and there is no way to
+         * derive one in SQL — the normaliser is TypeScript, and a second
+         * implementation in a different regex engine is exactly the drift this
+         * repository keeps paying for.
+         *
+         * Read by the rollup job and by the raw tail above the watermark. The
+         * tail only ever covers the newest minute, which is always after this
+         * column shipped, so the NULLs are confined to history.
+         */
+        templateHash: bigint("template_hash", { mode: "bigint" }),
     },
     (t) => ({
         // Composite PK is defined in raw SQL migration (partitioned tables require partition key in PK)
