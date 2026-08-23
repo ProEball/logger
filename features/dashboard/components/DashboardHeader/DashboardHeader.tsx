@@ -24,8 +24,11 @@ interface DashboardHeaderProps {
 }
 
 function DashboardHeaderInner({ projectName, orgSlug, projectSlug, eventsPerMinRate }: DashboardHeaderProps) {
-    const { range, setRange } = useDashboardRange();
-    const activePreset = range.type === "preset" ? range.value : null;
+    const { displayRange, isPending, setRange } = useDashboardRange();
+    // The *displayed* range, not the committed one: a switch does not commit
+    // until the new payload is ready, and on a 30-day range that is seventeen
+    // seconds during which the clicked chip used to stay unstyled.
+    const activePreset = displayRange.type === "preset" ? displayRange.value : null;
 
     const handlePreset = (preset: TimeRangePreset) => {
         setRange({ type: "preset", value: preset });
@@ -44,7 +47,12 @@ function DashboardHeaderInner({ projectName, orgSlug, projectSlug, eventsPerMinR
             </div>
 
             <div className={styles.controls}>
-                <div className={styles.segment} role="group" aria-label="Time range">
+                <div
+                    className={isPending ? `${styles.segment} ${styles.segmentPending}` : styles.segment}
+                    role="group"
+                    aria-label="Time range"
+                    aria-busy={isPending}
+                >
                     {DASHBOARD_SEGMENT_PRESETS.map((preset) => (
                         <button
                             key={preset}

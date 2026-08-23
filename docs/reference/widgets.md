@@ -166,21 +166,39 @@ per-widget fallbacks is then seamless: cells fill in one at a time from the
 first frame, instead of a grey page being replaced wholesale by a differently
 shaped one.
 
-**Still open, and worse than it first looked.** Switching the range *within* a
-page shows no loading state at all, because the boundaries are not remounted.
-Verified locally on 2026-08-22 by staggering artificial delays through the
-widget queries and sampling the DOM every 350 ms after clicking a range chip:
-across 30 samples over 28 seconds there were **zero** skeletons of either kind —
-and `location.search` never changed either. The router does not commit the URL
-until the new payload is ready, so the chips, which read the range from
-`useSearchParams()`, do not restyle. The clicked chip does not even highlight.
+### Switching the range: fixed on the control, still absent on the widgets
 
-So this is not "the page looks frozen for seventeen seconds"; it is "the button
-does not appear to respond at all". At 1h, where everything returns in about
-250 ms, the current behaviour is correct and a skeleton flash would be worse.
-At 30d it is indefensible. The fix is either keying the slow boundary on the
-range so it remounts, or surfacing `isPending` from `useTransition` on the
-chips; neither is done.
+Switching the range *within* a page is not a document load, so none of the above
+applies to it. The App Router does not commit a URL until the new payload is
+ready, and the chips read their selection from `useSearchParams()` — so until
+2026-08-22 the clicked chip did not restyle either. Measured before the fix:
+thirty DOM samples over twenty-eight seconds after a chip click, zero skeletons
+of any kind, `location.search` unchanged throughout. The complaint was not "the
+page is slow" but "the button does nothing", and that is what it did.
+
+**The control now answers immediately.** `useDashboardRange` returns
+`displayRange` — the committed range, overridden by the clicked one while a
+switch is in flight — and `isPending` from `useTransition`. Measured after, with
+an artificial delay: the chip goes active at **255 ms** with `aria-busy="true"`,
+while the URL is still on the old range; the URL commits at 8252 ms and the busy
+state clears. The hint is debounced by 120 ms of CSS animation delay, following
+Next's own guidance on pending navigation, so a 1h switch that settles in ~250 ms
+never flashes it.
+
+The optimistic value is cleared by comparing the committed range against the
+previous one during render, not by watching `isPending`. A transition can settle
+without the URL having changed — a rejected navigation, or a push to the range
+already selected — and clearing on `isPending` would then leave the control
+showing a selection the page never loaded.
+
+**Still absent: the widgets themselves show nothing during a range switch.** The
+boundaries are not remounted, so the resolved widgets stay on screen with stale
+numbers until the new ones arrive. That was the second half of the fix and it was
+deliberately not done: forcing a remount with a `key` would make the chart
+collapse to a skeleton on *every* switch, including the 1h one that returns in
+250 ms, and trading a correct fast path for a corrected slow one needs a number
+that nobody has measured yet. The control being responsive removes the part that
+read as broken; the rest reads as slow, which it is.
 
 ### Reproducing loading states locally
 

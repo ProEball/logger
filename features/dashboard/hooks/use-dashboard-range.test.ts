@@ -82,4 +82,70 @@ describe("useDashboardRange", () => {
 
         expect(result.current.range).toEqual({ type: "preset", value: "1h" });
     });
+    /**
+     * The optimistic half. The App Router does not commit a URL until the new
+     * payload is ready, so on a 30-day range the chips read the *old* range
+     * from `useSearchParams()` for seventeen seconds. Measured 2026-08-22:
+     * thirty DOM samples over twenty-eight seconds after a chip click, zero
+     * skeletons, `location.search` unchanged throughout — the control looked
+     * broken rather than busy.
+     *
+     * Verified by breaking the hook, not by watching it go green: removing the
+     * optimistic value fails exactly "shows the clicked range immediately", and
+     * removing the clear-on-commit fails exactly "returns to the committed range
+     * if the URL settles somewhere else". Two tests written alongside these were
+     * deleted for failing that check — they could not fail under either defect,
+     * which in this repository is the shape a test has when it is measuring
+     * nothing.
+     */
+    describe("pending range", () => {
+        it("shows the clicked range immediately, before the URL commits", () => {
+            searchParams.current = new URLSearchParams("range=1h");
+            const { result } = renderHook(() => useDashboardRange());
+
+            act(() => result.current.setRange({ type: "preset", value: "30d" }));
+
+            expect(result.current.displayRange).toEqual({ type: "preset", value: "30d" });
+        });
+
+        it("leaves the committed range alone — the page still shows what it fetched", () => {
+            searchParams.current = new URLSearchParams("range=1h");
+            const { result } = renderHook(() => useDashboardRange());
+
+            act(() => result.current.setRange({ type: "preset", value: "30d" }));
+
+            // `range` is what the URL says and what the data is for. Only the
+            // control's highlight runs ahead.
+            expect(result.current.range).toEqual({ type: "preset", value: "1h" });
+        });
+
+        /**
+         * The case that would strand the control: a navigation that never
+         * arrives at what was clicked. Clearing on `isPending` instead of on a
+         * change of committed range would leave "30d" highlighted on a page
+         * showing 1h data, indefinitely.
+         */
+        it("returns to the committed range if the URL settles somewhere else", () => {
+            searchParams.current = new URLSearchParams("range=1h");
+            const { result, rerender } = renderHook(() => useDashboardRange());
+
+            act(() => result.current.setRange({ type: "preset", value: "30d" }));
+            searchParams.current = new URLSearchParams("range=7d");
+            rerender();
+
+            expect(result.current.displayRange).toEqual({ type: "preset", value: "7d" });
+        });
+
+        it("keeps showing the committed range when nothing has been clicked", () => {
+            searchParams.current = new URLSearchParams("range=6h");
+            const { result } = renderHook(() => useDashboardRange());
+
+            expect(result.current.displayRange).toEqual(result.current.range);
+        });
+
+        it("is not pending before anything is clicked", () => {
+            const { result } = renderHook(() => useDashboardRange());
+            expect(result.current.isPending).toBe(false);
+        });
+    });
 });
