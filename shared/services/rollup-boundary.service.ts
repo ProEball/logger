@@ -1,6 +1,14 @@
 import { sql } from "drizzle-orm";
 import { db } from "@/core/db/client";
 
+/** `id, id, id` as cast uuid literals, for an `ARRAY[…]` constructor. */
+function uuidArray(projectIds: string[]) {
+    return sql.join(
+        projectIds.map((id) => sql`${id}::uuid`),
+        sql`, `,
+    );
+}
+
 /**
  * The instant up to which the event rollup is complete for **every** requested
  * project, or `null` when it is not complete for all of them.
@@ -27,37 +35,53 @@ export async function rollupBoundary(projectIds: string[]): Promise<Date | null>
 
     const rows = await db.execute<{
         boundary: Date | null;
-        missing: number;
-        present: number;
+        blocking: number;
+        usable: number;
     }>(sql`
-        SELECT MIN(rolled_up_to)                                   AS boundary,
-               COUNT(*) FILTER (WHERE rolled_up_to IS NULL)::int    AS missing,
-               COUNT(*)::int                                       AS present
-        FROM rollup_state
-        WHERE project_id = ANY(ARRAY[${sql.join(
-            projectIds.map((id) => sql`${id}::uuid`),
-            sql`, `,
-        )}])
+        SELECT MIN(j.rolled_up_to)                                       AS boundary,
+               COUNT(*) FILTER (WHERE j.rolled_up_to IS NULL
+                                  AND j.has_events)::int                 AS blocking,
+               COUNT(*) FILTER (WHERE j.rolled_up_to IS NOT NULL)::int    AS usable
+        FROM (
+            SELECT s.project_id,
+                   rs.rolled_up_to,
+                   -- Served by events_project_timestamp_idx. Proving absence
+                   -- probes each daily partition, which is what makes this a
+                   -- sub-millisecond question rather than a free one.
+                   EXISTS (
+                       SELECT 1 FROM events e WHERE e.project_id = s.project_id
+                   ) AS has_events
+            FROM (SELECT unnest(ARRAY[${uuidArray(projectIds)}]) AS project_id) s
+            LEFT JOIN rollup_state rs ON rs.project_id = s.project_id
+        ) j
     `);
 
     const row = rows[0];
     if (!row) return null;
 
-    // A project with a row but a NULL watermark has never been rolled up.
-    if (row.missing > 0) return null;
-
-    // A project with **no row at all** is the subtle one, and the reason this
-    // check exists. `MIN` and the NULL filter both ignore absent rows, so a
-    // project missing from `rollup_state` would inherit the other projects'
-    // boundary — and then contribute zero rollup rows below it, because nothing
-    // ever summarised it. The result is an undercount that looks like a quiet
-    // project.
+    // The hazard, in one number: a project that **has events** and no usable
+    // watermark — either no `rollup_state` row at all, or a row that has never
+    // been rolled up. `MIN` ignores both cases, so such a project would inherit
+    // the other projects' boundary and then contribute zero summary rows below
+    // it. The result is an undercount that looks like a quiet project.
     //
-    // It cannot happen today: `markRollupDirty` writes a row on every ingest
-    // and migration 0008 seeded one per existing project. That is exactly the
-    // problem — the correctness holds by accident of two other mechanisms
-    // rather than by anything here, and the guard costs one comparison.
-    if (row.present !== projectIds.length) return null;
+    // An event-free project is deliberately **not** counted here, and that is
+    // the whole of the 2026-08-24 fix. It contributes nothing to the rollup and
+    // nothing to raw `events`, so it cannot undercount anything — while the old
+    // guard ("every requested project must have a row, with a watermark")
+    // failed it twice over: `markRollupDirty` only writes on ingest, so a
+    // project that never received an event has no row, and migration 0008
+    // seeded event-free projects with a row whose watermark stays NULL forever.
+    // Either shape sent an entire organization's overview to raw `events`.
+    //
+    // The previous version of this comment noted that its own correctness held
+    // "by accident of two other mechanisms rather than by anything here". It
+    // did, and it stopped holding the first time somebody created a project.
+    if (row.blocking > 0) return null;
+
+    // Nothing anywhere in scope has been rolled up — every project is empty, or
+    // the job has not run yet. Reading raw `events` is both correct and cheap.
+    if (row.usable === 0) return null;
 
     if (row.boundary == null) return null;
     return new Date(row.boundary);
@@ -159,44 +183,56 @@ export async function templateCoverageForProjects(
     const rows = await db.execute<{
         from_ts: Date | null;
         to_ts: Date | null;
-        missing: number;
-        present: number;
+        blocking: number;
+        usable: number;
         oldest_unfingerprinted: Date | null;
     }>(sql`
         SELECT
-            MAX(rs.templates_rolled_up_from)                                  AS from_ts,
-            MIN(rs.templates_rolled_up_to)                                    AS to_ts,
-            COUNT(*) FILTER (WHERE rs.templates_rolled_up_to IS NULL)::int     AS missing,
-            COUNT(*)::int                                                     AS present,
+            MAX(j.templates_rolled_up_from)                                   AS from_ts,
+            MIN(j.templates_rolled_up_to)                                     AS to_ts,
+            COUNT(*) FILTER (WHERE (j.templates_rolled_up_to IS NULL
+                                 OR j.templates_rolled_up_from IS NULL)
+                               AND j.has_events)::int                         AS blocking,
+            COUNT(*) FILTER (WHERE j.templates_rolled_up_to IS NOT NULL
+                               AND j.templates_rolled_up_from IS NOT NULL)::int AS usable,
             (
                 SELECT MIN(e.timestamp)
                 FROM events e
-                WHERE e.project_id = ANY(ARRAY[${sql.join(
-                    projectIds.map((id) => sql`${id}::uuid`),
-                    sql`, `,
-                )}])
+                WHERE e.project_id = ANY(ARRAY[${uuidArray(projectIds)}])
                   AND e.template_hash IS NULL
             )                                                                 AS oldest_unfingerprinted
-        FROM rollup_state rs
-        WHERE rs.project_id = ANY(ARRAY[${sql.join(
-            projectIds.map((id) => sql`${id}::uuid`),
-            sql`, `,
-        )}])
+        FROM (
+            SELECT s.project_id,
+                   rs.templates_rolled_up_from,
+                   rs.templates_rolled_up_to,
+                   EXISTS (
+                       SELECT 1 FROM events e WHERE e.project_id = s.project_id
+                   ) AS has_events
+            FROM (SELECT unnest(ARRAY[${uuidArray(projectIds)}]) AS project_id) s
+            LEFT JOIN rollup_state rs ON rs.project_id = s.project_id
+        ) j
     `);
 
     const row = rows[0];
     if (!row) return null;
 
-    // Same two guards as `rollupBoundary`: a project that has never been rolled
-    // up, and a project with no `rollup_state` row at all — the latter would
-    // otherwise inherit the others' interval and contribute nothing to it.
-    if (row.missing > 0) return null;
-    if (row.present !== projectIds.length) return null;
-    if (row.to_ts == null) return null;
+    // Same shape as `rollupBoundary` above, and the same fix: only a project
+    // that **has events** without a usable interval can undercount.
+    //
+    // Both ends are checked, not just the ceiling. `MAX` ignores NULLs exactly
+    // as `MIN` does, so a project with a ceiling but no floor would have handed
+    // this function some *other* project's floor — the identical inheritance
+    // bug, one column over, and the version before 2026-08-24 filtered on
+    // `templates_rolled_up_to` alone. It was unreachable only because the job
+    // writes both columns in one statement; that is a second mechanism holding
+    // this one correct, which is the thing this file has now been bitten by.
+    if (row.blocking > 0) return null;
+    if (row.usable === 0) return null;
+    if (row.to_ts == null || row.from_ts == null) return null;
 
     const to = new Date(row.to_ts);
-    const rolledFrom = row.from_ts == null ? null : new Date(row.from_ts);
-    if (rolledFrom == null || !(rolledFrom < to)) return null;
+    const rolledFrom = new Date(row.from_ts);
+    if (!(rolledFrom < to)) return null;
 
     if (row.oldest_unfingerprinted == null) return { from: null, to };
 

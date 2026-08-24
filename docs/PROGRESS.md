@@ -57,9 +57,16 @@ work shipped in `a1bdfda` has never executed in production.
 
 Nearly free today (68 ms + 55 ms on a sized host), which is why it hid. But
 "create the project, wire up ingest later" is the normal first-run flow, so
-**every new install starts on the slow path by default**. Fix is in
-`shared/services/rollup-boundary.service.ts`, no schema change, no migration —
-`PLAN.md` §17 has the reasoning. **This is the next task.**
+**every new install started on the slow path by default**.
+
+**Fixed the same day** in `shared/services/rollup-boundary.service.ts` — no
+schema change, no migration. The guard now asks whether a project *has events*
+rather than whether it has a row, so an event-free project stops constraining
+anything. Writing the test first turned up a second inheritance hole in the same
+file (`templateCoverageForProjects` checked only the ceiling, so a project with
+no floor would have inherited another's). 16 integration tests in
+`rollup-boundary.service.itest.ts`; verified by breaking the fix three ways,
+including disarming the guard, and confirming failures each time.
 
 ### Frozen, deliberately
 
