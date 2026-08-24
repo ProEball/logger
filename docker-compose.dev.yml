@@ -14,6 +14,15 @@ services:
     # tried here before it is tried there. Values are upstream defaults;
     # pg_stat_statements is enabled because it needs a restart to turn on and
     # costs effectively nothing to leave on.
+    #
+    # It said "mirrors" from 2026-08-20 while exposing two of the five knobs
+    # production had; the missing three were added on 2026-08-24 along with the
+    # rest. `db/postgres-tuning.test.mjs` now asserts the two files expose the
+    # same set, so the claim is checked rather than trusted.
+    #
+    # A developer machine cannot validate a *value* here — its page cache holds
+    # the whole working set, so every shared_buffers setting measures the same.
+    # What it validates is that the flag parses and Postgres still boots.
     command:
       - postgres
       - -c
@@ -22,6 +31,22 @@ services:
       - shared_buffers=${PG_SHARED_BUFFERS:-128MB}
       - -c
       - work_mem=${PG_WORK_MEM:-4MB}
+      - -c
+      - effective_cache_size=${PG_EFFECTIVE_CACHE_SIZE:-4GB}
+      - -c
+      - maintenance_work_mem=${PG_MAINTENANCE_WORK_MEM:-64MB}
+      - -c
+      - random_page_cost=${PG_RANDOM_PAGE_COST:-4.0}
+      - -c
+      - effective_io_concurrency=${PG_EFFECTIVE_IO_CONCURRENCY:-1}
+      - -c
+      - max_parallel_workers_per_gather=${PG_MAX_PARALLEL_WORKERS_PER_GATHER:-2}
+      - -c
+      - jit=${PG_JIT:-on}
+      - -c
+      - track_io_timing=${PG_TRACK_IO_TIMING:-off}
+      - -c
+      - log_temp_files=${PG_LOG_TEMP_FILES:--1}
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres

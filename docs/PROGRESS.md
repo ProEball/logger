@@ -2,11 +2,55 @@
 
 > Single source of truth for "where are we right now". Update after every work session.
 
-**Last updated**: 2026-08-23 (§16.3 steps 0–4: message normaliser, fingerprint, template rollup, two-path topMessages — built, not deployed)
+**Last updated**: 2026-08-24 (host resize + Postgres tuning profile; rollup key work frozen pending the ClickHouse decision)
 
 ---
 
 ## Current Phase
+
+**2026-08-24 — the read path stops and the host gets fixed first.**
+
+Two weeks of §16 optimisation never checked the host's memory. It is 4 GB,
+shared with the app, the worker, Caddy and the backup container, against an
+`events` table past 9.6M rows — and Postgres was running its stock
+`shared_buffers=128MB`. A 17,021 ms `topMessages` against work that should cost
+1–2 s in cache is the shape of a working set that does not fit in memory.
+
+So: **the droplet goes 2 shared vCPU / 4 GB / 120 GB → 4 vCPU / 8 GB / 240 GB**,
+and this release ships the sized Postgres profile that was deferred in §16.1
+Stage C. `track_io_timing` and `log_temp_files` ship with it, because the
+diagnosis above is still an *inference* and those are what turn it into a
+measurement.
+
+**Nothing is proven until the post-resize numbers are in.** Every §16
+measurement to date was partly measuring the droplet.
+
+### Frozen, deliberately
+
+- **`environment` into the rollup key** — designed and agreed; closes all three
+  "falls back to raw events when an environment filter is active" holes at once.
+  A week of restructuring both rollup tables, and the decision below may delete
+  both.
+- **`getOrgTopErrors` → template rollup** — the second of the two queries
+  requested; still on raw text with two `mode() WITHIN GROUP` calls. Frozen with
+  the above, since migrating now means migrating twice.
+
+### Open: ClickHouse
+
+Revisited seriously on 2026-08-24 and deferred — see `PLAN.md` §17 for the
+argument, the named triggers that would flip it, and why the original
+2026-04-29 rationale no longer holds even though its conclusion does. The
+evaluation is a day of loading a staging dump into a container and re-running
+three queries that already have Postgres numbers; it is not a migration.
+
+Also open and **not** a technical decision: retention is becoming
+per-organisation, which removes the 30-day ceiling that bounded the corpus by
+design. Whether long retention keeps raw events or only aggregates decides the
+storage question more than any engine choice does.
+
+---
+
+## Previous Phase
 
 **§16.3 steps 0–4 shipped 2026-08-23 — the template rollup is built, and nothing
 is deployed.** `normalizeMessage` and a stable FNV-1a fingerprint; migrations

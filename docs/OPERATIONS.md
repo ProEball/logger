@@ -197,6 +197,133 @@ docker compose exec postgres sh -c \
 done. It requires the `worker` service to be running — without it the rollup
 never builds and the dashboards silently keep reading raw events.
 
+### Resizing the host and applying the Postgres profile (2026-08-24)
+
+The install ran on Postgres's stock defaults from first deploy — `shared_buffers`
+at 128 MB against a multi-gigabyte `events` table on a 4 GB host. This release
+ships a sized profile. **It does nothing until the values are in the host's own
+`.env`**, which `.env.production.example` does not touch.
+
+Order matters: resize first, then configure. Applying an 8 GB profile to a 4 GB
+host will refuse to start Postgres, or worse, get it OOM-killed under load.
+
+**1. Snapshot before the resize.** DigitalOcean's disk-increasing resize is
+**one-way** — the disk cannot be shrunk afterwards — and the droplet must be
+powered off for it. Ingest is down for the duration.
+
+**2. Resize**, then bring the stack up and confirm the box is what you think:
+
+```bash
+free -g && nproc && df -h /
+```
+
+**3. Move the checkout to the tag.** `docker-compose.yml` changed (five new
+`-c` flags) and does not travel in the app image:
+
+```bash
+git fetch --tags && git checkout v0.6.0
+```
+
+**4. Append the profile to `.env`.** Copy the `PG_*` block out of
+`.env.production.example`, or paste this if the host is the 8 GB / 4 vCPU
+droplet — read the example file for what each number is derived from, and
+recompute rather than copy if the hardware differs:
+
+```bash
+cat >> .env <<'EOF'
+PG_SHARED_BUFFERS=2GB
+PG_EFFECTIVE_CACHE_SIZE=5GB
+PG_WORK_MEM=32MB
+PG_MAINTENANCE_WORK_MEM=512MB
+PG_RANDOM_PAGE_COST=1.1
+PG_EFFECTIVE_IO_CONCURRENCY=200
+PG_MAX_PARALLEL_WORKERS_PER_GATHER=2
+PG_JIT=off
+PG_TRACK_IO_TIMING=on
+PG_LOG_TEMP_FILES=10MB
+EOF
+```
+
+**5. Recreate Postgres** — these are command-line flags, so this replaces the
+container. The named volume carries the data across; the outage is one Postgres
+start.
+
+```bash
+docker compose up -d postgres
+```
+
+**6. Verify the settings actually took.** This is not ceremony: a typo in a
+`PG_*` name is silently ignored by Compose, and Postgres then reports the
+default it was never asked to change. `npx tsc` cannot catch it either — these
+variables are read by Compose, not by the app.
+
+```bash
+docker compose exec postgres psql -U logger -d logger -c "SELECT name, setting, unit FROM pg_settings WHERE name IN ('shared_buffers','work_mem','effective_cache_size','maintenance_work_mem','random_page_cost','effective_io_concurrency','max_parallel_workers_per_gather','jit','track_io_timing','log_temp_files') ORDER BY name"
+```
+
+`shared_buffers` reports in 8 kB blocks, so 2 GB shows as `262144`. `jit` must
+read `off` and `track_io_timing` `on`.
+
+> Every `psql` command in this section spells the connection out as
+> `-U logger -d logger`, matching `.env.production.example`; substitute your own
+> `POSTGRES_USER` / `POSTGRES_DB` if they differ. The `sh -c 'psql -U
+> "$POSTGRES_USER" …'` form used elsewhere in this file cannot be reused here —
+> these statements contain single quotes, which collide with the ones wrapping
+> the `sh -c` argument.
+
+### Measuring after the resize
+
+The point of the two instruments is that the "not enough memory" diagnosis was
+an inference. These confirm or refute it. Run them **after** step 6, and reset
+the statistics first so the numbers describe the new configuration only:
+
+```bash
+docker compose exec postgres psql -U logger -d logger -c "SELECT pg_stat_statements_reset()"
+```
+
+Then load the org overview and a project dashboard at 24h and 30d, and read:
+
+```bash
+docker compose exec postgres psql -U logger -d logger -c "SELECT round(mean_exec_time) AS mean_ms, calls, round(blk_read_time) AS io_read_ms, left(query, 60) AS q FROM pg_stat_statements WHERE query ILIKE '%events%' ORDER BY mean_exec_time DESC LIMIT 10"
+```
+
+`blk_read_time` is the column that did not exist as a usable number before
+`track_io_timing=on`. **If it is most of `mean_exec_time`, the diagnosis was
+right and the remaining work is about bytes read, not about query shape.** If it
+is a small fraction, the time is CPU and the conclusion is the opposite — say
+so, because `PLAN.md` §17 records the inference and it would then be wrong.
+
+(On Postgres 17+ that column is `shared_blk_read_time`. This install is on
+`postgres:16`.)
+
+`EXPLAIN (ANALYZE, BUFFERS)` on a single query prints the same thing per node as
+`I/O Timings: read=…`, which is more useful for finding *which* node waits.
+
+Spills now appear in the Postgres log, so this should be empty or nearly so:
+
+```bash
+docker compose logs postgres --since 30m | grep "temporary file"
+```
+
+A spill on the raw-text `topMessages` fallback is expected and deliberate —
+see `PLAN.md` §17. A spill anywhere else means `work_mem` is undersized for a
+query we intend to keep.
+
+Two size measurements worth taking once, for the storage decisions in §17:
+
+```bash
+docker compose exec postgres psql -U logger -d logger -c "SELECT count(*) AS sampled, avg(pg_column_size(e.*))::int AS row_bytes, avg(pg_column_size(e.message))::int AS message, avg(pg_column_size(e.stack_trace))::int AS stack_trace, avg(pg_column_size(e.attributes))::int AS attributes, avg(pg_column_size(e.context))::int AS context FROM (SELECT * FROM events ORDER BY timestamp DESC LIMIT 200000) e"
+```
+
+```bash
+docker compose exec postgres psql -U logger -d logger -c "SELECT pg_size_pretty(sum(pg_relation_size(c.oid))) AS heap, pg_size_pretty(sum(pg_indexes_size(c.oid))) AS indexes, pg_size_pretty(sum(pg_total_relation_size(c.oid))) AS total FROM pg_class c JOIN pg_inherits i ON i.inhrelid = c.oid WHERE i.inhparent = 'events'::regclass"
+```
+
+The first decides whether splitting `stack_trace`/`attributes`/`context` into a
+side table is worth anything; the second is the input to every "does this fit on
+disk" estimate in §17. `pg_relation_size` on the partitioned parent returns 0,
+which is why both aggregate over `pg_inherits` instead.
+
 ### Backfilling template fingerprints (one-shot, after the §16.3 release)
 
 `events.template_hash` is computed at ingest, so events written before that

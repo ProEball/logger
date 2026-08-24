@@ -101,7 +101,26 @@ E2E tests do **not** run against this dev database — they need a one-time sepa
 
 `docker-compose.dev.yml` builds `db/Dockerfile` (`postgres:16` + `postgresql-16-partman` apt package) and mounts `db/init/01-extensions.sql` (runs `CREATE EXTENSION IF NOT EXISTS pg_partman;` and `pg_stat_statements` at container init) plus a named volume for data persistence.
 
-**Postgres settings** are passed on the command line by both compose files (added 2026-08-20 — before that there was no `command:` and no mounted config, so nothing was adjustable). `shared_preload_libraries=pg_stat_statements` is fixed; `PG_SHARED_BUFFERS`, `PG_WORK_MEM`, `PG_EFFECTIVE_CACHE_SIZE`, `PG_MAINTENANCE_WORK_MEM` and `PG_RANDOM_PAGE_COST` are overridable and **default to Postgres's own stock values**, so adding them changed no behaviour. These are read by Docker Compose, not by the application — they are absent from `core/env/index.ts` on purpose. Picking real values is a measured step; see `PLAN.md` §16.1 Stage C for why it cannot be done on a developer machine.
+**Postgres settings** are passed on the command line by both compose files (added 2026-08-20 — before that there was no `command:` and no mounted config, so nothing was adjustable). `shared_preload_libraries=pg_stat_statements` is fixed; the ten below are overridable. They are read by Docker Compose, **not** by the application — they are absent from `core/env/index.ts` on purpose, and `npx tsc` will never catch a typo in one.
+
+| Variable | Setting | Compose fallback | Shipped in `.env.production.example` |
+|---|---|---|---|
+| `PG_SHARED_BUFFERS` | `shared_buffers` | `128MB` | `2GB` |
+| `PG_WORK_MEM` | `work_mem` | `4MB` | `32MB` |
+| `PG_EFFECTIVE_CACHE_SIZE` | `effective_cache_size` | `4GB` | `5GB` |
+| `PG_MAINTENANCE_WORK_MEM` | `maintenance_work_mem` | `64MB` | `512MB` |
+| `PG_RANDOM_PAGE_COST` | `random_page_cost` | `4.0` | `1.1` |
+| `PG_EFFECTIVE_IO_CONCURRENCY` | `effective_io_concurrency` | `1` | `200` |
+| `PG_MAX_PARALLEL_WORKERS_PER_GATHER` | `max_parallel_workers_per_gather` | `2` | `2` |
+| `PG_JIT` | `jit` | `on` | `off` |
+| `PG_TRACK_IO_TIMING` | `track_io_timing` | `off` | `on` |
+| `PG_LOG_TEMP_FILES` | `log_temp_files` | `-1` | `10MB` |
+
+**The compose fallbacks are Postgres 16 stock values and stay that way** — a compose file cannot know its host, and a default sized for ours would be wrong for every other install. The sized profile lives in `.env.production.example`, next to the arithmetic each number came from; it targets **8 GB RAM / 4 vCPU / NVMe with the app and worker on the same host**. Recompute for different hardware rather than copying. The last two rows are instruments rather than tuning: they change no plan, and they are what makes an I/O wait or a `work_mem` spill visible instead of merely slow.
+
+Until 2026-08-24 the profile was commented out and the install ran entirely on stock, including `shared_buffers=128MB` against a multi-gigabyte `events` table. `PLAN.md` §16.1 Stage C had deferred picking values until they could be measured on the real host; §17 records what was chosen and why.
+
+`db/postgres-tuning.test.mjs` asserts the three files agree — same variable set in both compose files, every variable documented in the example, every documented variable actually read, and the fallbacks still stock. It checks shape, not values: it cannot tell whether `32MB` is a good number, only that a knob has not gone missing from one file. That check exists because `docker-compose.dev.yml` claimed to "mirror the production command" for four days while exposing two of the five knobs production had.
 
 `pg_stat_statements` needs both the preload flag (restart) and `CREATE EXTENSION` per database. The init script covers a fresh data directory only; on an existing install:
 

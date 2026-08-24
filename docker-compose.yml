@@ -133,9 +133,16 @@ services:
     # 4 GB host) while LAUNCH.md §0.1 justified its RAM sizing with a 25% rule
     # nothing implemented.
     #
-    # **The defaults below are the stock values on purpose.** Changing them is
-    # a separate, measured step (PLAN.md §16.1 Stage C) — this commit adds the
-    # knob, not a new setting. Override in `.env`, then restart postgres.
+    # **The fallbacks below are Postgres's stock values, and stay that way.**
+    # Not conservatism — this file cannot know the host. A `shared_buffers`
+    # default sized for our droplet would be wrong for every other install, and
+    # wrong in the direction that fails to boot rather than the one that runs
+    # slowly. The *sized* profile is `.env.production.example`, where the
+    # arithmetic can be shown next to the RAM figure it was derived from.
+    #
+    # PLAN.md §16.1 Stage C deferred picking real values until they could be
+    # measured on the real host. That happened on 2026-08-24 — see §17 for what
+    # was chosen and why. Override in `.env`, then restart postgres.
     #
     # `shared_preload_libraries` is the exception: pg_stat_statements only
     # records, it does not change a plan, and it cannot be enabled without a
@@ -158,6 +165,21 @@ services:
       - maintenance_work_mem=${PG_MAINTENANCE_WORK_MEM:-64MB}
       - -c
       - random_page_cost=${PG_RANDOM_PAGE_COST:-4.0}
+      - -c
+      - effective_io_concurrency=${PG_EFFECTIVE_IO_CONCURRENCY:-1}
+      - -c
+      - max_parallel_workers_per_gather=${PG_MAX_PARALLEL_WORKERS_PER_GATHER:-2}
+      - -c
+      - jit=${PG_JIT:-on}
+      # Instruments, not tuning. `track_io_timing` is what makes EXPLAIN
+      # (ANALYZE, BUFFERS) print "I/O Timings", and `log_temp_files` is what
+      # makes a work_mem spill visible instead of merely slow. Both default to
+      # off/-1 upstream, which is why every measurement taken before 2026-08-24
+      # could show that a query was slow but not whether it was waiting on disk.
+      - -c
+      - track_io_timing=${PG_TRACK_IO_TIMING:-off}
+      - -c
+      - log_temp_files=${PG_LOG_TEMP_FILES:--1}
     environment:
       POSTGRES_DB: ${POSTGRES_DB:?required}
       POSTGRES_USER: ${POSTGRES_USER:?required}
