@@ -186,8 +186,30 @@ rows, and disabling the rollup branch entirely still passed. See
 `event-rollup.service.itest.ts`.
 
 The row shape is unchanged, so `TopMessagesWidget` did not move. `dominantLevel`
-comes from `pickDominantLevel` on both paths — summed `by_level` on one, five
-`COUNT(*) FILTER` counters on the other.
+comes from `pickDominantLevel` on both paths.
+
+### The rollup path stopped reading jsonb (2026-08-24)
+
+Both rollup readers — the dashboard's `topMessages` and the overview's
+per-project top message — used to expand `by_level` with
+`jsonb_each_text`, which multiplies every rollup row by up to five and parses
+JSON per row. Measured on the resized host: **547 ms at 0% `blk_read_time`**,
+i.e. entirely CPU, so no amount of memory would have moved it.
+
+Migration 0012 adds five **generated** `n_<level>` columns, and the readers sum
+those instead. Three things fall out at once: no lateral, no JSON parse, and one
+row per template rather than one per `(template, level)` — which removes the
+self-join both queries needed to re-attach level counts to the top N.
+
+The raw tail keeps its five `COUNT(*) FILTER` counters, since raw `events` has
+a `level` column and nothing to unpack.
+
+⚠️ **Both branches count levels, and only one of them was tested.** Every
+level-drift test took a range ending at the coverage ceiling, so the tail window
+was empty and its counters never executed — replacing the tail's `fatal` filter
+with a literal zero broke nothing. There are now per-level tests on *both*
+branches in `event-rollup.service.itest.ts`, the tail's writing events above the
+ceiling on purpose and asserting the rollup holds none of them first.
 
 ## Loading states, and why they are a diagnostic
 

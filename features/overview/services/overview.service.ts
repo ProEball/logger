@@ -1,4 +1,8 @@
-import { pickDominantLevel, type EventLevel } from "@/shared/utils/dominant-level";
+import {
+    pickDominantLevel,
+    levelCounts,
+    type RollupLevelRow,
+} from "@/shared/utils/dominant-level";
 import { sql } from "drizzle-orm";
 import { db } from "@/core/db/client";
 import { rollupBoundary, templateCoverageForProjects } from "@/shared/services/rollup-boundary.service";
@@ -217,65 +221,75 @@ async function getProjectTopMessagesFromRollup(
     to: Date,
     boundary: Date,
 ): Promise<Map<string, ProjectTopMessage>> {
-    const rows = await db.execute<{
-        project_id: string;
-        message: string;
-        by_level: Record<string, number>;
-    }>(sql`
+    const rows = await db.execute<
+        RollupLevelRow & { project_id: string; message: string }
+    >(sql`
         WITH cells AS (
-            SELECT r.project_id, r.template_hash, l.key AS level,
-                   SUM(l.value::int)::int AS n
-            FROM event_template_rollup r, jsonb_each_text(r.by_level) l
+            -- n_error / n_fatal instead of a lateral over by_level. The jsonb
+            -- form also had to filter l.key IN ('error','fatal') *after*
+            -- expanding every row into five; here the other three levels are
+            -- simply columns nobody selects.
+            SELECT r.project_id, r.template_hash,
+                   SUM(r.n_error)::int AS n_error,
+                   SUM(r.n_fatal)::int AS n_fatal
+            FROM event_template_rollup r
             WHERE r.project_id = ANY(ARRAY[${uuidArray(projectIds)}])
               AND r.minute >= ${toTs(from)}
               AND r.minute <  ${toTs(boundary)}
-              AND l.key IN ('error', 'fatal')
-            GROUP BY 1, 2, 3
+            GROUP BY 1, 2
 
             UNION ALL
 
-            SELECT e.project_id, e.template_hash, e.level, COUNT(*)::int
+            SELECT e.project_id, e.template_hash,
+                   COUNT(*) FILTER (WHERE e.level = 'error')::int,
+                   COUNT(*) FILTER (WHERE e.level = 'fatal')::int
             FROM events e
             WHERE e.project_id = ANY(ARRAY[${uuidArray(projectIds)}])
               AND e.timestamp >= ${toTs(boundary)}
               AND e.timestamp <  ${toTs(to)}
               AND e.template_hash IS NOT NULL
               AND e.level IN ('error', 'fatal')
-            GROUP BY 1, 2, 3
-        ),
-        merged AS (
-            SELECT project_id, template_hash, level, SUM(n)::int AS n
-            FROM cells GROUP BY 1, 2, 3
+            GROUP BY 1, 2
         ),
         totals AS (
-            SELECT project_id, template_hash, SUM(n)::int AS total
-            FROM merged GROUP BY 1, 2
+            SELECT project_id, template_hash,
+                   SUM(n_error)::int AS n_error,
+                   SUM(n_fatal)::int AS n_fatal,
+                   SUM(n_error + n_fatal)::int AS total
+            FROM cells
+            GROUP BY 1, 2
+            HAVING SUM(n_error + n_fatal) > 0
         ),
         ranked AS (
-            -- The window runs over one row per (project, template) — a few
-            -- thousand — not over the millions the grouping above consumed.
-            SELECT project_id, template_hash,
+            -- The window runs over one row per (project, template) -- a few
+            -- thousand -- not over the millions the grouping above consumed.
+            SELECT project_id, template_hash, n_error, n_fatal,
                    ROW_NUMBER() OVER (PARTITION BY project_id ORDER BY total DESC) AS rn
             FROM totals
         )
+        -- One row per (project, template) reaches here, so there is nothing
+        -- left to re-aggregate and the self-join the jsonb form needed is gone.
         SELECT
-            rk.project_id::text                     AS project_id,
+            rk.project_id::text                         AS project_id,
             COALESCE(mt.template, '(unknown template)') AS message,
-            jsonb_object_agg(m.level, m.n)          AS by_level
+            0 AS n_debug, 0 AS n_info, 0 AS n_warn,
+            rk.n_error, rk.n_fatal
         FROM ranked rk
-        JOIN merged m
-          ON m.project_id = rk.project_id AND m.template_hash = rk.template_hash
         LEFT JOIN message_templates mt
           ON mt.project_id = rk.project_id AND mt.template_hash = rk.template_hash
         WHERE rk.rn = 1
-        GROUP BY rk.project_id, mt.template
     `);
 
     const map = new Map<string, ProjectTopMessage>();
     for (const row of rows) {
         map.set(row.project_id, {
             message: row.message,
-            level: pickDominantLevel(row.by_level as Partial<Record<EventLevel, number>>),
+            // Only error and fatal are counted here -- this widget answers
+            // "worst error", not "most frequent message" -- so the other three
+            // are selected as literal zeros to keep one row shape across both
+            // rollup readers. The HAVING above guarantees one of the two is
+            // positive, which is what stops pickDominantLevel throwing.
+            level: pickDominantLevel(levelCounts(row)),
         });
     }
     return map;

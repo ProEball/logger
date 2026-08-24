@@ -5,7 +5,12 @@ import type { TimeRange } from "@/features/events/utils/event-filters.types";
 import type { Event } from "@/core/db/schema";
 import { resolveRange, pickBucket, fillBuckets, BUCKET_SECONDS } from "@/features/dashboard/utils/aggregation-utils";
 import type { BucketRow } from "@/features/dashboard/utils/aggregation-utils";
-import { pickDominantLevel, type EventLevel } from "@/shared/utils/dominant-level";
+import {
+    pickDominantLevel,
+    levelCounts,
+    type EventLevel,
+    type RollupLevelRow,
+} from "@/shared/utils/dominant-level";
 
 // Re-export pure helpers so callers can import from one place.
 export { resolveRange, pickBucket, fillBuckets } from "@/features/dashboard/utils/aggregation-utils";
@@ -199,64 +204,83 @@ async function topMessagesFromRollup(
     boundary: Date,
     limit: number,
 ): Promise<TopMessage[]> {
-    const rows = await db.execute<{
-        message: string;
-        count: string;
-        latest_at: Date;
-        by_level: Record<string, number>;
-    }>(sql`
+    const rows = await db.execute<
+        RollupLevelRow & { message: string; count: string; latest_at: Date }
+    >(sql`
         WITH cells AS (
-            SELECT r.template_hash, l.key AS level, SUM(l.value::int)::int AS n,
-                   MAX(r.latest_at) AS latest
-            FROM event_template_rollup r, jsonb_each_text(r.by_level) l
+            -- Five int columns, so no lateral over jsonb and no JSON parse per
+            -- row. That expansion measured 547 ms with 0% of it waiting on
+            -- disk -- pure CPU, which is why the n_* columns exist.
+            SELECT r.template_hash,
+                   SUM(r.count)::int   AS total,
+                   SUM(r.n_debug)::int AS n_debug,
+                   SUM(r.n_info)::int  AS n_info,
+                   SUM(r.n_warn)::int  AS n_warn,
+                   SUM(r.n_error)::int AS n_error,
+                   SUM(r.n_fatal)::int AS n_fatal,
+                   MAX(r.latest_at)    AS latest
+            FROM event_template_rollup r
             WHERE r.project_id = ${projectId}::uuid
               AND r.minute >= ${toTs(from)}
               AND r.minute <  ${toTs(boundary)}
-            GROUP BY 1, 2
+            GROUP BY 1
 
             UNION ALL
 
             -- The tail: at minute grain this is at most one minute of events,
             -- which is why the grain was chosen. At hour grain it would be up
             -- to ~114,000 rows on every read.
-            SELECT e.template_hash, e.level, COUNT(*)::int, MAX(e.timestamp)
+            SELECT e.template_hash,
+                   COUNT(*)::int,
+                   COUNT(*) FILTER (WHERE e.level = 'debug')::int,
+                   COUNT(*) FILTER (WHERE e.level = 'info')::int,
+                   COUNT(*) FILTER (WHERE e.level = 'warn')::int,
+                   COUNT(*) FILTER (WHERE e.level = 'error')::int,
+                   COUNT(*) FILTER (WHERE e.level = 'fatal')::int,
+                   MAX(e.timestamp)
             FROM events e
             WHERE e.project_id = ${projectId}::uuid
               AND e.timestamp >= ${toTs(boundary)}
               AND e.timestamp <  ${toTs(to)}
               AND e.template_hash IS NOT NULL
-            GROUP BY 1, 2
+            GROUP BY 1
         ),
         merged AS (
-            SELECT template_hash, level, SUM(n)::int AS n, MAX(latest) AS latest
-            FROM cells GROUP BY 1, 2
-        ),
-        totals AS (
-            SELECT template_hash, SUM(n)::int AS total, MAX(latest) AS latest
-            FROM merged
+            SELECT template_hash,
+                   SUM(total)::int   AS total,
+                   SUM(n_debug)::int AS n_debug,
+                   SUM(n_info)::int  AS n_info,
+                   SUM(n_warn)::int  AS n_warn,
+                   SUM(n_error)::int AS n_error,
+                   SUM(n_fatal)::int AS n_fatal,
+                   MAX(latest)       AS latest
+            FROM cells
             GROUP BY 1
             ORDER BY total DESC
             LIMIT ${limit}
         )
+        -- One row per template now rather than one per (template, level), so
+        -- the self-join the jsonb form needed is gone with it.
         SELECT
             COALESCE(mt.template, '(unknown template)') AS message,
-            t.total::text                               AS count,
-            t.latest                                    AS latest_at,
-            jsonb_object_agg(m.level, m.n)              AS by_level
-        FROM totals t
-        JOIN merged m ON m.template_hash = t.template_hash
+            m.total::text                               AS count,
+            m.latest                                    AS latest_at,
+            m.n_debug, m.n_info, m.n_warn, m.n_error, m.n_fatal
+        FROM merged m
         LEFT JOIN message_templates mt
                ON mt.project_id = ${projectId}::uuid
-              AND mt.template_hash = t.template_hash
-        GROUP BY t.template_hash, t.total, t.latest, mt.template
-        ORDER BY t.total DESC
+              AND mt.template_hash = m.template_hash
+        -- The int column, never the text alias above it: ordering by the alias
+        -- sorts "9" after "10". That defect shipped three times here already,
+        -- recorded in logging.md.
+        ORDER BY m.total DESC
     `);
 
     return rows.map((r) => ({
         message: r.message,
         count: Number(r.count),
         latestAt: new Date(r.latest_at),
-        dominantLevel: pickDominantLevel(r.by_level as Partial<Record<EventLevel, number>>),
+        dominantLevel: pickDominantLevel(levelCounts(r)),
     }));
 }
 

@@ -49,3 +49,45 @@ export function pickDominantLevel(counts: Partial<LevelCounts>): EventLevel {
 
     return dominant;
 }
+
+/**
+ * The shape a rollup read returns level counts in since 2026-08-24: one `int`
+ * column per level, named `n_<level>`.
+ *
+ * Declared here rather than in either service because both the dashboard's
+ * `topMessages` and the overview's per-project top message select it, and a
+ * second copy of a five-field row shape is exactly the drift this repository
+ * keeps paying for.
+ */
+export type RollupLevelRow = {
+    n_debug: number;
+    n_info: number;
+    n_warn: number;
+    n_error: number;
+    n_fatal: number;
+};
+
+/**
+ * Turns those five columns into the map `pickDominantLevel` takes.
+ *
+ * `Number(...)` rather than a bare read: a generated `int` column comes back as
+ * a number from postgres.js, but `SUM(...)::int` in a CTE has arrived as a
+ * string often enough in this codebase that trusting the driver here would be
+ * the kind of assumption that produces a badge computed from `NaN`.
+ *
+ * The five names are restated here and in the SQL rather than derived from
+ * `EVENT_LEVELS`, because deriving would mean generating column aliases into a
+ * raw query. What keeps the two in step is the integration test that iterates
+ * `EVENT_LEVELS` and asserts every level can come back as some message's badge:
+ * a level added to the schema and forgotten here leaves that message with no
+ * positive count, and `pickDominantLevel` throws rather than badging it wrongly.
+ */
+export function levelCounts(row: RollupLevelRow): Partial<LevelCounts> {
+    return {
+        debug: Number(row.n_debug),
+        info: Number(row.n_info),
+        warn: Number(row.n_warn),
+        error: Number(row.n_error),
+        fatal: Number(row.n_fatal),
+    };
+}

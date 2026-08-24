@@ -144,7 +144,7 @@ Key convention: **actions never throw to the caller** — every failure path (va
 
 ## Database schema
 
-Schema source: `core/db/schema/*.ts` (Drizzle), barrel-exported from `core/db/schema/index.ts`. Migrations: `core/db/migrations/0000`–`0010` (11 migrations as of 2026-08-23), applied via `drizzle-kit migrate`.
+Schema source: `core/db/schema/*.ts` (Drizzle), barrel-exported from `core/db/schema/index.ts`. Migrations: `core/db/migrations/0000`–`0012` (13 migrations as of 2026-08-24), applied via `drizzle-kit migrate`. 0011 adds the partial `events_unfingerprinted_idx`; **0012** adds the five generated `n_<level>` columns to `event_template_rollup` and was **hand-edited after generation** — drizzle-kit emits one `ADD COLUMN … STORED` per column and each of those rewrites the table, so the five are collapsed into a single `ALTER` and a single rewrite.
 
 ### Auth tables (better-auth managed, plural table names)
 
@@ -206,12 +206,16 @@ See [logging.md](logging.md#the-events-table) for the full column list and [Even
 | 0007 | Adds `projectEnvironments` (2026-08-20). **Generated, then hand-extended** with a backfill: `INSERT … SELECT project_id, environment, MIN(timestamp), MAX(timestamp) FROM events GROUP BY …`. Without it an existing install loses its environment filter until fresh events arrive from every environment it had, since the registry is written at ingest and knows no history. That statement reads every row of `events` once and will dominate the migration's runtime on a large table |
 | 0008 | Adds `eventRollupMinutes` and `rollupState` (most recent, 2026-08-20). **Generated, then hand-extended** to seed `rollup_state.refresh_from` from each project's oldest event. The rollup itself is deliberately *not* built here: a migration that aggregates the whole events table would make deployment time proportional to data volume, and a failure mid-way would block the release instead of retrying on its own. `rolled_up_to` stays NULL, which readers treat as "nothing rolled up yet" and answer entirely from `events` — that is what makes this safe to deploy before the first job run |
 
-### Template rollup tables (added 2026-08-23, migrations 0009–0010)
+### Template rollup tables (added 2026-08-23, migrations 0009–0010; extended 2026-08-24 by 0012)
 
 | Table | Key columns | Notes |
 |---|---|---|
 | `message_templates` | PK `(project_id, template_hash)` | Display text per template, plus `normalizer_version`. Never pruned — a vocabulary, not a measurement. |
-| `event_template_rollup` | PK `(project_id, minute, template_hash)`, index `(project_id, template_hash, minute)` | Per-minute counts per template, with `by_level` and `latest_at`. Pruned at 30 days with the level rollup. |
+| `event_template_rollup` | PK `(project_id, minute, template_hash)`, index `(project_id, template_hash, minute)` | Per-minute counts per template, with `by_level`, `latest_at`, and five **generated** `n_<level>` columns. Pruned at 30 days with the level rollup. |
+
+**`n_debug`…`n_fatal` are `by_level` unpacked**, added 2026-08-24. The job still writes only the JSON; the columns are `GENERATED ALWAYS … STORED`, so they cannot drift from it — the same arrangement `event_rollup_minutes.errors` has always used. They exist because reading the JSON meant `FROM event_template_rollup r, jsonb_each_text(r.by_level) l`, multiplying every row by up to five and parsing JSON per row: the widget it feeds measured **547 ms at 0% I/O**, entirely CPU, so more memory could never have helped. Summing five `int`s needs no lateral, no parse, no row multiplication, and it collapses a self-join in both readers.
+
+Affordable **only because `level` is a closed set of five** — the one dimension in the inventory that cannot grow. `by_env` and `by_source` stay jsonb precisely because their keys are client-supplied; giving either the same treatment would be the unbounded-column mistake they are jsonb to avoid.
 | `events.template_hash` | `bigint`, nullable | Fingerprint computed at ingest. Permanently nullable: pre-2026-08-23 rows have none and no SQL can derive one, since the normaliser is TypeScript. |
 | `rollup_state.templates_rolled_up_from` / `_to` | — | The **interval** the template rollup covers. Two columns, not one: see below. |
 

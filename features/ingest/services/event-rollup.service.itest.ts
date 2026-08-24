@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { sql } from "drizzle-orm";
+import { EVENT_LEVELS } from "@/shared/utils/event-filters.schema";
 import { templateHashForStorage } from "@/features/ingest/utils/normalize-message";
 import { topMessages } from "@/features/dashboard/services/aggregations.service";
 import { getProjectTopMessages } from "@/features/overview/services/overview.service";
@@ -708,6 +709,157 @@ describe("topMessages over the template rollup", () => {
             expect(viaEvents!.count).toBe(6);
             expect(viaEvents!.dominantLevel).toBe("error");
         });
+    });
+});
+
+/**
+ * Every level must survive the trip through the rollup, on the rollup path.
+ *
+ * There was already a drift test shaped like this — in
+ * `aggregations.service.itest.ts` — but it runs against the shared fixture,
+ * where nothing builds a rollup, so it only ever exercised the raw-text
+ * fallback and its five `COUNT(*) FILTER` counters. When `by_level` was
+ * unpacked into `n_debug`..`n_fatal` on 2026-08-24, the rollup path's own
+ * level handling was covered by exactly one assertion, that a single all-error
+ * message badges as "error". Swapping `n_debug` and `n_info` in either the
+ * SQL or `levelCounts` would have passed it.
+ *
+ * One message per level, all events of that level, so the badge has to be that
+ * level. A mislabelled column moves a count to the wrong name and the badge
+ * moves with it.
+ */
+describe("every level survives the template rollup", () => {
+    /** `Cache miss for debug_k` normalises to `Cache miss for ***`. */
+    const rawFor = (level: string) => `Cache ${level} for key_${level}9`;
+    const templateFor = (level: string) => `Cache ${level} for ***`;
+
+    beforeAll(async () => {
+        for (const [i, level] of EVENT_LEVELS.entries()) {
+            const raw = rawFor(level);
+            await insertEvents([
+                {
+                    count: 2,
+                    level,
+                    environment: "production",
+                    offsetMinutes: 20 + i,
+                    message: raw,
+                },
+            ]);
+            await db.execute(sql`
+                INSERT INTO message_templates (project_id, template_hash, template, normalizer_version)
+                VALUES (
+                    ${projectId}::uuid,
+                    ${templateHashForStorage(raw).toString()}::bigint,
+                    ${templateFor(level)},
+                    1
+                )
+                ON CONFLICT DO NOTHING
+            `);
+        }
+        await markRollupDirty(projectId, at(0));
+        await rebuildFully();
+    });
+
+    it.each([...EVENT_LEVELS])("badges a %s-only message as %s", async (level) => {
+        // The range is taken from coverage rather than a preset. An earlier
+        // block in this file writes an unfingerprinted event on purpose, which
+        // raises the floor — so a 30-day preset starts below it and the
+        // dispatcher correctly takes the raw-text fallback, where these
+        // templates do not exist. That is the dispatcher working, not a bug,
+        // and it cost a confusing red run to notice.
+        const c = await templateCoverage(projectId);
+        const rows = await topMessages(
+            projectId,
+            { type: "custom", from: c!.from!.toISOString(), to: c!.to.toISOString() },
+            200,
+        );
+        const row = rows.find((r) => r.message === templateFor(level));
+
+        // Finding the row at all proves the rollup path ran: the raw text
+        // carries key_<level>9 and only the template drops it.
+        expect(row, `no rollup row for ${level}`).toBeDefined();
+        expect(row!.count).toBe(2);
+        expect(row!.dominantLevel).toBe(level);
+    });
+});
+
+/**
+ * The same, for the **raw tail** — the events above the rollup ceiling.
+ *
+ * Added immediately after the block above failed to earn its keep. Replacing
+ * the tail's `COUNT(*) FILTER (WHERE e.level = 'fatal')` with a literal zero
+ * broke nothing: every test took a range ending at `coverage.to`, so the tail
+ * window was empty and its five counters were never executed. Exactly the shape
+ * this repository has recorded twice — a green test over code that does not run.
+ *
+ * The tail matters more than its size suggests. It is the newest minute, which
+ * is the minute someone watching an incident is looking at, and a level miscount
+ * there is invisible everywhere else.
+ */
+describe("every level survives the raw tail", () => {
+    const rawFor = (level: string) => `Tail ${level} for key_${level}7`;
+    const templateFor = (level: string) => `Tail ${level} for ***`;
+
+    /** Set in beforeAll: the rollup ceiling these events are written above. */
+    let ceiling: Date;
+
+    beforeAll(async () => {
+        const c = await templateCoverage(projectId);
+        ceiling = c!.to;
+
+        for (const [i, level] of EVENT_LEVELS.entries()) {
+            const raw = rawFor(level);
+            // Above the ceiling on purpose, and deliberately **not** rebuilt
+            // afterwards, so these can only be answered by the tail branch.
+            const ts = new Date(ceiling.getTime() + (i + 1) * 1000);
+            await db.execute(sql`
+                INSERT INTO events (id, project_id, timestamp, level, message, template_hash)
+                VALUES (
+                    ${randomUUID()}::uuid, ${projectId}::uuid, ${ts.toISOString()}::timestamptz,
+                    ${level}, ${raw}, ${templateHashForStorage(raw).toString()}::bigint
+                )
+            `);
+            await db.execute(sql`
+                INSERT INTO message_templates (project_id, template_hash, template, normalizer_version)
+                VALUES (
+                    ${projectId}::uuid,
+                    ${templateHashForStorage(raw).toString()}::bigint,
+                    ${templateFor(level)},
+                    1
+                )
+                ON CONFLICT DO NOTHING
+            `);
+        }
+    });
+
+    it("puts the tail events above the rollup ceiling", async () => {
+        // A guard on the guard. If a later change moved the ceiling past these
+        // events, every assertion below would pass through the rollup branch
+        // and prove nothing about the tail.
+        const [row] = await db.execute<{ n: string }>(sql`
+            SELECT COUNT(*)::text AS n FROM event_template_rollup
+            WHERE project_id = ${projectId}::uuid AND minute >= ${ceiling.toISOString()}::timestamptz
+        `);
+        expect(Number(row.n)).toBe(0);
+    });
+
+    it.each([...EVENT_LEVELS])("badges a %s-only tail message as %s", async (level) => {
+        const c = await templateCoverage(projectId);
+        const rows = await topMessages(
+            projectId,
+            {
+                type: "custom",
+                from: c!.from!.toISOString(),
+                // Past the ceiling, so the tail branch has a window to cover.
+                to: new Date(ceiling.getTime() + 60_000).toISOString(),
+            },
+            200,
+        );
+        const row = rows.find((r) => r.message === templateFor(level));
+
+        expect(row, `no tail row for ${level}`).toBeDefined();
+        expect(row!.count).toBe(1);
+        expect(row!.dominantLevel).toBe(level);
     });
 });
 

@@ -94,6 +94,35 @@ export const eventTemplateRollup = pgTable(
         byLevel: jsonb("by_level").notNull().default(sql`'{}'::jsonb`),
         /** Latest event timestamp in the bucket, for the "last seen" column. */
         latestAt: timestamp("latest_at", { withTimezone: true }).notNull(),
+        /**
+         * `by_level` unpacked into one column per level, **generated**, so the
+         * job still writes only the JSON and the two cannot drift. Exactly the
+         * arrangement `event_rollup_minutes.errors` already uses, and for the
+         * same reason.
+         *
+         * Added 2026-08-24 on a measurement. Reading the JSON meant
+         * `FROM event_template_rollup r, jsonb_each_text(r.by_level) l`, which
+         * multiplies every row by up to five and parses JSON per row; the
+         * widget it feeds measured **547 ms at 0% I/O** — entirely CPU, so no
+         * amount of memory would have helped it. Summing five `int` columns
+         * needs no lateral, no parse and no row multiplication.
+         *
+         * The jsonb stays rather than being replaced: it is what the job
+         * writes, dropping it would mean a backfill, and it remains the honest
+         * shape for "counts per level" if a sixth level ever appears — these
+         * columns would then need a migration, which is the right amount of
+         * friction for changing a closed set.
+         *
+         * Five columns is affordable **because `level` is a closed set of
+         * five** — the one dimension in the inventory that cannot grow. The
+         * same treatment applied to `by_env` or `by_source` would be exactly
+         * the unbounded-column mistake those are jsonb to avoid.
+         */
+        nDebug: integer("n_debug").generatedAlwaysAs(sql`COALESCE((by_level->>'debug')::int, 0)`),
+        nInfo: integer("n_info").generatedAlwaysAs(sql`COALESCE((by_level->>'info')::int, 0)`),
+        nWarn: integer("n_warn").generatedAlwaysAs(sql`COALESCE((by_level->>'warn')::int, 0)`),
+        nError: integer("n_error").generatedAlwaysAs(sql`COALESCE((by_level->>'error')::int, 0)`),
+        nFatal: integer("n_fatal").generatedAlwaysAs(sql`COALESCE((by_level->>'fatal')::int, 0)`),
     },
     (t) => ({
         pk: primaryKey({ columns: [t.projectId, t.minute, t.templateHash] }),
