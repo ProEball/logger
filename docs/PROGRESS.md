@@ -84,7 +84,42 @@ one structurally cannot be: an environment filter on either message widget
 (`event_template_rollup` stores no environment), events with no fingerprint,
 and the surfaces that return rows rather than counts.
 
-Not yet measured on the resized host — the numbers above are the *before*.
+**Measured on the quiet host, 2026-08-24, with the log generator stopped and
+`pg_stat_statements` reset — one cold load per page, each loaded exactly once.**
+
+| query | before | after | |
+|---|---|---|---|
+| `topSources` | 856 ms, 29–41% I/O | **42 ms, 0%** | 20× |
+| `topMessages` off the rollup | 547 ms, 0% I/O | **181 ms, 16%** | 3× |
+| `getOrgTopErrors` | 104 ms, raw text | **12 ms** | 8.7× |
+| overview per-project top message | 68 ms | **21 ms** | 3.2× |
+| `rollupBoundary` (with the new `EXISTS`) | — | **0 ms** | |
+
+**Not one of the old queries appears in the list any more** — no
+`COALESCE(source, …)` scan of raw `events`, no `jsonb_each_text(by_level)`, no
+`SUBSTRING(message, 1, 200)`. That is the check that mattered; the durations
+are the consequence.
+
+Page-level, cold, same run: overview **410 ms**, dashboard **396 / 437 / 392 ms**
+at 24h / 30d / 7d. Two properties are worth more than the numbers:
+
+- **No chunk gaps.** The streaming profile shows only a first and a last chunk;
+  no cell holds. Before this work, 30d had gaps at ~1.3 s and ~1.8 s.
+- **The range stopped mattering.** 45 ms of spread across an eight-fold
+  difference in window. Cost now tracks the number of buckets, not the number of
+  events — which is the whole claim a rollup makes. For contrast, the same 30d
+  page measured 222, 1699, 2218 and 437 ms across the day: the first three were
+  measuring contention on a shared-CPU box, not queries.
+
+The database is no longer the page's bound. Widgets run in parallel, so the DB
+contributes ~181 ms of a ~400 ms page; the rest is render and network. Further
+query work has little left to win.
+
+⚠️ `topMessages` reporting **16% I/O** where it previously showed 0% is most
+likely a warming artifact: migration 0012 rewrote `event_template_rollup`
+entirely, so every page of it was cold when the statistics were reset. Worth
+re-reading before it is treated as a property of the query.
+
 
 ### Previously frozen
 
