@@ -144,7 +144,7 @@ Key convention: **actions never throw to the caller** — every failure path (va
 
 ## Database schema
 
-Schema source: `core/db/schema/*.ts` (Drizzle), barrel-exported from `core/db/schema/index.ts`. Migrations: `core/db/migrations/0000`–`0012` (13 migrations as of 2026-08-24), applied via `drizzle-kit migrate`. 0011 adds the partial `events_unfingerprinted_idx`; **0012** adds the five generated `n_<level>` columns to `event_template_rollup` and was **hand-edited after generation** — drizzle-kit emits one `ADD COLUMN … STORED` per column and each of those rewrites the table, so the five are collapsed into a single `ALTER` and a single rewrite.
+Schema source: `core/db/schema/*.ts` (Drizzle), barrel-exported from `core/db/schema/index.ts`. Migrations: `core/db/migrations/0000`–`0013` (14 migrations as of 2026-08-24), applied via `drizzle-kit migrate`. 0011 adds the partial `events_unfingerprinted_idx`; **0012** adds the five generated `n_<level>` columns to `event_template_rollup` and was **hand-edited after generation** — drizzle-kit emits one `ADD COLUMN … STORED` per column and each of those rewrites the table, so the five are collapsed into a single `ALTER` and a single rewrite.
 
 ### Auth tables (better-auth managed, plural table names)
 

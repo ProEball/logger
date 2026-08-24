@@ -87,7 +87,7 @@ Say "the five", not "everything": the page also issues `getOrgBySlug`, `getMembe
 | **Events per minute** (stacked area) | `eventsPerMinute` — **rollup + raw tail** since 2026-08-21 | epoch-floored bucket × level | range | ✅ done |
 | **Level breakdown** | `levelBreakdown` — **rollup + raw tail** since 2026-08-21 | level | range | ✅ done |
 | **Top messages** | `topMessages` — template rollup where covered, raw `events` otherwise; its own `Suspense` boundary | `template_hash`, or `SUBSTRING(message, 1, 200)` on the fallback | range | ✅ since 2026-08-23, by template |
-| **Top sources** | `topSources` — raw `events` | `COALESCE(source, '(unknown)')` | range | ⚠️ needs a `by_source` column; deferred until measured at 30 days |
+| **Top sources** | `topSources` — **rollup + raw tail** since 2026-08-24, raw `events` where `by_source` is missing | `by_source` keys, or `COALESCE(source, '(unknown)')` on the fallback | range | ✅ done |
 | **Recent errors** | `recentErrors` — raw `events` | none — returns whole rows | range | ❌ needs rows |
 | **KPI row** | derived in `dashboard-kpis.ts` from the buckets, levels and alert rules | — | — | follows its inputs |
 | **Alerts panel** | `listAlertRules` | — | — | n/a — `alert_rules` |

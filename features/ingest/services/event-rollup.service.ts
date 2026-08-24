@@ -23,6 +23,16 @@ import { rollupState } from "@/core/db/schema";
 export const ENVIRONMENT_KEY_CAP = 20;
 
 /**
+ * The same cap for `source`, and the same reason.
+ *
+ * A separate constant rather than one shared `KEY_CAP`: they happen to agree
+ * today, and tying them together would mean a future change to one silently
+ * moving the other. Sources are in practice fewer than environments, so if
+ * these ever diverge it will be this one going down.
+ */
+export const SOURCE_KEY_CAP = 20;
+
+/**
  * How much history one run may rebuild.
  *
  * Catch-up has to be bounded, or the first run after the migration — which
@@ -130,12 +140,13 @@ export async function rebuildRollupForProject(
                     date_trunc('minute', timestamp)        AS minute,
                     level,
                     COALESCE(environment, '(unset)')       AS env,
+                    COALESCE(source, '(unknown)')          AS src,
                     COUNT(*)::int                          AS n
                 FROM events
                 WHERE project_id = ${projectId}::uuid
                   AND timestamp >= ${from.toISOString()}::timestamptz
                   AND timestamp <  ${to.toISOString()}::timestamptz
-                GROUP BY 1, 2, 3
+                GROUP BY 1, 2, 3, 4
             ),
             levels AS (
                 SELECT minute, jsonb_object_agg(level, n) AS by_level, SUM(n)::int AS total
@@ -164,12 +175,38 @@ export async function rebuildRollupForProject(
                 SELECT minute, jsonb_object_agg(env, n) AS by_env
                 FROM env_capped
                 GROUP BY minute
+            ),
+            src_totals AS (
+                SELECT minute, src, SUM(n)::int AS n FROM cells GROUP BY 1, 2
+            ),
+            src_capped AS (
+                -- Same cap as environments, for the same reason: source is
+                -- client-supplied, so the tail folds into "(other)" rather than
+                -- growing the object without bound.
+                SELECT
+                    minute,
+                    CASE WHEN rn <= ${SOURCE_KEY_CAP} THEN src ELSE '(other)' END AS src,
+                    SUM(n)::int AS n
+                FROM (
+                    SELECT minute, src, n,
+                           ROW_NUMBER() OVER (PARTITION BY minute ORDER BY n DESC, src) AS rn
+                    FROM src_totals
+                ) ranked
+                GROUP BY 1, 2
+            ),
+            sources AS (
+                SELECT minute, jsonb_object_agg(src, n) AS by_source
+                FROM src_capped
+                GROUP BY minute
             )
-            INSERT INTO event_rollup_minutes (project_id, minute, total, by_level, by_env, computed_at)
+            INSERT INTO event_rollup_minutes
+                (project_id, minute, total, by_level, by_env, by_source, computed_at)
             SELECT ${projectId}::uuid, l.minute, l.total, l.by_level,
-                   COALESCE(e.by_env, '{}'::jsonb), now()
+                   COALESCE(e.by_env, '{}'::jsonb),
+                   COALESCE(s.by_source, '{}'::jsonb), now()
             FROM levels l
-            LEFT JOIN envs e ON e.minute = l.minute
+            LEFT JOIN envs e    ON e.minute = l.minute
+            LEFT JOIN sources s ON s.minute = l.minute
         `);
 
 

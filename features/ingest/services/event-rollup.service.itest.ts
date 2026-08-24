@@ -3,7 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { sql } from "drizzle-orm";
 import { EVENT_LEVELS } from "@/shared/utils/event-filters.schema";
 import { templateHashForStorage } from "@/features/ingest/utils/normalize-message";
-import { topMessages } from "@/features/dashboard/services/aggregations.service";
+import { topMessages, topSources } from "@/features/dashboard/services/aggregations.service";
 import { getProjectTopMessages } from "@/features/overview/services/overview.service";
 import { templateCoverage } from "@/shared/services/rollup-boundary.service";
 import { db } from "@/core/db/client";
@@ -919,5 +919,132 @@ describe("getProjectTopMessages over the template rollup", () => {
         ]);
 
         expect(map.get(projectId)?.message).toBe(RAW);
+    });
+});
+
+/**
+ * `topSources` over the rollup.
+ *
+ * The hard part is not correctness but **proving which implementation ran**.
+ * Both paths return the same source names and the same counts, so a test that
+ * only checks the numbers passes with the dispatcher deleted — the exact trap
+ * the template-rollup tests fell into first time round, where the fixture's
+ * message equalled its own template.
+ *
+ * The discriminator here is a sentinel key written straight into
+ * `by_source`, disagreeing with the events underneath it. Only the rollup path
+ * can return it, and only the fallback can miss it. Writing a rollup row that
+ * contradicts its source events is not something the job can do; that is the
+ * point, and PROJECT.md §11 permits direct SQL in an integration fixture for
+ * precisely this.
+ */
+describe("topSources over the rollup", () => {
+    const MINUTE = 30;
+    const SENTINEL = "__rollup_only__";
+
+    async function insertWithSource(source: string, count: number, offsetMinutes: number) {
+        for (let i = 0; i < count; i++) {
+            await db.execute(sql`
+                INSERT INTO events (id, project_id, timestamp, level, message, source, template_hash)
+                VALUES (
+                    ${randomUUID()}::uuid, ${projectId}::uuid,
+                    ${at(offsetMinutes).toISOString()}::timestamptz,
+                    'info', 'source test', ${source},
+                    ${templateHashForStorage("source test").toString()}::bigint
+                )
+            `);
+        }
+    }
+
+    beforeAll(async () => {
+        await insertWithSource("api", 5, MINUTE);
+        await insertWithSource("worker", 2, MINUTE);
+        // A NULL source has to become '(unknown)' on both paths, or the two
+        // implementations disagree on a row that is common in real data.
+        await db.execute(sql`
+            INSERT INTO events (id, project_id, timestamp, level, message, source, template_hash)
+            VALUES (
+                ${randomUUID()}::uuid, ${projectId}::uuid,
+                ${at(MINUTE).toISOString()}::timestamptz,
+                'info', 'source test', NULL,
+                ${templateHashForStorage("source test").toString()}::bigint
+            )
+        `);
+        await markRollupDirty(projectId, at(MINUTE));
+        await rebuildFully();
+    });
+
+    /** A range wholly inside the rollup's coverage. */
+    const covered = async () => {
+        const [row] = await db.execute<{ rolled_up_to: Date }>(sql`
+            SELECT rolled_up_to FROM rollup_state WHERE project_id = ${projectId}::uuid
+        `);
+        return {
+            type: "custom" as const,
+            from: at(MINUTE).toISOString(),
+            to: new Date(row.rolled_up_to).toISOString(),
+        };
+    };
+
+    it("writes a by_source object rather than leaving it empty", async () => {
+        const [row] = await db.execute<{ by_source: Record<string, number> }>(sql`
+            SELECT by_source FROM event_rollup_minutes
+            WHERE project_id = ${projectId}::uuid AND minute = ${at(MINUTE).toISOString()}::timestamptz
+        `);
+        expect(row.by_source).toMatchObject({ api: 5, worker: 2, "(unknown)": 1 });
+    });
+
+    it("agrees with a direct count of events", async () => {
+        const rows = await topSources(projectId, await covered(), 50);
+        const byName = new Map(rows.map((r) => [r.source, r.count]));
+
+        expect(byName.get("api")).toBe(5);
+        expect(byName.get("worker")).toBe(2);
+        expect(byName.get("(unknown)")).toBe(1);
+    });
+
+    it("reads the rollup rather than the events under it", async () => {
+        await db.execute(sql`
+            UPDATE event_rollup_minutes
+            SET by_source = by_source || ${JSON.stringify({ [SENTINEL]: 4 })}::jsonb
+            WHERE project_id = ${projectId}::uuid AND minute = ${at(MINUTE).toISOString()}::timestamptz
+        `);
+        try {
+            const rows = await topSources(projectId, await covered(), 50);
+            // No event carries this source. Only the rollup can produce it.
+            expect(rows.find((r) => r.source === SENTINEL)?.count).toBe(4);
+        } finally {
+            await db.execute(sql`
+                UPDATE event_rollup_minutes
+                SET by_source = by_source - ${SENTINEL}
+                WHERE project_id = ${projectId}::uuid AND minute = ${at(MINUTE).toISOString()}::timestamptz
+            `);
+        }
+    });
+
+    it("falls back to events while any row in reach predates by_source", async () => {
+        // What migration 0013 leaves behind until the job rebuilds the row.
+        await db.execute(sql`
+            UPDATE event_rollup_minutes
+            SET by_source = '{}'::jsonb, by_env = by_env || ${JSON.stringify({ __sentinel__: 1 })}::jsonb
+            WHERE project_id = ${projectId}::uuid AND minute = ${at(MINUTE).toISOString()}::timestamptz
+        `);
+        try {
+            const rows = await topSources(projectId, await covered(), 50);
+            const byName = new Map(rows.map((r) => [r.source, r.count]));
+
+            // Served from events, so the counts are still right — which is the
+            // whole point of falling back rather than reading an empty object
+            // and reporting that the sources vanished.
+            expect(byName.get("api")).toBe(5);
+            expect(byName.get("worker")).toBe(2);
+        } finally {
+            await db.execute(sql`
+                UPDATE event_rollup_minutes
+                SET by_source = ${JSON.stringify({ api: 5, worker: 2, "(unknown)": 1 })}::jsonb,
+                    by_env = by_env - '__sentinel__'
+                WHERE project_id = ${projectId}::uuid AND minute = ${at(MINUTE).toISOString()}::timestamptz
+            `);
+        }
     });
 });

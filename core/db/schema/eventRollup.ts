@@ -45,6 +45,30 @@ export const eventRollupMinutes = pgTable(
         /** `{"production": 380, "(unset)": 39}` — counts per environment. */
         byEnv: jsonb("by_env").notNull().default(sql`'{}'::jsonb`),
         /**
+         * `{"api": 402, "worker": 49}` — counts per source, capped like
+         * `by_env` and folded into `(other)` beyond the cap.
+         *
+         * Added 2026-08-24, and it is the column §16.2 deferred on 2026-08-21
+         * with a condition attached: *"it should be a number measured at 30 days
+         * rather than a wish for a tidy table."* The number arrived on the
+         * resized host — `topSources` at **856 ms and 29–41% of its time in
+         * blk_read_time**, the slowest query on either dashboard and the only
+         * one still scanning raw `events` across the whole range. Everything
+         * else reads a rollup and sits at 0% I/O.
+         *
+         * jsonb rather than a key column, on the same reasoning as `by_env`:
+         * `source` is client-supplied. A row-per-value key would let a project
+         * inventing a source per deploy multiply the table; a capped JSON object
+         * turns that into a fatter row instead.
+         *
+         * **An empty object means "written before this column existed"**, not
+         * "no sources". Every event has a source or `(unknown)`, so a rebuilt
+         * row always carries at least one key — which is what lets
+         * `topSources` tell a pre-migration row from a genuinely quiet minute
+         * without a second watermark column.
+         */
+        bySource: jsonb("by_source").notNull().default(sql`'{}'::jsonb`),
+        /**
          * Derived, not stored twice. `errors` is read on nearly every widget,
          * and a generated column keeps the fast `SUM(errors)` path without
          * letting it drift from `by_level` — the job writes only the JSON.

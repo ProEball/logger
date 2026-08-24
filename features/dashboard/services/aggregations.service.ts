@@ -452,15 +452,81 @@ export async function recentErrors(
 }
 
 /**
- * Top N event sources (the `source` field) by event count.
+ * The newest minute whose rollup row predates `by_source`, or `null` when
+ * none do.
+ *
+ * Migration 0013 gave every existing row `'{}'`, which is distinguishable from
+ * a real result because every event has a source or `(unknown)` — a rebuilt
+ * row always carries at least one key. Reading those rows would silently drop
+ * every source older than the migration from a 30-day chart, which on this
+ * widget looks exactly like a service that stopped logging.
+ *
+ * They form a contiguous band ending at the migration, and the job refills it
+ * oldest-first, so `MAX` is exact rather than conservative: any range starting
+ * after this instant is fully served by the rollup. Short ranges therefore work
+ * immediately after deploy and long ones heal as the rebuild advances, with no
+ * window in which anything is wrong.
+ *
+ * A private helper rather than a sibling of `rollupBoundary` in
+ * `shared/services/`: only this widget reads `by_source`, and PROJECT.md §2.1
+ * puts code in `shared/` when a second feature needs it, not in anticipation.
  */
-export async function topSources(
-    projectId: string,
-    range: TimeRange,
-    limit = 10,
-): Promise<SourceCount[]> {
-    const { from, to } = resolveRange(range);
+async function sourceRollupFloor(projectId: string): Promise<Date | null> {
+    const [row] = await db.execute<{ newest: Date | null }>(sql`
+        SELECT MAX(minute) AS newest
+        FROM event_rollup_minutes
+        WHERE project_id = ${projectId}::uuid
+          AND by_source = '{}'::jsonb
+    `);
+    return row?.newest == null ? null : new Date(row.newest);
+}
 
+/** `topSources` served from the rollup, with raw events above the watermark. */
+async function topSourcesFromRollup(
+    projectId: string,
+    from: Date,
+    to: Date,
+    boundary: Date,
+    limit: number,
+): Promise<SourceCount[]> {
+    const rows = await db.execute<{ source: string; count: string }>(sql`
+        WITH cells AS (
+            SELECT s.key AS source, SUM(s.value::int)::int AS n
+            FROM event_rollup_minutes r, jsonb_each_text(r.by_source) s
+            WHERE r.project_id = ${projectId}::uuid
+              AND r.minute >= ${toTs(from)}
+              AND r.minute <  ${toTs(boundary)}
+            GROUP BY 1
+
+            UNION ALL
+
+            -- The tail above the watermark, at most one minute of events.
+            SELECT COALESCE(e.source, '(unknown)'), COUNT(*)::int
+            FROM events e
+            WHERE e.project_id = ${projectId}::uuid
+              AND e.timestamp >= ${toTs(boundary)}
+              AND e.timestamp <  ${toTs(to)}
+            GROUP BY 1
+        )
+        SELECT source, SUM(n)::text AS count
+        FROM cells
+        GROUP BY source
+        -- SUM(n), never the text alias: with a LIMIT a lexicographic sort drops
+        -- the wrong ROWS, not merely reorders them. See the fallback below.
+        ORDER BY SUM(n) DESC
+        LIMIT ${limit}
+    `);
+
+    return rows.map((r) => ({ source: r.source, count: Number(r.count) }));
+}
+
+/** `topSources` grouped straight off raw `events`. */
+async function topSourcesFromEvents(
+    projectId: string,
+    from: Date,
+    to: Date,
+    limit: number,
+): Promise<SourceCount[]> {
     const rows = await db.execute<{ source: string; count: string }>(sql`
         SELECT COALESCE(source, '(unknown)') AS source, COUNT(*)::text AS count
         FROM events
@@ -477,6 +543,39 @@ export async function topSources(
     `);
 
     return rows.map((r) => ({ source: r.source, count: Number(r.count) }));
+}
+
+/**
+ * Top N event sources (the `source` field) by event count.
+ *
+ * **Two implementations, chosen by coverage**, like `topMessages`. This was the
+ * last read on either dashboard still scanning raw `events` across the whole
+ * range, and the measurement that ended its deferral is in `PLAN.md` §17:
+ * 856 ms and 29-41% of its time waiting on disk, against 0% for every
+ * rollup-backed query on the page.
+ *
+ * The fallback stays for the same reason `topMessages` keeps its own: rows
+ * written before migration 0013 carry no `by_source`, and reading them anyway
+ * would drop every source older than the deploy without raising anything.
+ */
+export async function topSources(
+    projectId: string,
+    range: TimeRange,
+    limit = 10,
+): Promise<SourceCount[]> {
+    const { from, to } = resolveRange(range);
+
+    const [boundary, floor] = await Promise.all([
+        rollupBoundary([projectId]),
+        sourceRollupFloor(projectId),
+    ]);
+
+    if (boundary && (floor === null || from > floor)) {
+        const clamped = boundary < to ? boundary : to;
+        return topSourcesFromRollup(projectId, from, to, clamped, limit);
+    }
+
+    return topSourcesFromEvents(projectId, from, to, limit);
 }
 
 /**
