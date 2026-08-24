@@ -199,6 +199,27 @@ query — visible to anyone looking at the page, without a profiler and without
 dashboard fills five of its six widgets in under 300 ms and leaves `topMessages`
 holding its cell for roughly seventeen seconds.
 
+**Re-measured 2026-08-24** at 9.6M events, after the host was resized to 8 GB /
+4 vCPU and Postgres given a sized configuration (`PLAN.md` §17). Five cold page
+loads, 36 s apart so no cache entry survives:
+
+| page | first chunk | complete |
+|---|---|---|
+| org overview | 210 ms | 272 ms |
+| dashboard 24h | 220 ms | 701 ms |
+| dashboard 30d | 162 ms | 1,699 ms |
+| dashboard 7d | 187 ms | 1,796 ms |
+
+The shape is unchanged and the diagnostic still reads the same way — the page
+starts streaming at ~190 ms and **two** cells hold, one to ~1.3 s and one to
+~1.8 s. `pg_stat_statements` names them without ambiguity: `topSources`
+(1,207 ms mean, **41%** of its time in `blk_read_time`) and `topMessages` off the
+template rollup (804 ms, **0%** — entirely CPU, see §17 on `by_level` being
+jsonb). Every other query on both pages is at 0% I/O.
+
+So the seventeen seconds above is a record of the old host, not of the current
+code. Kept because §16.2 and §16.3 were both argued from it.
+
 ⚠️ **Do not group widgets under a shared boundary.** It is tempting whenever two
 widgets share a row, and it makes them all wait for the slowest — which costs
 the fast ones their early paint and throws the signal above away. That matters

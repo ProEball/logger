@@ -22,8 +22,44 @@ Stage C. `track_io_timing` and `log_temp_files` ship with it, because the
 diagnosis above is still an *inference* and those are what turn it into a
 measurement.
 
-**Nothing is proven until the post-resize numbers are in.** Every §16
-measurement to date was partly measuring the droplet.
+### Measured the same evening — the diagnosis holds
+
+Five cold page loads on a freshly restarted app, 36 s apart so no cache entry
+survives, against 9.6M events:
+
+| page | first chunk | complete |
+|---|---|---|
+| org overview | 210 ms | **272 ms** |
+| dashboard 24h | 220 ms | **701 ms** |
+| dashboard 30d | 162 ms | **1,699 ms** |
+| dashboard 7d | 187 ms | **1,796 ms** |
+
+The overview was *"very slow, the whole page hangs, four to five seconds"*.
+
+**The one unconfounded number is `topSources`: 10,713 ms → 775 ms, ≈14×.** Its
+SQL is byte-identical across `v0.5.1..v0.6.0`, so none of that came from the
+`a1bdfda` rollup routing — it is hardware and configuration alone. Every other
+query on the page changed in both releases at once and cannot be attributed.
+
+**Every rollup-backed query now reports 0% of its time in `blk_read_time`.** The
+sole exception is `topSources` at 41% — the one read still scanning raw `events`
+over the whole range. Rollup reads are memory-resident and CPU-bound; raw range
+scans are disk-bound. Note the limit: `track_io_timing` was **off** before this
+change, so the old 17 s was never measured as disk-bound, only inferred.
+
+### Found while measuring: the overview never used the rollup at all
+
+An organization containing **one project with no events** loses both rollups
+entirely — `rollup_state` rows are written by ingest, so an event-free project
+has none, and the coverage guard conservatively answers "read raw events" for
+the whole organization. Staging has exactly one, which means the §16.3 overview
+work shipped in `a1bdfda` has never executed in production.
+
+Nearly free today (68 ms + 55 ms on a sized host), which is why it hid. But
+"create the project, wire up ingest later" is the normal first-run flow, so
+**every new install starts on the slow path by default**. Fix is in
+`shared/services/rollup-boundary.service.ts`, no schema change, no migration —
+`PLAN.md` §17 has the reasoning. **This is the next task.**
 
 ### Frozen, deliberately
 
