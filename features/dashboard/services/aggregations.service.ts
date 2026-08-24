@@ -5,7 +5,7 @@ import type { TimeRange } from "@/features/events/utils/event-filters.types";
 import type { Event } from "@/core/db/schema";
 import { resolveRange, pickBucket, fillBuckets, BUCKET_SECONDS } from "@/features/dashboard/utils/aggregation-utils";
 import type { BucketRow } from "@/features/dashboard/utils/aggregation-utils";
-import { pickDominantLevel, type EventLevel } from "@/features/dashboard/utils/dominant-level";
+import { pickDominantLevel, type EventLevel } from "@/shared/utils/dominant-level";
 
 // Re-export pure helpers so callers can import from one place.
 export { resolveRange, pickBucket, fillBuckets } from "@/features/dashboard/utils/aggregation-utils";
@@ -287,7 +287,12 @@ export async function topMessages(
     const { from, to } = resolveRange(range);
 
     const coverage = await templateCoverage(projectId);
-    if (coverage && from >= coverage.from) {
+    // `coverage.from === null` means every event carries a fingerprint, so
+    // nothing sits below the rollup for the range to miss — whatever the range
+    // is. Comparing against the *start of the window* instead is what sent
+    // every 7d and 30d read to the fallback on a corpus younger than the
+    // window, for a gap that contained no events at all.
+    if (coverage && (coverage.from === null || from >= coverage.from)) {
         // Rollup below the ceiling, raw events above it. When the range ends
         // inside coverage there is no tail at all.
         const boundary = to < coverage.to ? to : coverage.to;

@@ -1,6 +1,7 @@
+import { pickDominantLevel, type EventLevel } from "@/shared/utils/dominant-level";
 import { sql } from "drizzle-orm";
 import { db } from "@/core/db/client";
-import { rollupBoundary } from "@/shared/services/rollup-boundary.service";
+import { rollupBoundary, templateCoverageForProjects } from "@/shared/services/rollup-boundary.service";
 
 export type DateRange = { from: Date; to: Date };
 
@@ -192,6 +193,95 @@ export async function getProjectStats(
 }
 
 /**
+
+ * `getProjectTopMessages` served from the template rollup.
+ *
+ * Grouping by a `bigint` fingerprint over pre-aggregated rows instead of by 120
+ * characters of text over raw events. Measured on staging 2026-08-22, this was
+ * the overview's most expensive query at **4,931 ms** — more than the rest of
+ * the page put together.
+ *
+ * No `mode() WITHIN GROUP` here either. It is an ordered-set aggregate, and one
+ * in the select list makes `HashAggregate` unavailable at any `work_mem`, which
+ * cost the dashboard's version 37% before it was removed. The level badge comes
+ * from summed `by_level` counts and `pickDominantLevel`, exactly as on the
+ * dashboard.
+ *
+ * The caller has already established that the range sits inside coverage and
+ * that **no environment filter is active** — the rollup does not store
+ * environment, so it cannot answer a filtered question at all.
+ */
+async function getProjectTopMessagesFromRollup(
+    projectIds: string[],
+    from: Date,
+    to: Date,
+    boundary: Date,
+): Promise<Map<string, ProjectTopMessage>> {
+    const rows = await db.execute<{
+        project_id: string;
+        message: string;
+        by_level: Record<string, number>;
+    }>(sql`
+        WITH cells AS (
+            SELECT r.project_id, r.template_hash, l.key AS level,
+                   SUM(l.value::int)::int AS n
+            FROM event_template_rollup r, jsonb_each_text(r.by_level) l
+            WHERE r.project_id = ANY(ARRAY[${uuidArray(projectIds)}])
+              AND r.minute >= ${toTs(from)}
+              AND r.minute <  ${toTs(boundary)}
+              AND l.key IN ('error', 'fatal')
+            GROUP BY 1, 2, 3
+
+            UNION ALL
+
+            SELECT e.project_id, e.template_hash, e.level, COUNT(*)::int
+            FROM events e
+            WHERE e.project_id = ANY(ARRAY[${uuidArray(projectIds)}])
+              AND e.timestamp >= ${toTs(boundary)}
+              AND e.timestamp <  ${toTs(to)}
+              AND e.template_hash IS NOT NULL
+              AND e.level IN ('error', 'fatal')
+            GROUP BY 1, 2, 3
+        ),
+        merged AS (
+            SELECT project_id, template_hash, level, SUM(n)::int AS n
+            FROM cells GROUP BY 1, 2, 3
+        ),
+        totals AS (
+            SELECT project_id, template_hash, SUM(n)::int AS total
+            FROM merged GROUP BY 1, 2
+        ),
+        ranked AS (
+            -- The window runs over one row per (project, template) — a few
+            -- thousand — not over the millions the grouping above consumed.
+            SELECT project_id, template_hash,
+                   ROW_NUMBER() OVER (PARTITION BY project_id ORDER BY total DESC) AS rn
+            FROM totals
+        )
+        SELECT
+            rk.project_id::text                     AS project_id,
+            COALESCE(mt.template, '(unknown template)') AS message,
+            jsonb_object_agg(m.level, m.n)          AS by_level
+        FROM ranked rk
+        JOIN merged m
+          ON m.project_id = rk.project_id AND m.template_hash = rk.template_hash
+        LEFT JOIN message_templates mt
+          ON mt.project_id = rk.project_id AND mt.template_hash = rk.template_hash
+        WHERE rk.rn = 1
+        GROUP BY rk.project_id, mt.template
+    `);
+
+    const map = new Map<string, ProjectTopMessage>();
+    for (const row of rows) {
+        map.set(row.project_id, {
+            message: row.message,
+            level: pickDominantLevel(row.by_level as Partial<Record<EventLevel, number>>),
+        });
+    }
+    return map;
+}
+
+/**
  * The most frequent error message per project.
  *
  * **The expensive half.** ~954 ms on staging at 1.3M events, against ~30 ms for
@@ -214,6 +304,18 @@ export async function getProjectTopMessages(
 ): Promise<Map<string, ProjectTopMessage>> {
     if (projectIds.length === 0) return new Map();
     const { from, to } = range;
+
+    // The rollup stores no environment, so a filtered question cannot be
+    // answered from it at all — not slowly, not approximately. That is the one
+    // condition here that is about the table's shape rather than its coverage.
+    const unfiltered = !environments || environments.length === 0;
+    if (unfiltered) {
+        const coverage = await templateCoverageForProjects(projectIds);
+        if (coverage && (coverage.from === null || from >= coverage.from)) {
+            const boundary = to < coverage.to ? to : coverage.to;
+            return getProjectTopMessagesFromRollup(projectIds, from, to, boundary);
+        }
+    }
 
     const rows = await db.execute<{
         project_id: string;

@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { sql } from "drizzle-orm";
 import { templateHashForStorage } from "@/features/ingest/utils/normalize-message";
 import { topMessages } from "@/features/dashboard/services/aggregations.service";
+import { getProjectTopMessages } from "@/features/overview/services/overview.service";
 import { templateCoverage } from "@/shared/services/rollup-boundary.service";
 import { db } from "@/core/db/client";
 import {
@@ -270,9 +271,16 @@ describe("reads combine the rollup with the un-rolled-up tail", () => {
         // minute would be missing from every chart — the minute someone
         // watching an incident cares about most.
         const justNow = new Date();
+        // Carries a fingerprint, like every event ingest writes. Without one
+        // this row silently became the oldest unfingerprinted event in the
+        // project and pushed `templateCoverage` floor up for every test after
+        // it — a fixture that did not match production.
         await db.execute(sql`
-            INSERT INTO events (id, project_id, timestamp, level, message)
-            VALUES (${randomUUID()}::uuid, ${projectId}::uuid, ${justNow.toISOString()}::timestamptz, 'error', 'fresh')
+            INSERT INTO events (id, project_id, timestamp, level, message, template_hash)
+            VALUES (
+                ${randomUUID()}::uuid, ${projectId}::uuid, ${justNow.toISOString()}::timestamptz,
+                'error', 'fresh', ${templateHashForStorage('fresh').toString()}::bigint
+            )
         `);
 
         const range = { from: ANCHOR, to: new Date(Date.now() + 1000) };
@@ -557,20 +565,25 @@ describe("rebuildRollupForProject — templates", () => {
 });
 
 
+
 /**
- * The read path, tested here rather than beside the aggregation service for the
- * same reason as everything else in this file: the shared fixture never builds
- * a rollup, so `templateCoverage` returns null there and `topMessages` would
- * silently take the fallback branch — passing without executing a line of the
- * rollup implementation.
+ * The read path. Tested here rather than beside the aggregation service because
+ * the shared fixture never builds a rollup, so `templateCoverage` returns null
+ * there and `topMessages` would take the fallback branch — passing without
+ * executing a line of the rollup implementation.
  *
- * **The fixture is built so the two paths give *different* text.** Events carry
+ * **The fixture makes the two paths give different text.** Events carry
  * `User u_487 signed in`; the registered template is `User *** signed in`. The
  * rollup path reports the template, the fallback reports the raw message, and
  * that difference is the only thing that can prove which branch ran. An earlier
- * version of these tests used a message identical to its own template — both
- * paths agreed, both breaks of the dispatcher passed, and the tests measured
- * nothing.
+ * version used a message identical to its own template — both paths agreed,
+ * both breaks of the dispatcher passed, and the tests measured nothing.
+ *
+ * The two describes below run in order and share a project: the first asserts
+ * behaviour while every event is fingerprinted, the second inserts one that is
+ * not and asserts the fallback then engages. State is sequential on purpose —
+ * it is the same project moving between the two conditions, which is what
+ * happens in production.
  */
 describe("topMessages over the template rollup", () => {
     const RAW = "User u_487 signed in";
@@ -594,65 +607,165 @@ describe("topMessages over the template rollup", () => {
         await rebuildFully();
     });
 
-    async function coverageRange() {
-        const coverage = await templateCoverage(projectId);
-        expect(coverage).not.toBeNull();
-        return coverage!;
-    }
+    describe("while every event carries a fingerprint", () => {
+        it("reports no floor at all, because nothing is left uncovered", async () => {
+            const c = await templateCoverage(projectId);
+            expect(c).not.toBeNull();
+            expect(c!.from).toBeNull();
+        });
 
-    it("reports the template, not the raw message, when the range sits inside coverage", async () => {
-        const c = await coverageRange();
-        const rows = await topMessages(
-            projectId,
-            { type: "custom", from: c.from.toISOString(), to: c.to.toISOString() },
-            10,
-        );
+        /**
+         * The regression this exists for. Until 2026-08-24 the floor was
+         * `templates_rolled_up_from` compared against the start of the window,
+         * so a range beginning before the first event ever recorded took the
+         * raw-text fallback — for a gap that contained no events. On staging
+         * that cost 8.6 s a read to be conservative about nothing.
+         */
+        it("uses the rollup for a range starting long before any event exists", async () => {
+            const c = await templateCoverage(projectId);
+            const longBefore = new Date(at(0).getTime() - 365 * 86_400_000);
 
-        const found = rows.find((r) => r.message === TEMPLATE);
-        expect(found).toBeDefined();
-        expect(found!.count).toBe(6);
-        expect(rows.some((r) => r.message === RAW)).toBe(false);
+            const rows = await topMessages(
+                projectId,
+                { type: "custom", from: longBefore.toISOString(), to: c!.to.toISOString() },
+                10,
+            );
+
+            // The template, not the raw message: the rollup answered.
+            expect(rows.some((r) => r.message === TEMPLATE)).toBe(true);
+            expect(rows.some((r) => r.message === RAW)).toBe(false);
+        });
+
+        it("reports the template with the right count", async () => {
+            const c = await templateCoverage(projectId);
+            const rows = await topMessages(
+                projectId,
+                { type: "custom", from: at(0).toISOString(), to: c!.to.toISOString() },
+                10,
+            );
+
+            const found = rows.find((r) => r.message === TEMPLATE);
+            expect(found).toBeDefined();
+            expect(found!.count).toBe(6);
+        });
     });
 
-    it("falls back to raw text when the range reaches before coverage", async () => {
-        const c = await coverageRange();
-        const before = new Date(c.from.getTime() - 86_400_000);
+    describe("once an event without a fingerprint exists", () => {
+        beforeAll(async () => {
+            // `message: null` writes a row with text but no hash — a legacy
+            // event, the only thing that can force the fallback.
+            await insertEvents([
+                { count: 1, level: "info", environment: null, offsetMinutes: 5, message: null },
+            ]);
+        });
 
-        const rows = await topMessages(
-            projectId,
-            { type: "custom", from: before.toISOString(), to: c.to.toISOString() },
-            10,
-        );
+        it("puts the floor above the unfingerprinted event", async () => {
+            const c = await templateCoverage(projectId);
+            expect(c!.from).not.toBeNull();
+            expect(c!.from!.getTime()).toBeGreaterThanOrEqual(at(5).getTime());
+        });
 
-        // The fallback groups the message itself, so the identifier survives.
-        expect(rows.some((r) => r.message === RAW)).toBe(true);
-        expect(rows.some((r) => r.message === TEMPLATE)).toBe(false);
+        it("falls back to raw text for a range reaching below the floor", async () => {
+            const c = await templateCoverage(projectId);
+            const below = new Date(c!.from!.getTime() - 86_400_000);
+
+            const rows = await topMessages(
+                projectId,
+                { type: "custom", from: below.toISOString(), to: c!.to.toISOString() },
+                10,
+            );
+
+            // The fallback groups the message itself, so the identifier survives.
+            expect(rows.some((r) => r.message === RAW)).toBe(true);
+            expect(rows.some((r) => r.message === TEMPLATE)).toBe(false);
+        });
+
+        /**
+         * Two implementations of one question must not disagree on the numbers.
+         * Counts come from pre-aggregated integers on one path and from grouping
+         * 200 characters of text on the other.
+         */
+        it("agrees with the raw-text implementation on the count and the badge", async () => {
+            const c = await templateCoverage(projectId);
+            const viaRollup = (
+                await topMessages(
+                    projectId,
+                    { type: "custom", from: c!.from!.toISOString(), to: c!.to.toISOString() },
+                    10,
+                )
+            ).find((r) => r.message === TEMPLATE);
+
+            const below = new Date(c!.from!.getTime() - 86_400_000);
+            const viaEvents = (
+                await topMessages(
+                    projectId,
+                    { type: "custom", from: below.toISOString(), to: c!.to.toISOString() },
+                    10,
+                )
+            ).find((r) => r.message === RAW);
+
+            expect(viaRollup).toBeUndefined();
+            expect(viaEvents!.count).toBe(6);
+            expect(viaEvents!.dominantLevel).toBe("error");
+        });
+    });
+});
+
+/**
+ * The org overview's per-project top message, served from the template rollup.
+ *
+ * Same discriminator as the dashboard's tests: events carry `User u_487 signed
+ * in` while the registered template is `User *** signed in`, so the returned
+ * *text* proves which implementation ran. Asserting only on counts would pass
+ * with the dispatcher disabled entirely.
+ */
+describe("getProjectTopMessages over the template rollup", () => {
+    const RAW = "Payment pay_77x1 declined";
+    const TEMPLATE = "Payment *** declined";
+
+    beforeAll(async () => {
+        await insertEvents([
+            { count: 9, level: "error", environment: "production", offsetMinutes: 8, message: RAW },
+        ]);
+        await db.execute(sql`
+            INSERT INTO message_templates (project_id, template_hash, template, normalizer_version)
+            VALUES (
+                ${projectId}::uuid,
+                ${templateHashForStorage(RAW).toString()}::bigint,
+                ${TEMPLATE},
+                1
+            )
+            ON CONFLICT DO NOTHING
+        `);
+        await markRollupDirty(projectId, at(0));
+        await rebuildFully();
+    });
+
+    it("reports the template, proving the rollup answered", async () => {
+        const c = await templateCoverage(projectId);
+        const map = await getProjectTopMessages([projectId], { from: c!.from ?? at(0), to: c!.to });
+
+        expect(map.get(projectId)?.message).toBe(TEMPLATE);
+    });
+
+    it("badges it from summed by_level, not from mode()", async () => {
+        const c = await templateCoverage(projectId);
+        const map = await getProjectTopMessages([projectId], { from: c!.from ?? at(0), to: c!.to });
+
+        expect(map.get(projectId)?.level).toBe("error");
     });
 
     /**
-     * Two implementations of one question must not disagree on the numbers.
-     * Counts come from pre-aggregated integers on one path and from grouping
-     * 200 characters of text on the other, and nothing else would notice them
-     * drifting.
+     * The rollup stores no environment, so a filtered question cannot be
+     * answered from it at all. This is not a coverage decision — it is the
+     * table's shape — and getting it wrong would silently ignore the filter.
      */
-    it("agrees with the raw-text implementation on the count and the badge", async () => {
-        const c = await coverageRange();
-        const inside = await topMessages(
-            projectId,
-            { type: "custom", from: c.from.toISOString(), to: c.to.toISOString() },
-            10,
-        );
-        const before = new Date(c.from.getTime() - 60_000);
-        const overlapping = await topMessages(
-            projectId,
-            { type: "custom", from: before.toISOString(), to: c.to.toISOString() },
-            10,
-        );
+    it("falls back to raw text as soon as an environment filter is applied", async () => {
+        const c = await templateCoverage(projectId);
+        const map = await getProjectTopMessages([projectId], { from: c!.from ?? at(0), to: c!.to }, [
+            "production",
+        ]);
 
-        const viaRollup = inside.find((r) => r.message === TEMPLATE)!;
-        const viaEvents = overlapping.find((r) => r.message === RAW)!;
-
-        expect(viaRollup.count).toBe(viaEvents.count);
-        expect(viaRollup.dominantLevel).toBe(viaEvents.dominantLevel);
+        expect(map.get(projectId)?.message).toBe(RAW);
     });
 });

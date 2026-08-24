@@ -157,14 +157,27 @@ describe("overview cache", () => {
         });
 
         /**
-         * The top-message query reads raw `events` only, so unlike the
-         * statistics it has no rollup boundary to wait for first. One query,
-         * not two.
+        /**
+         * The property worth protecting is that one read covers the whole
+         * project list — not a literal query count.
+         *
+         * It asserted `toBe(1)` until 2026-08-24, on the premise that this
+         * query "reads raw `events` only, so it has no rollup boundary to wait
+         * for first". That premise is gone: it now asks how far the template
+         * rollup covers before choosing an implementation. The count changed
+         * for a reason that has nothing to do with fanning out per project,
+         * which is what the test exists to catch.
          */
-        it("reads the top message in a single query", async () => {
+        it("reads the top message without fanning out per project", async () => {
             await cachedProjectTopMessages([P1], "7d", RANGE);
+            const forOne = queryCount();
 
-            expect(queryCount()).toBe(1);
+            clearOverviewCaches();
+            executeMock.mockClear();
+            await cachedProjectTopMessages([P1, P2, "33333333-3333-4333-8333-333333333333"], "7d", RANGE);
+
+            expect(queryCount()).toBe(forOne);
+            expect(forOne).toBeGreaterThan(0);
         });
 
         it("caches them under separate entries", async () => {

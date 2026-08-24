@@ -48,6 +48,29 @@ export const events = pgTable(
         // These indexes are defined here for Drizzle awareness but also created via raw SQL in migration
         projectTimestampIdx: index("events_project_timestamp_idx").on(t.projectId, t.timestamp),
         projectLevelTimestampIdx: index("events_project_level_timestamp_idx").on(t.projectId, t.level, t.timestamp),
+        /**
+         * Answers one question instantly: is there any event without a
+         * fingerprint, and how old is the oldest one.
+         *
+         * `templateCoverage` needs that on every cache miss. Comparing the
+         * rollup's floor against the *range* instead — which is what it did
+         * until 2026-08-24 — sent every 7-day and 30-day read to the raw-text
+         * fallback, because the window began before the first event ever
+         * recorded. There were no events in the gap, so the rollup would have
+         * answered completely; the check was conservative about nothing.
+         *
+         * Partial on purpose. Ingest sets the hash on every row, so this index
+         * is **empty** in normal operation: no disk, and no maintenance on
+         * insert, since no row matches the predicate. A full index on
+         * `template_hash` would cost ~270 MB today and ~2.8 GB at 100M events,
+         * on a table whose indexes already outweigh its heap — and would speed
+         * up no query anyone runs. That one waits for the drill-down feature
+         * (`WHERE project_id = ? AND template_hash = ?`), which is the read
+         * that actually needs it.
+         */
+        unfingerprintedIdx: index("events_unfingerprinted_idx")
+            .on(t.timestamp)
+            .where(sql`${t.templateHash} IS NULL`),
         projectErrorTypeIdx: index("events_project_error_type_idx")
             .on(t.projectId, t.errorType, t.timestamp)
             .where(sql`${t.errorType} IS NOT NULL`),

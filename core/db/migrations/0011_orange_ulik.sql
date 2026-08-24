@@ -1,0 +1,1 @@
+CREATE INDEX "events_unfingerprinted_idx" ON "events" USING btree ("timestamp") WHERE "events"."template_hash" IS NULL;
