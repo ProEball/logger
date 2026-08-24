@@ -68,7 +68,25 @@ no floor would have inherited another's). 16 integration tests in
 `rollup-boundary.service.itest.ts`; verified by breaking the fix three ways,
 including disarming the guard, and confirming failures each time.
 
-### Frozen, deliberately
+### Postgres finished (2026-08-24, v0.7.0)
+
+The freeze was lifted once the ClickHouse triggers failed to fire, and the
+three deferred items shipped as one deployable unit:
+
+| | was | now |
+|---|---|---|
+| `topSources` | 856 ms, 29-41% I/O, raw `events` | rollup + tail (migration 0013) |
+| `topMessages` off the rollup | 547 ms, 0% I/O, `jsonb_each_text` | five generated `int` columns (0012) |
+| `getOrgTopErrors` | 104 ms, raw text, two `mode()` | template rollup + tail |
+
+**Every read surface on both dashboards is now rollup-backed**, except where
+one structurally cannot be: an environment filter on either message widget
+(`event_template_rollup` stores no environment), events with no fingerprint,
+and the surfaces that return rows rather than counts.
+
+Not yet measured on the resized host — the numbers above are the *before*.
+
+### Previously frozen
 
 - **`environment` into the rollup key** — designed and agreed; closes all three
   "falls back to raw events when an environment filter is active" holes at once.

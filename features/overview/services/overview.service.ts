@@ -423,6 +423,125 @@ export async function getOrgLevelBreakdown(
     return rows.map((r) => ({ level: r.level, count: Number(r.count) }));
 }
 
+/** getOrgTopErrors served from the template rollup. */
+async function getOrgTopErrorsFromRollup(
+    projectIds: string[],
+    from: Date,
+    to: Date,
+    boundary: Date,
+    limit: number,
+): Promise<OrgTopError[]> {
+    const rows = await db.execute<
+        RollupLevelRow & {
+            message: string;
+            count: string;
+            project_id: string;
+            latest_at: Date;
+        }
+    >(sql`
+        WITH cells AS (
+            SELECT r.project_id, r.template_hash,
+                   SUM(r.n_error)::int AS n_error,
+                   SUM(r.n_fatal)::int AS n_fatal,
+                   -- Only from minutes that actually contained an error. The
+                   -- rollup keeps one latest_at per (project, minute, template)
+                   -- across every level, so an info occurrence in a later
+                   -- minute would otherwise be reported as when this error was
+                   -- last seen. With the filter the residual error is bounded
+                   -- by the bucket: at most 60 seconds, when a single minute
+                   -- holds both an error and a later info line.
+                   MAX(r.latest_at) FILTER (WHERE r.n_error + r.n_fatal > 0) AS latest
+            FROM event_template_rollup r
+            WHERE r.project_id = ANY(ARRAY[${uuidArray(projectIds)}])
+              AND r.minute >= ${toTs(from)}
+              AND r.minute <  ${toTs(boundary)}
+            GROUP BY 1, 2
+
+            UNION ALL
+
+            SELECT e.project_id, e.template_hash,
+                   COUNT(*) FILTER (WHERE e.level = 'error')::int,
+                   COUNT(*) FILTER (WHERE e.level = 'fatal')::int,
+                   MAX(e.timestamp)
+            FROM events e
+            WHERE e.project_id = ANY(ARRAY[${uuidArray(projectIds)}])
+              AND e.timestamp >= ${toTs(boundary)}
+              AND e.timestamp <  ${toTs(to)}
+              AND e.template_hash IS NOT NULL
+              AND e.level IN ('error', 'fatal')
+            GROUP BY 1, 2
+        ),
+        per_project AS (
+            SELECT project_id, template_hash,
+                   SUM(n_error)::int AS n_error,
+                   SUM(n_fatal)::int AS n_fatal,
+                   SUM(n_error + n_fatal)::int AS total,
+                   MAX(latest) AS latest
+            FROM cells
+            GROUP BY 1, 2
+            HAVING SUM(n_error + n_fatal) > 0
+        ),
+        per_template AS (
+            SELECT template_hash,
+                   SUM(n_error)::int AS n_error,
+                   SUM(n_fatal)::int AS n_fatal,
+                   SUM(total)::int   AS total,
+                   MAX(latest)       AS latest
+            FROM per_project
+            GROUP BY 1
+            ORDER BY total DESC
+            LIMIT ${limit}
+        ),
+        owner AS (
+            -- Replaces mode() WITHIN GROUP (ORDER BY project_id), which picked
+            -- the project contributing the most rows. Same answer, but an
+            -- ordered-set aggregate forbids HashAggregate at any work_mem, and
+            -- that cost 9.8 s on this query's sibling. The window runs over one
+            -- row per (project, template) among the top N, which is tens.
+            SELECT pp.template_hash, pp.project_id,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY pp.template_hash
+                       ORDER BY pp.total DESC, pp.project_id
+                   ) AS rn
+            FROM per_project pp
+            JOIN per_template pt ON pt.template_hash = pp.template_hash
+        )
+        SELECT
+            COALESCE(mt.template, '(unknown template)') AS message,
+            t.total::text                               AS count,
+            o.project_id::text                          AS project_id,
+            t.latest                                    AS latest_at,
+            0 AS n_debug, 0 AS n_info, 0 AS n_warn,
+            t.n_error, t.n_fatal
+        FROM per_template t
+        JOIN owner o ON o.template_hash = t.template_hash AND o.rn = 1
+        LEFT JOIN message_templates mt
+               ON mt.project_id = o.project_id AND mt.template_hash = t.template_hash
+        ORDER BY t.total DESC
+    `);
+
+    return rows.map((r) => ({
+        message: r.message,
+        count: Number(r.count),
+        projectId: r.project_id,
+        // The HAVING above guarantees one of error/fatal is positive, which is
+        // what keeps pickDominantLevel from throwing on an all-zero row.
+        dominantLevel: pickDominantLevel(levelCounts(r)),
+        latestAt: new Date(r.latest_at),
+    }));
+}
+
+/**
+ * The most frequent error messages across the whole organization.
+ *
+ * **Two implementations, chosen by coverage**, and gated on there being no
+ * environment filter — `event_template_rollup` stores no environment, so a
+ * filtered question is one it cannot answer at all rather than one it answers
+ * slowly. Same gate `getProjectTopMessages` carries, and the same reason.
+ *
+ * The fallback also still serves events with no fingerprint, and it was the
+ * last read on either dashboard that grouped raw message text.
+ */
 export async function getOrgTopErrors(
     projectIds: string[],
     range: DateRange,
@@ -431,6 +550,15 @@ export async function getOrgTopErrors(
 ): Promise<OrgTopError[]> {
     if (projectIds.length === 0) return [];
     const { from, to } = range;
+
+    const unfiltered = !environments || environments.length === 0;
+    if (unfiltered) {
+        const coverage = await templateCoverageForProjects(projectIds);
+        if (coverage && (coverage.from === null || from >= coverage.from)) {
+            const boundary = to < coverage.to ? to : coverage.to;
+            return getOrgTopErrorsFromRollup(projectIds, from, to, boundary, limit);
+        }
+    }
 
     // Fixed, not parameterised. Until 2026-08-20 a caller-supplied level list
     // could widen this to any levels at all — so the widget labelled "top

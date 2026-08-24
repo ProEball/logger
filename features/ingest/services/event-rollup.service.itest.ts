@@ -4,8 +4,14 @@ import { sql } from "drizzle-orm";
 import { EVENT_LEVELS } from "@/shared/utils/event-filters.schema";
 import { templateHashForStorage } from "@/features/ingest/utils/normalize-message";
 import { topMessages, topSources } from "@/features/dashboard/services/aggregations.service";
-import { getProjectTopMessages } from "@/features/overview/services/overview.service";
-import { templateCoverage } from "@/shared/services/rollup-boundary.service";
+import {
+    getProjectTopMessages,
+    getOrgTopErrors,
+} from "@/features/overview/services/overview.service";
+import {
+    templateCoverage,
+    templateCoverageForProjects,
+} from "@/shared/services/rollup-boundary.service";
 import { db } from "@/core/db/client";
 import {
     ENVIRONMENT_KEY_CAP,
@@ -1046,5 +1052,168 @@ describe("topSources over the rollup", () => {
                 WHERE project_id = ${projectId}::uuid AND minute = ${at(MINUTE).toISOString()}::timestamptz
             `);
         }
+    });
+});
+
+/**
+ * getOrgTopErrors over the template rollup.
+ *
+ * Two projects, on purpose. The rollup version has to pick a representative
+ * project per template, replacing mode() WITHIN GROUP (ORDER BY project_id) --
+ * an ordered-set aggregate, which forbids HashAggregate at any work_mem. A
+ * single-project fixture would return the right answer no matter how that pick
+ * were written, so it would test nothing about the part that changed.
+ *
+ * Same text discriminator as the rest of this file: events carry job_88 while
+ * the registered template carries ***, so the returned message says which
+ * implementation ran.
+ */
+describe("getOrgTopErrors over the template rollup", () => {
+    const RAW = "Queue job_88 crashed";
+    const TEMPLATE = "Queue *** crashed";
+    const OTHER = randomUUID();
+
+    async function rebuildProject(id: string): Promise<void> {
+        for (let i = 0; i < 40; i++) {
+            const [state] = await db.execute<{ refresh_from: Date }>(sql`
+                SELECT refresh_from FROM rollup_state WHERE project_id = ${id}::uuid
+            `);
+            const result = await rebuildRollupForProject(id, new Date(state.refresh_from));
+            if (!result.hasMore) return;
+        }
+        throw new Error("rollup did not catch up within 40 runs");
+    }
+
+    async function insertErrors(id: string, count: number, offsetMinutes: number) {
+        for (let i = 0; i < count; i++) {
+            await db.execute(sql`
+                INSERT INTO events (id, project_id, timestamp, level, message, environment, template_hash)
+                VALUES (
+                    ${randomUUID()}::uuid, ${id}::uuid,
+                    ${at(offsetMinutes).toISOString()}::timestamptz,
+                    'error', ${RAW}, 'production',
+                    ${templateHashForStorage(RAW).toString()}::bigint
+                )
+            `);
+        }
+        await db.execute(sql`
+            INSERT INTO message_templates (project_id, template_hash, template, normalizer_version)
+            VALUES (${id}::uuid, ${templateHashForStorage(RAW).toString()}::bigint, ${TEMPLATE}, 1)
+            ON CONFLICT DO NOTHING
+        `);
+    }
+
+    beforeAll(async () => {
+        await db.execute(sql`
+            INSERT INTO projects (id, organization_id, name, slug)
+            VALUES (${OTHER}::uuid, ${ORG_A}::uuid, 'Rollup Other', ${`rollup-other-${OTHER.slice(0, 8)}`})
+        `);
+        await db.execute(sql`
+            INSERT INTO rollup_state (project_id, refresh_from)
+            VALUES (${OTHER}::uuid, ${ANCHOR.toISOString()}::timestamptz)
+        `);
+
+        // Deliberately lopsided: the owning project is the one with more.
+        await insertErrors(projectId, 7, 35);
+        await insertErrors(OTHER, 3, 35);
+
+        await markRollupDirty(projectId, at(35));
+        await markRollupDirty(OTHER, at(35));
+        await rebuildProject(projectId);
+        await rebuildProject(OTHER);
+    });
+
+    afterAll(async () => {
+        await db.execute(sql`DELETE FROM events WHERE project_id = ${OTHER}::uuid`);
+        await db.execute(sql`DELETE FROM projects WHERE id = ${OTHER}::uuid`);
+    });
+
+    /** A range both projects' rollups fully cover. */
+    async function coveredRange() {
+        const c = await templateCoverageForProjects([projectId, OTHER]);
+        expect(c, "both projects must be covered for these tests to mean anything").not.toBeNull();
+        return { from: c!.from ?? at(0), to: c!.to };
+    }
+
+    it("groups by template rather than raw text", async () => {
+        const rows = await getOrgTopErrors([projectId, OTHER], await coveredRange(), undefined, 20);
+        const row = rows.find((r) => r.message === TEMPLATE);
+
+        // The raw text carries job_88; only the rollup path can return ***.
+        expect(row).toBeDefined();
+        expect(rows.some((r) => r.message === RAW)).toBe(false);
+    });
+
+    it("sums the template across every project in scope", async () => {
+        const rows = await getOrgTopErrors([projectId, OTHER], await coveredRange(), undefined, 20);
+        expect(rows.find((r) => r.message === TEMPLATE)!.count).toBe(10);
+    });
+
+    it("attributes the row to the project with the most occurrences", async () => {
+        const rows = await getOrgTopErrors([projectId, OTHER], await coveredRange(), undefined, 20);
+        // 7 against 3. This is what mode() WITHIN GROUP used to answer.
+        expect(rows.find((r) => r.message === TEMPLATE)!.projectId).toBe(projectId);
+    });
+
+    it("badges the row from the level counts", async () => {
+        const rows = await getOrgTopErrors([projectId, OTHER], await coveredRange(), undefined, 20);
+        expect(rows.find((r) => r.message === TEMPLATE)!.dominantLevel).toBe("error");
+    });
+
+    /**
+     * The gate, and the reason it exists: event_template_rollup stores no
+     * environment, so a filtered question is one it cannot answer at all --
+     * not one it answers slowly. Answering it from the rollup anyway would
+     * ignore the filter silently.
+     */
+    /**
+     * The tail, which the tests above cannot reach: they all end at the
+     * coverage ceiling, so the tail window is empty and its counters never run.
+     * Zeroing the tail's fatal counter broke nothing until this existed --
+     * the third time that exact gap has appeared in this file.
+     *
+     * It matters most here. The tail is the newest minute, and a fatal arriving
+     * now is precisely what a top-errors widget exists to surface.
+     */
+    it("counts fatals arriving above the rollup ceiling", async () => {
+        const c = await templateCoverageForProjects([projectId, OTHER]);
+        const ceiling = c!.to;
+
+        for (let i = 0; i < 2; i++) {
+            await db.execute(sql`
+                INSERT INTO events (id, project_id, timestamp, level, message, environment, template_hash)
+                VALUES (
+                    ${randomUUID()}::uuid, ${projectId}::uuid,
+                    ${new Date(ceiling.getTime() + (i + 1) * 1000).toISOString()}::timestamptz,
+                    'fatal', ${RAW}, 'production',
+                    ${templateHashForStorage(RAW).toString()}::bigint
+                )
+            `);
+        }
+
+        const rows = await getOrgTopErrors(
+            [projectId, OTHER],
+            { from: c!.from ?? at(0), to: new Date(ceiling.getTime() + 60_000) },
+            undefined,
+            20,
+        );
+        const row = rows.find((r) => r.message === TEMPLATE);
+
+        // 7 + 3 from the rollup, 2 from the tail.
+        expect(row).toBeDefined();
+        expect(row!.count).toBe(12);
+        // Ten errors against two fatals, so the badge stays on the frequent one.
+        expect(row!.dominantLevel).toBe("error");
+    });
+    it("falls back to raw text when an environment filter is active", async () => {
+        const rows = await getOrgTopErrors(
+            [projectId, OTHER],
+            await coveredRange(),
+            ["production"],
+            20,
+        );
+
+        expect(rows.some((r) => r.message === RAW)).toBe(true);
+        expect(rows.some((r) => r.message === TEMPLATE)).toBe(false);
     });
 });
