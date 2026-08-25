@@ -79,9 +79,9 @@ npm run db:push        # drizzle-kit push (dev convenience, no migration file)
 npm run db:studio      # drizzle-kit studio
 npm run test            # vitest run — unit tests, jsdom, needs no database
 npm run test:it          # vitest run --config vitest.integration.config.ts — needs Postgres
-npm run test:e2e         # playwright test --pass-with-no-tests
+npm run test:e2e         # node scripts/migrate-e2e.mjs && playwright test --pass-with-no-tests
 npm run bench:seed       # builds the benchmark corpus in logger_bench (BENCH_EVENTS=500000 by default)
-npm run bench            # vitest bench — measures whatever DATABASE_URL points at
+npm run bench            # vitest bench — measures whatever DATABASE_URL points at; refuses a database behind the migrations
 npm run db:migrate:e2e    # applies migrations to the isolated e2e database (logger_test) — see misc.md#testing
 npm run demo              # node scripts/demo-live.mjs (seeds a running instance via the ingest API)
 ```
@@ -98,6 +98,8 @@ npm run dev                                       # app on http://localhost (por
 E2E tests do **not** run against this dev database — they need a one-time separate setup (`logger_test` database + `.env.e2e.local`); see [misc.md#testing](misc.md#testing) before running `npm run test:e2e` for the first time.
 
 **Four databases, one Postgres instance:** `logger` (dev), `logger_test` (e2e), `logger_itest` (integration), `logger_bench` (benchmarks). Only the first two need setting up by hand — `npm run test:it` creates `logger_itest` and `npm run bench:seed` creates `logger_bench`, each installing `pg_partman` and migrating on its own. The difference between the last two is lifetime: `logger_itest` is dropped and reseeded on **every** run (~40 rows, ~1 s), `logger_bench` is seeded once and reused (500k rows, ~14 s). Override connections with `ITEST_DATABASE_URL` / `ITEST_ADMIN_URL` / `BENCH_DATABASE_URL` if Postgres is not on the default local port.
+
+**Only `logger` is your responsibility to migrate.** Each of the other three now handles the migrations folder itself, in the way that suits it — `test:e2e` and `test:it` migrate their database before running, `bench` *checks* its database and refuses to measure a stale one (it may be pointed at staging, where a test run must not run DDL). See [misc.md#testing](misc.md#testing) for why that split exists.
 
 `docker-compose.dev.yml` builds `db/Dockerfile` (`postgres:16` + `postgresql-16-partman` apt package) and mounts `db/init/01-extensions.sql` (runs `CREATE EXTENSION IF NOT EXISTS pg_partman;` and `pg_stat_statements` at container init) plus a named volume for data persistence.
 

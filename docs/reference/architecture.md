@@ -14,7 +14,8 @@ itest/          Support code for the integration suite (`*.itest.ts` files live
                 beside their sources; only the harness lives here)
 bench/          Benchmark support + committed baselines (`*.bench.ts` likewise
                 live beside their sources)
-scripts/        Build and operational scripts (worker bundling, backup/restore, ingest load generators)
+scripts/        Build and operational scripts (worker bundling, backup/restore,
+                ingest load generators, migration drift detection)
 .github/        CI and release workflows
 ```
 

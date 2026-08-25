@@ -1,5 +1,6 @@
 import { defineConfig } from "vitest/config";
 import { resolve } from "path";
+import { BENCH_DATABASE_URL } from "./bench/support/env";
 
 /**
  * Benchmarks — `npm run bench`.
@@ -30,14 +31,17 @@ export default defineConfig({
         benchmark: {
             include: ["**/*.bench.ts"],
         },
+        // Refuses to run against a database behind core/db/migrations. `bench`
+        // checks rather than migrates, because the target may be staging over
+        // an SSH tunnel; without the check a stale corpus measures the wrong
+        // query plan and reports it as a number. See bench/support/global-setup.ts.
+        globalSetup: ["./bench/support/global-setup.ts"],
         env: {
             // Falls back to the local bench corpus. Override to point the same
             // benchmark somewhere else:
             //   ssh -N -L 5433:localhost:5432 user@host
             //   DATABASE_URL=postgresql://logger:…@localhost:5433/logger npm run bench
-            DATABASE_URL:
-                process.env.DATABASE_URL ??
-                "postgresql://postgres:postgres@localhost:5432/logger_bench",
+            DATABASE_URL: BENCH_DATABASE_URL,
             AUTH_SECRET: "bench-secret-at-least-32-characters-long",
             APP_URL: "http://localhost",
             LOG_LEVEL: "fatal",

@@ -14,7 +14,7 @@
     "db:studio": "drizzle-kit studio",
     "db:migrate:e2e": "node scripts/migrate-e2e.mjs",
     "test": "vitest run",
-    "test:e2e": "playwright test --pass-with-no-tests",
+    "test:e2e": "node scripts/migrate-e2e.mjs && playwright test --pass-with-no-tests",
     "demo": "node scripts/demo-live.mjs",
     "test:it": "vitest run --config vitest.integration.config.ts",
     "bench": "vitest bench --run --config vitest.bench.config.ts",
