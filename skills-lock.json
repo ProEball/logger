@@ -1,0 +1,77 @@
+{
+  "version": 1,
+  "skills": {
+    "chdb-datastore": {
+      "source": "clickhouse/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/chdb-datastore/SKILL.md",
+      "computedHash": "1e58471f70c7085a9b73437b02d96bd30ba449c0fa99d836250aeb25504f75c0"
+    },
+    "chdb-sql": {
+      "source": "clickhouse/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/chdb-sql/SKILL.md",
+      "computedHash": "5042ecc96cb57e19d276751cbabd7be384fb351936a7b202eda67ad98bd195dc"
+    },
+    "clickhouse-architecture-advisor": {
+      "source": "clickhouse/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/clickhouse-architecture-advisor/SKILL.md",
+      "computedHash": "7fe4022c8b97ee0d5590e204a69122d186ac9bec63dac4a3d5eda866486e8800"
+    },
+    "clickhouse-best-practices": {
+      "source": "clickhouse/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/clickhouse-best-practices/SKILL.md",
+      "computedHash": "986bb494217b6789b19e83848d32b1597ca6cf292a490992f9ca82067a5fb0ec"
+    },
+    "clickhouse-js-node-troubleshooting": {
+      "source": "clickhouse/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/clickhouse-js-node-troubleshooting/SKILL.md",
+      "computedHash": "c92b6061c08ddf2b104dbbf77e40d577a9f175b1fed5887bc345bdb462938db3"
+    },
+    "clickstack-otel-collector": {
+      "source": "clickhouse/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/clickstack-otel-collector/SKILL.md",
+      "computedHash": "faa7e0880d51a8af308082e4ba5e8c31beccd889a78f995d5af2fac073b44c62"
+    },
+    "infra-clickhouse": {
+      "source": "clickhouse/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/infra-clickhouse/SKILL.md",
+      "computedHash": "a8e7d2dc97340711bb18ea9c6ee682f0938fc442ed1d7af61c66b206bf3aff0a"
+    },
+    "infra-postgres": {
+      "source": "clickhouse/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/infra-postgres/SKILL.md",
+      "computedHash": "f1b7ee1635fd68ef0d66dc70499ac14e3f2bf894dbf969ae0ed2764b32449d8d"
+    },
+    "next-cache-components-adoption": {
+      "source": "vercel/next.js",
+      "sourceType": "github",
+      "skillPath": "skills/next-cache-components-adoption/SKILL.md",
+      "computedHash": "41bc0b6a4cccf16ce53e59124ff9e0cbbfcc73c21cab663128405f3029dd298f"
+    },
+    "next-cache-components-optimizer": {
+      "source": "vercel/next.js",
+      "sourceType": "github",
+      "skillPath": "skills/next-cache-components-optimizer/SKILL.md",
+      "computedHash": "a45e680bcb933982e8d71e3b3f45b500ab1edc1aa94b1fbd95d8601776e19bed"
+    },
+    "next-dev-loop": {
+      "source": "vercel/next.js",
+      "sourceType": "github",
+      "skillPath": "skills/next-dev-loop/SKILL.md",
+      "computedHash": "d2a697a0a0429cad0bb7264644115457f588d4ed1007eeb0bb7f965b1185fa6e"
+    },
+    "next-partial-prefetching-adoption": {
+      "source": "vercel/next.js",
+      "sourceType": "github",
+      "skillPath": "skills/next-partial-prefetching-adoption/SKILL.md",
+      "computedHash": "65793d7a4cf56b8599dc3735dba2ef334ac54b7c29e831d0c9f4d9d25c71f206"
+    }
+  }
+}
