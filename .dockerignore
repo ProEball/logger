@@ -29,6 +29,11 @@ build
 .vscode
 .claude
 
+# Phase 0 measurement harness (docs/features/09-clickhouse.md §13). Throwaway
+# by design and never executed by the app; `docker-compose*.yml` below already
+# excludes its compose file, but the directory itself would otherwise be copied.
+lab
+
 # Tests and their artifacts — not run inside the image.
 e2e
 test-results

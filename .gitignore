@@ -63,3 +63,6 @@ next-env.d.ts
 # survives its own deletion, in the history and in every fork and cache that
 # history reaches. This repository is public.
 scripts/*.local.mjs
+
+# Phase 0 lab output — measurement artifacts, regenerated on every run.
+lab/clickhouse/out/

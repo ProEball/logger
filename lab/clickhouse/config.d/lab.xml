@@ -1,0 +1,43 @@
+<!--
+  Memory ceilings that mirror the production host's share, not the laptop's.
+
+  ClickHouse's defaults assume a dedicated machine: it will size caches against
+  whatever RAM it can see. On the target host it shares 8 GB with Postgres, the
+  app, the worker and Caddy, so the plan budgets it 3-4 GB. Measuring with the
+  defaults would produce numbers that cannot be reproduced in production and
+  would flatter every query that fits in a cache it will not have.
+
+  This is the same failure the project already paid for once: two weeks of
+  Postgres tuning in docs/PROGRESS.md were measured without checking that the
+  host had 4 GB and shared_buffers was at its 128 MB default.
+-->
+<clickhouse>
+    <!-- Redundant with the image's own docker_related_config.xml, and stated
+         anyway: without it the server binds 127.0.0.1 inside the container and
+         is unreachable from the host while still reporting healthy. Cheap
+         insurance against that file moving or being shadowed again. -->
+    <listen_host>::</listen_host>
+
+    <max_server_memory_usage>3221225472</max_server_memory_usage>
+
+    <!-- Marks are the sparse index; this is the cache that decides whether
+         granule skipping is cheap. Deliberately modest. -->
+    <mark_cache_size>536870912</mark_cache_size>
+
+    <!-- Off. With it on, a repeated query reads its own previous result and
+         `read_bytes` stops describing the storage layout — which is the only
+         thing the lab is trying to measure. -->
+    <uncompressed_cache_size>0</uncompressed_cache_size>
+
+    <!-- query_log is how measure.mjs learns read_rows. On by default; stated
+         here so a stripped config cannot silently break every measurement. -->
+    <query_log>
+        <database>system</database>
+        <table>query_log</table>
+        <flush_interval_milliseconds>1000</flush_interval_milliseconds>
+    </query_log>
+
+    <logger>
+        <level>warning</level>
+    </logger>
+</clickhouse>
