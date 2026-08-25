@@ -18,7 +18,11 @@
     "demo": "node scripts/demo-live.mjs",
     "test:it": "vitest run --config vitest.integration.config.ts",
     "bench": "vitest bench --run --config vitest.bench.config.ts",
-    "bench:seed": "node scripts/seed-bench.mjs"
+    "bench:seed": "node scripts/seed-bench.mjs",
+    "ch:up": "docker compose -f lab/clickhouse/docker-compose.yml up -d",
+    "ch:down": "docker compose -f lab/clickhouse/docker-compose.yml down -v",
+    "ch:seed": "node lab/clickhouse/seed.mjs",
+    "ch:measure": "node lab/clickhouse/measure.mjs"
   },
   "dependencies": {
     "@floating-ui/react": "^0.27.19",

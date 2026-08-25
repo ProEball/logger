@@ -1,0 +1,49 @@
+# Phase 0 lab — ClickHouse only. Deleted with the rest of `lab/` once the
+# decision in docs/features/09-clickhouse.md is made either way.
+#
+# Named explicitly so it can never share a namespace with `logger` (the dev
+# stack) or `logger-prod`. Both of those own a Postgres volume, and a compose
+# file that adopted their project name could recreate it.
+name: logger-chlab
+
+services:
+  clickhouse:
+    # Pin the version. The JSON type is the newest construct in the proposed
+    # schema and its behaviour is version-dependent — experiment 2 is only
+    # meaningful against a stated version, and `seed.mjs` prints the one it
+    # actually got. If this tag does not resolve, pick a current release and
+    # record which one in the results.
+    image: clickhouse/clickhouse-server:25.3
+    restart: unless-stopped
+    ports:
+      - "8123:8123" # HTTP — what ch.mjs talks to
+      - "9000:9000" # native, for clickhouse-client if you want a shell
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    environment:
+      CLICKHOUSE_DB: logger
+      CLICKHOUSE_USER: logger
+      CLICKHOUSE_PASSWORD: logger
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+    volumes:
+      # A **file**, not the directory. Mounting `./config.d` over
+      # `/etc/clickhouse-server/config.d` hides what the image already put
+      # there — including `docker_related_config.xml`, which is the only place
+      # `<listen_host>::</listen_host>` is set. Without it ClickHouse binds
+      # 127.0.0.1 inside the container, docker-proxy accepts the connection on
+      # the host and the backend refuses it, and every request fails as
+      # "Empty reply from server" while the container's own healthcheck — which
+      # runs inside — reports healthy. Cost 10 minutes on 2026-08-26.
+      - ./config.d/lab.xml:/etc/clickhouse-server/config.d/lab.xml:ro
+      - ch_data:/var/lib/clickhouse
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8123/ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+volumes:
+  ch_data:
