@@ -72,3 +72,55 @@
     }
 }
 
+
+// ── Pending navigation ─────────────────────────────────────────────────
+// The pills dim while a filter change is in flight. Same shape and the same
+// timings as `DashboardHeader.module.scss`, deliberately: the two bars sit one
+// navigation apart and a different busy treatment on each would read as two
+// different kinds of wait.
+//
+// The 120 ms delay is the point of the animation rather than decoration — a
+// navigation that resolves faster than that never dims at all, so the common
+// case gains no flicker while a slow one still says "working".
+.groupPending {
+    pointer-events: none;
+    animation: groupPendingIn 120ms linear 120ms forwards;
+}
+
+@keyframes groupPendingIn {
+    from { opacity: 1; }
+    to   { opacity: 0.5; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .groupPending {
+        animation: none;
+        opacity: 0.5;
+    }
+}
+
+// ── Leading slot ───────────────────────────────────────────────────────
+// The project dashboard's title and live rate, where its own header used to
+// be. `flex-shrink: 0` so a long project name pushes the pills into the bar's
+// horizontal scroll rather than squeezing them.
+.leading {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+    margin-right: 4px;
+}
+
+.leadingTitle {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--fg-1);
+    white-space: nowrap;
+}
+
+.leadingRate {
+    font-size: 11px;
+    font-family: var(--font-mono);
+    color: var(--fg-3);
+    white-space: nowrap;
+}

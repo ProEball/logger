@@ -20,6 +20,12 @@ const eslintConfig = defineConfig([
     "dist/**",
     // Design system handoff bundle from claude.ai/design — reference, not our code.
     "docs/designs/**",
+    // Git worktrees for agent tasks. Each is a full checkout, so without this
+    // one background task gets its whole copy of the tree linted as if it were
+    // this one — including paths the entries above exempt here but cannot match
+    // through a worktree prefix. Observed 2026-08-25: three warnings from
+    // `docs/designs/**` files that are ignored in the main tree.
+    ".claude/worktrees/**",
   ]),
   {
     rules: {

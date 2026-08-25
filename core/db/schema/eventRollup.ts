@@ -1,4 +1,4 @@
-import { integer, jsonb, pgTable, primaryKey, timestamp, uuid } from "drizzle-orm/pg-core";
+import { integer, jsonb, pgTable, primaryKey, text, timestamp, uuid } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 
 import { projects } from "./projects";
@@ -12,19 +12,30 @@ import { projects } from "./projects";
  * opening the same dashboard in the same second each ran the full set, over
  * slightly different `now()` values, and saw slightly different numbers.
  *
- * One row per `(project, minute)` — deliberately, rather than a row per
- * `(project, minute, level, environment)`. The finer key multiplies rows by
- * dimensions the *client* controls: `environment` is `z.string().max(128)` at
- * ingest, so a project sending a unique environment per deploy would multiply
- * the table without bound. Keeping the breakdowns inside one row degrades that
- * into a fatter row rather than a row explosion, and the key count is capped
- * (see `ENVIRONMENT_KEY_CAP` in the rollup service).
+ * One row per `(project, minute, environment)` since 2026-08-25. It was
+ * `(project, minute)` with environment kept as a `by_env` marginal, and that
+ * design was **measured wrong**: `by_level` and `by_env` could each be summed
+ * alone but neither could answer "how many errors in production", so every
+ * environment-filtered read fell back to scanning raw `events`. Benchmarked
+ * 2026-08-25 on 500k events, that cost `projectStats` 4.47 ms → 17.20 and
+ * `levelBreakdown` 7.16 → 15.36, and it was the reason the volume chart could
+ * not show an error ratio under a filter at all.
  *
- * **`by_level` and `by_env` are marginals, not a joint distribution.** Either
- * can be summed on its own; "how many errors in production" cannot be answered
- * from them, so a read filtering by level *and* environment at once falls back
- * to `events`. Storing the cross product instead would make every 30-day read
- * walk a nested object on 43,200 rows per project to serve a rare filter.
+ * **The original objection was real and is answered by the cap, not dismissed.**
+ * `environment` is `z.string().max(128)` at ingest, so a project sending a
+ * unique value per deploy would multiply rows without bound. The tail beyond
+ * `ENVIRONMENT_KEY_CAP` folds into a single `(other)` row per minute, so the
+ * multiplier is bounded by the cap rather than by the client. What the previous
+ * design got wrong was the *shape*: a cross product inside jsonb would indeed
+ * have made every 30-day read walk a nested object, but a key column is not a
+ * cross product — it is one more integer comparison in an index.
+ *
+ * **`(other)` is load-bearing.** A minute that folded anything is a minute whose
+ * per-environment counts are incomplete, so a *filtered* read must not use it.
+ * Readers check for it rather than trusting the cap to have been generous
+ * enough — see `envRollupFloor` in `event-aggregations.service.ts`. That check
+ * is exact in the only direction that matters: it never serves a wrong number,
+ * it only sometimes does more work.
  *
  * Only minutes that had events get a row. Materialising empty minutes would
  * mean 1,440 rows per project per day regardless of traffic — more rows than
@@ -39,11 +50,25 @@ export const eventRollupMinutes = pgTable(
             .references(() => projects.id, { onDelete: "cascade" }),
         /** Start of the minute, `date_trunc('minute', timestamp)`. */
         minute: timestamp("minute", { withTimezone: true }).notNull(),
+        /**
+         * The environment these counts belong to — part of the key since
+         * 2026-08-25. Three values are reserved and none can come from a client,
+         * because ingest never writes a name in parentheses:
+         *
+         * - `(unset)` — the event carried no environment. Already the label every
+         *   read used for that case, so nothing downstream changed.
+         * - `(other)` — the tail beyond `ENVIRONMENT_KEY_CAP` for this minute,
+         *   folded together. **Its presence in a range is what tells a reader a
+         *   filtered question cannot be answered here**, so it is a signal, not
+         *   just a bucket.
+         * - `(all)` — stamped by migration 0014 on rows that predate this column
+         *   and therefore mix every environment together. Summing across it is
+         *   exact; a filtered read must not touch it.
+         */
+        environment: text("environment").notNull(),
         total: integer("total").notNull(),
         /** `{"info": 412, "error": 7}` — counts per level within this minute. */
         byLevel: jsonb("by_level").notNull().default(sql`'{}'::jsonb`),
-        /** `{"production": 380, "(unset)": 39}` — counts per environment. */
-        byEnv: jsonb("by_env").notNull().default(sql`'{}'::jsonb`),
         /**
          * `{"api": 402, "worker": 49}` — counts per source, capped like
          * `by_env` and folded into `(other)` beyond the cap.
@@ -80,7 +105,7 @@ export const eventRollupMinutes = pgTable(
         computedAt: timestamp("computed_at", { withTimezone: true }).notNull().defaultNow(),
     },
     (t) => ({
-        pk: primaryKey({ columns: [t.projectId, t.minute] }),
+        pk: primaryKey({ columns: [t.projectId, t.minute, t.environment] }),
     }),
 );
 

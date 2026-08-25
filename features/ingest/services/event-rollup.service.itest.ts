@@ -3,11 +3,11 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { sql } from "drizzle-orm";
 import { EVENT_LEVELS } from "@/shared/utils/event-filters.schema";
 import { templateHashForStorage } from "@/features/ingest/utils/normalize-message";
-import { topMessages, topSources } from "@/features/dashboard/services/aggregations.service";
+import { hasAnyEvents, topSources } from "@/shared/services/event-aggregations.service";
 import {
-    getProjectTopMessages,
-    getOrgTopErrors,
-} from "@/features/overview/services/overview.service";
+    projectStats,
+    topMessagePerProject,
+} from "@/shared/services/event-aggregations.service";
 import {
     templateCoverage,
     templateCoverageForProjects,
@@ -21,15 +21,12 @@ import {
     rebuildRollupForProject,
 } from "@/features/ingest/services/event-rollup.service";
 import {
-    getOrgEventBuckets,
-    getOrgLevelBreakdown,
-    getProjectStats,
-} from "@/features/overview/services/overview.service";
-import {
-    eventsPerMinute,
-    hasAnyEvents,
+    eventBuckets,
+    eventBucketsByLevel,
     levelBreakdown,
-} from "@/features/dashboard/services/aggregations.service";
+    topMessages,
+} from "@/shared/services/event-aggregations.service";
+import { resolveRange } from "@/shared/utils/dashboard-filters";
 import { ORG_A } from "@/itest/support/fixture";
 
 /**
@@ -146,13 +143,21 @@ afterAll(async () => {
 
 describe("rebuildRollupForProject", () => {
     it("writes one row per minute that had events, and none for minutes that did not", async () => {
-        const rows = await db.execute<{ minute: Date; total: number }>(sql`
-            SELECT minute, total FROM event_rollup_minutes
-            WHERE project_id = ${projectId}::uuid ORDER BY minute
+        const rows = await db.execute<{ minute: Date; environment: string; total: number }>(sql`
+            SELECT minute, environment, total FROM event_rollup_minutes
+            WHERE project_id = ${projectId}::uuid ORDER BY minute, environment
         `);
         // Minutes 0, 1 and 3 — never 2. Materialising empty minutes would put
         // 1,440 rows a day behind a project that sent ten events.
-        expect(rows.map((r) => Number(r.total))).toEqual([16, 5, 7]);
+        //
+        // Minute 0 is now **two** rows: `environment` joined the key on
+        // 2026-08-25, and that minute holds 15 production events and 1 staging.
+        expect(rows.map((r) => [r.environment, Number(r.total)])).toEqual([
+            ["production", 15], // 12 info + 3 error
+            ["staging", 1],     // the fatal
+            ["(unset)", 5],
+            ["production", 7],
+        ]);
     });
 
     it("totals agree with a direct count of events", async () => {
@@ -165,19 +170,25 @@ describe("rebuildRollupForProject", () => {
     it("derives errors from by_level rather than storing them twice", async () => {
         const [row] = await db.execute<{ errors: number; by_level: Record<string, number> }>(sql`
             SELECT errors, by_level FROM event_rollup_minutes
-            WHERE project_id = ${projectId}::uuid AND minute = ${at(0).toISOString()}::timestamptz
+            WHERE project_id = ${projectId}::uuid
+              AND minute = ${at(0).toISOString()}::timestamptz
+              AND environment = 'production'
         `);
-        // 3 error + 1 fatal, and the column is GENERATED — the job never writes it.
-        expect(Number(row.errors)).toBe(4);
-        expect(row.by_level).toMatchObject({ error: 3, fatal: 1, info: 12 });
+        // Production at minute 0 is 12 info + 3 error; the single fatal is
+        // staging and now lives in its own row. The column is GENERATED — the
+        // job writes only the JSON.
+        expect(Number(row.errors)).toBe(3);
+        expect(row.by_level).toMatchObject({ error: 3, info: 12 });
     });
 
     it("labels an absent environment '(unset)', as every other read does", async () => {
-        const [row] = await db.execute<{ by_env: Record<string, number> }>(sql`
-            SELECT by_env FROM event_rollup_minutes
+        const [row] = await db.execute<{ environment: string; total: number }>(sql`
+            SELECT environment, total FROM event_rollup_minutes
             WHERE project_id = ${projectId}::uuid AND minute = ${at(1).toISOString()}::timestamptz
         `);
-        expect(row.by_env).toEqual({ "(unset)": 5 });
+        // The label is unchanged; it moved from a jsonb key to the key column.
+        expect(row.environment).toBe("(unset)");
+        expect(Number(row.total)).toBe(5);
     });
 
     it("never materialises the minute still in progress", async () => {
@@ -236,17 +247,47 @@ describe("rebuildRollupForProject", () => {
         await markRollupDirty(projectId, at(10));
         await rebuildFully();
 
-        const [row] = await db.execute<{ by_env: Record<string, number>; total: number }>(sql`
-            SELECT by_env, total FROM event_rollup_minutes
+        const rows = await db.execute<{ environment: string; total: number }>(sql`
+            SELECT environment, total FROM event_rollup_minutes
             WHERE project_id = ${projectId}::uuid AND minute = ${at(10).toISOString()}::timestamptz
         `);
-        const keys = Object.keys(row.by_env);
-        expect(keys.length).toBeLessThanOrEqual(ENVIRONMENT_KEY_CAP + 1);
-        expect(keys).toContain("(other)");
+
+        // Since 2026-08-25 the cap bounds **rows**, not keys in a jsonb object:
+        // at most the cap plus one `(other)`.
+        expect(rows.length).toBeLessThanOrEqual(ENVIRONMENT_KEY_CAP + 1);
+        expect(rows.map((r) => r.environment)).toContain("(other)");
         // Folding must not lose events — only the labels.
-        const summed = Object.values(row.by_env).reduce((a, b) => a + Number(b), 0);
-        expect(summed).toBe(Number(row.total));
+        const summed = rows.reduce((a, r) => a + Number(r.total), 0);
+        expect(summed).toBe(ENVIRONMENT_KEY_CAP + 5);
     });
+
+    /**
+     * The property the whole `(other)` design rests on: a folded minute must be
+     * **detectable**, because a filtered read that used it would report an
+     * environment as quiet when it was merely folded. `envRollupFloor` looks for
+     * exactly this row.
+     */
+    it("marks a folded minute with a row a reader can find", async () => {
+        const [row] = await db.execute<{ n: string }>(sql`
+            SELECT COUNT(*)::text AS n FROM event_rollup_minutes
+            WHERE project_id = ${projectId}::uuid
+              AND minute = ${at(10).toISOString()}::timestamptz
+              AND environment = '(other)'
+        `);
+        expect(Number(row.n)).toBe(1);
+    });
+
+    it("leaves no (other) row on a minute within the cap", async () => {
+        // Minute 0 has two environments, well inside the cap of five.
+        const [row] = await db.execute<{ n: string }>(sql`
+            SELECT COUNT(*)::text AS n FROM event_rollup_minutes
+            WHERE project_id = ${projectId}::uuid
+              AND minute = ${at(0).toISOString()}::timestamptz
+              AND environment = '(other)'
+        `);
+        expect(Number(row.n)).toBe(0);
+    });
+
 });
 
 describe("markRollupDirty", () => {
@@ -291,21 +332,21 @@ describe("reads combine the rollup with the un-rolled-up tail", () => {
         `);
 
         const range = { from: ANCHOR, to: new Date(Date.now() + 1000) };
-        const buckets = await getOrgEventBuckets([projectId], range, 60);
-        const total = buckets.reduce((s, b) => s + b.count, 0);
+        const buckets = await eventBucketsByLevel([projectId], range, 60);
+        const total = buckets.reduce((s: number, b: { total: number }) => s + b.total, 0);
 
         expect(total).toBe(await rawCount(0, 120));
     });
 
     it("matches a direct count of events over the whole range", async () => {
         const range = { from: ANCHOR, to: new Date(Date.now() + 1000) };
-        const buckets = await getOrgEventBuckets([projectId], range, 3600);
-        expect(buckets.reduce((s, b) => s + b.count, 0)).toBe(await rawCount(0, 120));
+        const buckets = await eventBuckets([projectId], range, 3600);
+        expect(buckets.reduce((s: number, b: { total: number }) => s + b.total, 0)).toBe(await rawCount(0, 120));
     });
 
     it("breaks levels down to the same numbers a raw GROUP BY gives", async () => {
         const range = { from: ANCHOR, to: new Date(Date.now() + 1000) };
-        const fromRollup = await getOrgLevelBreakdown([projectId], range);
+        const fromRollup = await levelBreakdown([projectId], range);
 
         const raw = await db.execute<{ level: string; n: string }>(sql`
             SELECT level, COUNT(*)::text AS n FROM events
@@ -320,7 +361,7 @@ describe("reads combine the rollup with the un-rolled-up tail", () => {
 
     it("gives per-project totals that match a direct count", async () => {
         const range = { from: ANCHOR, to: new Date(Date.now() + 1000) };
-        const map = await getProjectStats([projectId], range);
+        const map = await projectStats([projectId], range);
 
         const [row] = await db.execute<{ total: string; errors: string }>(sql`
             SELECT COUNT(*)::text AS total,
@@ -337,7 +378,7 @@ describe("reads combine the rollup with the un-rolled-up tail", () => {
     // Removed 2026-08-20: "applies a level filter through by_level rather than
     // falling back". It covered the `levelKeys` branch of the rollup CTE, which
     // unrolled `by_level` per minute to serve the overview's level filter. Both
-    // are gone — the filter was removed (see `OverviewFilterBar.tsx`) and the
+    // are gone — the filter was removed (see `DashboardFilterBar.tsx`) and the
     // branch with it, so the rollup read is now the plain `SUM(total)`,
     // `SUM(errors)` path. The property that survived — rollup-backed counts
     // matching a direct count of `events` — is asserted by the test above.
@@ -346,7 +387,7 @@ describe("reads combine the rollup with the un-rolled-up tail", () => {
      * The project dashboard's three rollup-backed reads, added 2026-08-21 with
      * §16.2 item 5.
      *
-     * They belong **here** rather than in `aggregations.service.itest.ts`
+     * They belong **here** rather than in `event-aggregations.service.itest.ts`
      * because that file runs against the shared fixture, which inserts events
      * directly and never builds a rollup — so `rollupBoundary` is null there
      * and every read falls back to raw `events`. Those tests would pass without
@@ -354,15 +395,15 @@ describe("reads combine the rollup with the un-rolled-up tail", () => {
      * the rollup for real, which is the only place the union is exercised.
      */
     it("buckets events per minute to the same totals a raw count gives", async () => {
-        const range = { type: "custom" as const, from: ANCHOR.toISOString(), to: new Date(Date.now() + 1000).toISOString() };
-        const buckets = await eventsPerMinute(projectId, range);
+        const range = { from: ANCHOR, to: new Date(Date.now() + 1000) };
+        const buckets = await eventBucketsByLevel([projectId], range, 60);
 
         expect(buckets.reduce((s, b) => s + b.total, 0)).toBe(await rawCount(0, 120));
     });
 
     it("splits each bucket by level exactly as the raw rows do", async () => {
-        const range = { type: "custom" as const, from: ANCHOR.toISOString(), to: new Date(Date.now() + 1000).toISOString() };
-        const buckets = await eventsPerMinute(projectId, range);
+        const range = { from: ANCHOR, to: new Date(Date.now() + 1000) };
+        const buckets = await eventBucketsByLevel([projectId], range, 60);
 
         const summed: Record<string, number> = {};
         for (const b of buckets) {
@@ -383,7 +424,7 @@ describe("reads combine the rollup with the un-rolled-up tail", () => {
 
     it("breaks the dashboard's levels down to the raw numbers too", async () => {
         const range = { type: "custom" as const, from: ANCHOR.toISOString(), to: new Date(Date.now() + 1000).toISOString() };
-        const fromRollup = await levelBreakdown(projectId, range);
+        const fromRollup = await levelBreakdown([projectId], resolveRange(range));
 
         const raw = await db.execute<{ level: string; n: string }>(sql`
             SELECT level, COUNT(*)::text AS n FROM events
@@ -399,7 +440,7 @@ describe("reads combine the rollup with the un-rolled-up tail", () => {
 
     it("still orders the dashboard's levels numerically off the rollup", async () => {
         const range = { type: "custom" as const, from: ANCHOR.toISOString(), to: new Date(Date.now() + 1000).toISOString() };
-        const counts = (await levelBreakdown(projectId, range)).map((r) => r.count);
+        const counts = (await levelBreakdown([projectId], resolveRange(range))).map((r) => r.count);
 
         // The union re-aggregates, so the ORDER BY had to move from COUNT(*) to
         // SUM(n). Getting that wrong would reintroduce the text-alias defect
@@ -408,11 +449,11 @@ describe("reads combine the rollup with the un-rolled-up tail", () => {
     });
 
     it("reports a project with rollup rows as non-empty", async () => {
-        expect(await hasAnyEvents(projectId)).toBe(true);
+        expect(await hasAnyEvents([projectId])).toBe(true);
     });
 
     it("reports a project with neither rollup rows nor events as empty", async () => {
-        expect(await hasAnyEvents(randomUUID())).toBe(false);
+        expect(await hasAnyEvents([randomUUID()])).toBe(false);
     });
 
     it("lists the same environments a direct DISTINCT gives", async () => {
@@ -420,7 +461,7 @@ describe("reads combine the rollup with the un-rolled-up tail", () => {
         // environments than the cap allows. Below the cap the rollup-backed
         // list must match `SELECT DISTINCT environment` exactly.
         const range = { from: ANCHOR, to: at(5) };
-        const map = await getProjectStats([projectId], range);
+        const map = await projectStats([projectId], range);
 
         const raw = await db.execute<{ environment: string }>(sql`
             SELECT DISTINCT environment FROM events
@@ -434,23 +475,35 @@ describe("reads combine the rollup with the un-rolled-up tail", () => {
         expect(map.get(projectId)?.environments).toEqual(expected);
     });
 
-    it("shows '(other)' rather than pretending a capped project has fewer environments", async () => {
-        // Above the cap the list stops being the raw DISTINCT — that is the
-        // trade the cap buys, and hiding the fold would make the pills claim a
-        // project uses fewer environments than it does.
+    /**
+     * **Inverted on 2026-08-25**, rather than deleted. It used to assert that
+     * `(other)` *was* offered as a pill, reasoning that hiding the fold would
+     * make the list claim a project uses fewer environments than it does.
+     *
+     * That reasoning held while the alternative was silence. It no longer does:
+     * `(other)` is not an environment — it names several — so a pill for it
+     * would filter on a value no event carries, and the widgets behind it would
+     * all read zero. The fold is now surfaced by the thing that matters instead:
+     * a filtered read over a folded minute refuses the rollup and scans raw
+     * `events`, so the **numbers** stay right even where the list is short.
+     */
+    it("does not offer (other) as an environment pill", async () => {
         const range = { from: at(9), to: at(11) };
-        const envs = (await getProjectStats([projectId], range)).get(projectId)?.environments ?? [];
+        const envs = (await projectStats([projectId], range)).get(projectId)?.environments ?? [];
 
-        expect(envs.length).toBeLessThanOrEqual(ENVIRONMENT_KEY_CAP + 1);
-        expect(envs).toContain("(other)");
+        expect(envs).not.toContain("(other)");
+        expect(envs).not.toContain("(all)");
+        expect(envs.length).toBeLessThanOrEqual(ENVIRONMENT_KEY_CAP);
     });
 
     it("falls back to raw events for per-project stats under an environment filter", async () => {
-        // `by_env` has totals per environment and `by_level` totals per level;
-        // "errors in production" needs both at once, which marginals cannot
-        // give. That read has to reach `events`.
+        // Until 2026-08-25 this had to reach `events`: `by_env` held totals per
+        // environment and `by_level` totals per level, and "errors in
+        // production" needs both at once. `environment` is a key column now, so
+        // the rollup answers it — but the number must be the same either way,
+        // which is what this compares.
         const range = { from: ANCHOR, to: new Date(Date.now() + 1000) };
-        const map = await getProjectStats([projectId], range, ["production"]);
+        const map = await projectStats([projectId], range, ["production"]);
 
         const [row] = await db.execute<{ total: string; errors: string }>(sql`
             SELECT COUNT(*)::text AS total,
@@ -467,7 +520,7 @@ describe("reads combine the rollup with the un-rolled-up tail", () => {
 
     it("falls back to raw events when an environment filter needs the joint distribution", async () => {
         const range = { from: ANCHOR, to: new Date(Date.now() + 1000) };
-        const filtered = await getOrgLevelBreakdown([projectId], range, ["production"]);
+        const filtered = await levelBreakdown([projectId], range, ["production"]);
 
         const raw = await db.execute<{ level: string; n: string }>(sql`
             SELECT level, COUNT(*)::text AS n FROM events
@@ -485,8 +538,8 @@ describe("reads combine the rollup with the un-rolled-up tail", () => {
 describe("pruneRollup", () => {
     it("removes buckets older than the retention window", async () => {
         await db.execute(sql`
-            INSERT INTO event_rollup_minutes (project_id, minute, total, by_level, by_env)
-            VALUES (${projectId}::uuid, now() - interval '31 days', 5, '{"info":5}'::jsonb, '{}'::jsonb)
+            INSERT INTO event_rollup_minutes (project_id, minute, environment, total, by_level)
+            VALUES (${projectId}::uuid, now() - interval '31 days', 'production', 5, '{"info":5}'::jsonb)
         `);
 
         await pruneRollup();
@@ -501,7 +554,7 @@ describe("pruneRollup", () => {
 
 /**
  * The template rollup, built in the same transaction and the same window as the
- * one above. These live here rather than beside `aggregations.service.ts` for
+ * one above. These live here rather than beside `event-aggregations.service.ts` for
  * the reason recorded in `PLAN.md` §17 on 2026-08-21: the shared itest fixture
  * never builds a rollup, so tests written there would pass without executing a
  * single line of this code.
@@ -633,9 +686,9 @@ describe("topMessages over the template rollup", () => {
             const longBefore = new Date(at(0).getTime() - 365 * 86_400_000);
 
             const rows = await topMessages(
-                projectId,
-                { type: "custom", from: longBefore.toISOString(), to: c!.to.toISOString() },
-                10,
+                [projectId],
+                resolveRange({ type: "custom", from: longBefore.toISOString(), to: c!.to.toISOString() }),
+                { limit: 10 },
             );
 
             // The template, not the raw message: the rollup answered.
@@ -646,9 +699,9 @@ describe("topMessages over the template rollup", () => {
         it("reports the template with the right count", async () => {
             const c = await templateCoverage(projectId);
             const rows = await topMessages(
-                projectId,
-                { type: "custom", from: at(0).toISOString(), to: c!.to.toISOString() },
-                10,
+                [projectId],
+                resolveRange({ type: "custom", from: at(0).toISOString(), to: c!.to.toISOString() }),
+                { limit: 10 },
             );
 
             const found = rows.find((r) => r.message === TEMPLATE);
@@ -677,9 +730,9 @@ describe("topMessages over the template rollup", () => {
             const below = new Date(c!.from!.getTime() - 86_400_000);
 
             const rows = await topMessages(
-                projectId,
-                { type: "custom", from: below.toISOString(), to: c!.to.toISOString() },
-                10,
+                [projectId],
+                resolveRange({ type: "custom", from: below.toISOString(), to: c!.to.toISOString() }),
+                { limit: 10 },
             );
 
             // The fallback groups the message itself, so the identifier survives.
@@ -696,18 +749,18 @@ describe("topMessages over the template rollup", () => {
             const c = await templateCoverage(projectId);
             const viaRollup = (
                 await topMessages(
-                    projectId,
-                    { type: "custom", from: c!.from!.toISOString(), to: c!.to.toISOString() },
-                    10,
+                    [projectId],
+                    resolveRange({ type: "custom", from: c!.from!.toISOString(), to: c!.to.toISOString() }),
+                    { limit: 10 },
                 )
             ).find((r) => r.message === TEMPLATE);
 
             const below = new Date(c!.from!.getTime() - 86_400_000);
             const viaEvents = (
                 await topMessages(
-                    projectId,
-                    { type: "custom", from: below.toISOString(), to: c!.to.toISOString() },
-                    10,
+                    [projectId],
+                    resolveRange({ type: "custom", from: below.toISOString(), to: c!.to.toISOString() }),
+                    { limit: 10 },
                 )
             ).find((r) => r.message === RAW);
 
@@ -722,7 +775,7 @@ describe("topMessages over the template rollup", () => {
  * Every level must survive the trip through the rollup, on the rollup path.
  *
  * There was already a drift test shaped like this — in
- * `aggregations.service.itest.ts` — but it runs against the shared fixture,
+ * `event-aggregations.service.itest.ts` — but it runs against the shared fixture,
  * where nothing builds a rollup, so it only ever exercised the raw-text
  * fallback and its five `COUNT(*) FILTER` counters. When `by_level` was
  * unpacked into `n_debug`..`n_fatal` on 2026-08-24, the rollup path's own
@@ -775,9 +828,9 @@ describe("every level survives the template rollup", () => {
         // and it cost a confusing red run to notice.
         const c = await templateCoverage(projectId);
         const rows = await topMessages(
-            projectId,
-            { type: "custom", from: c!.from!.toISOString(), to: c!.to.toISOString() },
-            200,
+            [projectId],
+            resolveRange({ type: "custom", from: c!.from!.toISOString(), to: c!.to.toISOString() }),
+            { limit: 200 },
         );
         const row = rows.find((r) => r.message === templateFor(level));
 
@@ -852,14 +905,14 @@ describe("every level survives the raw tail", () => {
     it.each([...EVENT_LEVELS])("badges a %s-only tail message as %s", async (level) => {
         const c = await templateCoverage(projectId);
         const rows = await topMessages(
-            projectId,
-            {
+            [projectId],
+            resolveRange({
                 type: "custom",
                 from: c!.from!.toISOString(),
                 // Past the ceiling, so the tail branch has a window to cover.
                 to: new Date(ceiling.getTime() + 60_000).toISOString(),
-            },
-            200,
+            }),
+            { limit: 200 },
         );
         const row = rows.find((r) => r.message === templateFor(level));
 
@@ -877,7 +930,7 @@ describe("every level survives the raw tail", () => {
  * *text* proves which implementation ran. Asserting only on counts would pass
  * with the dispatcher disabled entirely.
  */
-describe("getProjectTopMessages over the template rollup", () => {
+describe("topMessagePerProject over the template rollup", () => {
     const RAW = "Payment pay_77x1 declined";
     const TEMPLATE = "Payment *** declined";
 
@@ -901,14 +954,14 @@ describe("getProjectTopMessages over the template rollup", () => {
 
     it("reports the template, proving the rollup answered", async () => {
         const c = await templateCoverage(projectId);
-        const map = await getProjectTopMessages([projectId], { from: c!.from ?? at(0), to: c!.to });
+        const map = await topMessagePerProject([projectId], { from: c!.from ?? at(0), to: c!.to });
 
         expect(map.get(projectId)?.message).toBe(TEMPLATE);
     });
 
     it("badges it from summed by_level, not from mode()", async () => {
         const c = await templateCoverage(projectId);
-        const map = await getProjectTopMessages([projectId], { from: c!.from ?? at(0), to: c!.to });
+        const map = await topMessagePerProject([projectId], { from: c!.from ?? at(0), to: c!.to });
 
         expect(map.get(projectId)?.level).toBe("error");
     });
@@ -920,7 +973,7 @@ describe("getProjectTopMessages over the template rollup", () => {
      */
     it("falls back to raw text as soon as an environment filter is applied", async () => {
         const c = await templateCoverage(projectId);
-        const map = await getProjectTopMessages([projectId], { from: c!.from ?? at(0), to: c!.to }, [
+        const map = await topMessagePerProject([projectId], { from: c!.from ?? at(0), to: c!.to }, [
             "production",
         ]);
 
@@ -1001,7 +1054,7 @@ describe("topSources over the rollup", () => {
     });
 
     it("agrees with a direct count of events", async () => {
-        const rows = await topSources(projectId, await covered(), 50);
+        const rows = await topSources([projectId], resolveRange(await covered()), { limit: 50 });
         const byName = new Map(rows.map((r) => [r.source, r.count]));
 
         expect(byName.get("api")).toBe(5);
@@ -1016,7 +1069,7 @@ describe("topSources over the rollup", () => {
             WHERE project_id = ${projectId}::uuid AND minute = ${at(MINUTE).toISOString()}::timestamptz
         `);
         try {
-            const rows = await topSources(projectId, await covered(), 50);
+            const rows = await topSources([projectId], resolveRange(await covered()), { limit: 50 });
             // No event carries this source. Only the rollup can produce it.
             expect(rows.find((r) => r.source === SENTINEL)?.count).toBe(4);
         } finally {
@@ -1032,11 +1085,11 @@ describe("topSources over the rollup", () => {
         // What migration 0013 leaves behind until the job rebuilds the row.
         await db.execute(sql`
             UPDATE event_rollup_minutes
-            SET by_source = '{}'::jsonb, by_env = by_env || ${JSON.stringify({ __sentinel__: 1 })}::jsonb
+            SET by_source = '{}'::jsonb
             WHERE project_id = ${projectId}::uuid AND minute = ${at(MINUTE).toISOString()}::timestamptz
         `);
         try {
-            const rows = await topSources(projectId, await covered(), 50);
+            const rows = await topSources([projectId], resolveRange(await covered()), { limit: 50 });
             const byName = new Map(rows.map((r) => [r.source, r.count]));
 
             // Served from events, so the counts are still right — which is the
@@ -1047,8 +1100,7 @@ describe("topSources over the rollup", () => {
         } finally {
             await db.execute(sql`
                 UPDATE event_rollup_minutes
-                SET by_source = ${JSON.stringify({ api: 5, worker: 2, "(unknown)": 1 })}::jsonb,
-                    by_env = by_env - '__sentinel__'
+                SET by_source = ${JSON.stringify({ api: 5, worker: 2, "(unknown)": 1 })}::jsonb
                 WHERE project_id = ${projectId}::uuid AND minute = ${at(MINUTE).toISOString()}::timestamptz
             `);
         }
@@ -1136,7 +1188,7 @@ describe("getOrgTopErrors over the template rollup", () => {
     }
 
     it("groups by template rather than raw text", async () => {
-        const rows = await getOrgTopErrors([projectId, OTHER], await coveredRange(), undefined, 20);
+        const rows = await topMessages([projectId, OTHER], await coveredRange(), { levels: ["error", "fatal"] as const, limit: 20 });
         const row = rows.find((r) => r.message === TEMPLATE);
 
         // The raw text carries job_88; only the rollup path can return ***.
@@ -1145,18 +1197,18 @@ describe("getOrgTopErrors over the template rollup", () => {
     });
 
     it("sums the template across every project in scope", async () => {
-        const rows = await getOrgTopErrors([projectId, OTHER], await coveredRange(), undefined, 20);
+        const rows = await topMessages([projectId, OTHER], await coveredRange(), { levels: ["error", "fatal"] as const, limit: 20 });
         expect(rows.find((r) => r.message === TEMPLATE)!.count).toBe(10);
     });
 
     it("attributes the row to the project with the most occurrences", async () => {
-        const rows = await getOrgTopErrors([projectId, OTHER], await coveredRange(), undefined, 20);
+        const rows = await topMessages([projectId, OTHER], await coveredRange(), { levels: ["error", "fatal"] as const, limit: 20 });
         // 7 against 3. This is what mode() WITHIN GROUP used to answer.
         expect(rows.find((r) => r.message === TEMPLATE)!.projectId).toBe(projectId);
     });
 
     it("badges the row from the level counts", async () => {
-        const rows = await getOrgTopErrors([projectId, OTHER], await coveredRange(), undefined, 20);
+        const rows = await topMessages([projectId, OTHER], await coveredRange(), { levels: ["error", "fatal"] as const, limit: 20 });
         expect(rows.find((r) => r.message === TEMPLATE)!.dominantLevel).toBe("error");
     });
 
@@ -1191,11 +1243,10 @@ describe("getOrgTopErrors over the template rollup", () => {
             `);
         }
 
-        const rows = await getOrgTopErrors(
+        const rows = await topMessages(
             [projectId, OTHER],
             { from: c!.from ?? at(0), to: new Date(ceiling.getTime() + 60_000) },
-            undefined,
-            20,
+            { levels: ["error", "fatal"] as const, limit: 20 },
         );
         const row = rows.find((r) => r.message === TEMPLATE);
 
@@ -1206,11 +1257,10 @@ describe("getOrgTopErrors over the template rollup", () => {
         expect(row!.dominantLevel).toBe("error");
     });
     it("falls back to raw text when an environment filter is active", async () => {
-        const rows = await getOrgTopErrors(
+        const rows = await topMessages(
             [projectId, OTHER],
             await coveredRange(),
-            ["production"],
-            20,
+            { levels: ["error", "fatal"] as const, environments: ["production"], limit: 20 },
         );
 
         expect(rows.some((r) => r.message === RAW)).toBe(true);

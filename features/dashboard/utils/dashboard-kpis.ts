@@ -1,6 +1,5 @@
-import type { BucketRow } from "@/features/dashboard/utils/aggregation-utils";
-import type { LevelCount } from "@/features/dashboard/services/aggregations.service";
-import type { TimeRange, TimeRangePreset } from "@/shared/utils/event-filters.schema";
+import type { EventBucket, LevelledBucket } from "@/shared/utils/event-buckets";
+import type { LevelCount } from "@/shared/services/event-aggregations.service";
 
 /**
  * The arithmetic behind the dashboard's KPI row.
@@ -8,39 +7,30 @@ import type { TimeRange, TimeRangePreset } from "@/shared/utils/event-filters.sc
  * Extracted from `DashboardPage.tsx` on 2026-08-21, where it sat inside a
  * client component and could not be reached by a test — `WORKFLOW.md` §2 counts
  * "anything with a branch, a boundary, or a rule" as logic, and each of these
- * has one: a rate below 1 formats differently, an unknown preset falls back to
- * an hour, and "errors" means error *and* fatal while "fatal" means only fatal.
+ * has one: "errors" means error *and* fatal while "fatal" means only fatal, and
+ * a disabled rule left in the `firing` state is not firing.
  *
  * They are also what the KPI row needs in order to be its own `Suspense`
  * boundary: a server section can call them, a client component's private
  * function cannot.
  */
 
-const PRESET_MINUTES: Record<TimeRangePreset, number> = {
-    "15m": 15,
-    "1h": 60,
-    "6h": 360,
-    "24h": 1440,
-    "7d": 10080,
-    "30d": 43200,
-};
-
 /**
- * Average events per minute over the range, as a display string.
+ * Total events over the range, as a display string.
  *
- * Below 1 it is shown to two decimals rather than rounded, because a quiet
- * project rounding to "0" reads as "nothing is arriving" when the real answer
- * is "something is, slowly". Above 1 it is rounded and thousands-separated.
+ * **Replaced an averaged rate on 2026-08-25.** That KPI divided the range's
+ * total by its length and called the result `events / min`, which at 30 days
+ * meant a month's traffic over 43,200 — a number that moved for reasons
+ * nobody could see and matched nothing else on the page. The organization
+ * overview's first KPI has always been a plain total, and the two dashboards
+ * now agree.
  *
- * A custom range falls back to 60 minutes. Nothing reachable from the URL
- * produces one (see `dashboard-range.ts`), so this is a floor rather than a
- * behaviour anyone can observe.
+ * The rate did not disappear: it moved to the application top bar and became a
+ * reading about the **last minute**, which is a question this arithmetic could
+ * not answer at all — see `eventsInLastMinute` and `shared/utils/live-rate.ts`.
  */
-export function eventsPerMinuteRate(buckets: BucketRow[], range: TimeRange): string {
-    const total = buckets.reduce((sum, b) => sum + b.total, 0);
-    const minutes = range.type === "preset" ? (PRESET_MINUTES[range.value] ?? 60) : 60;
-    const rate = total / minutes;
-    return rate < 1 ? rate.toFixed(2) : Math.round(rate).toLocaleString();
+export function totalEvents(buckets: EventBucket[]): string {
+    return buckets.reduce((sum, b) => sum + b.total, 0).toLocaleString();
 }
 
 /** Errors **and** fatals — the KPI is labelled "Errors" but counts both. */
@@ -71,7 +61,7 @@ export function firingRules<T extends AlertRuleFlags>(rules: T[]): T[] {
 }
 
 /** Series for the KPI sparklines, in bucket order. */
-export function sparklines(buckets: BucketRow[]): {
+export function sparklines(buckets: LevelledBucket[]): {
     total: number[];
     errors: number[];
     fatal: number[];

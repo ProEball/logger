@@ -78,28 +78,24 @@ Filter shape (`EventFilters`, shared between the events-list UI and alert rule c
 
 ## Dashboard
 
-Per-project metrics (`features/dashboard/services/aggregations.service.ts`, raw SQL aggregation queries scoped by `project_id` + time range):
+Per-project metrics. Since 2026-08-25 every query comes from `shared/services/event-aggregations.service.ts` — the same functions the organization overview calls, scoped to one project instead of several. `features/dashboard/services/aggregations.service.ts` is deleted.
 
-- **KPI row**: Events/min (rate + sparkline), Errors (error+fatal count), Fatal (fatal-only count), Firing alerts (count + up to 3 rule names).
-- **Events-per-minute chart**: stacked area, colored by level, only rendering levels actually present in the data.
+- **KPI row**: Total events (+ sparkline), Errors (error+fatal count), Fatal (fatal-only count), Firing alerts (count + up to 3 rule names). The per-minute rate left this row on 2026-08-25 and now reports the **last completed minute** rather than an average over the range — at 30 days that average was a month of traffic over 43,200 minutes, a number that moved for reasons nobody could see.
+- **Live rate**: not a dashboard widget at all any more. It spent a few days in the filter bar's leading slot and then moved to the **application top bar**, beside the project name, where it is rendered by the project *layout* and so appears on every project page — events, alerts, API keys, settings. Two behaviours follow from that and are intended: it counts the **whole project**, ignoring the environment pills, because a layout cannot read `searchParams`; and it re-reads only when the page itself re-renders, which on pages without an auto-refresh control means once, on arrival. Backed by `eventsInLastMinute` on a **10-second** cache profile — the standard 30-second one would let a "last minute" reading describe a minute that ended ninety seconds ago. Formatting is `shared/utils/live-rate.ts`.
+- **Events chart**: stacked area, coloured by level, only rendering levels actually present. Since 2026-08-25 it is `shared/components/EventChart` in `stacked-area` mode — the same component the organization overview draws in `line` mode.
 - **Level breakdown**: counts per level, click-through to the events list pre-filtered by that level.
 - **Recent errors**: latest error/fatal events.
 - **Top sources** / **Top messages**: grouped counts (messages truncated to 200 chars for grouping; each group shows `latestAt` and the statistical mode of its levels).
 
 ### Bucket sizing
 
-Chart resolution adapts to the selected time range (`pickBucket()`):
+Chart resolution comes from `BUCKET_SECONDS` in `shared/utils/dashboard-filters.ts` — see the table under [Organization overview](#bucket-sizing-1), which both pages now share. The route reads the width and passes it to the query; no service computes one.
 
-| Range | Bucket width |
-|---|---|
-| ≤ 1h | 1 minute |
-| ≤ 24h | 1 hour |
-| ≤ 7d | 12 hours |
-| else (30d) | 1 day |
+`pickBucket()` and the whole of `features/dashboard/utils/aggregation-utils.ts` were **deleted** on 2026-08-25. It chose among four widths (1m/1h/12h/1d) by range length, which fit six presets badly — most visibly at 6 hours, where it drew six points.
 
-Bucketing uses epoch-floor arithmetic (`to_timestamp(floor(extract(epoch from timestamp)/secs)*secs)`) rather than `date_trunc`, because `date_trunc` can't express a 12-hour bucket width directly.
+Bucketing uses epoch-floor arithmetic (`to_timestamp(floor(extract(epoch from timestamp)/secs)*secs)`) rather than `date_trunc`, because `date_trunc` only takes unit names and so cannot express a 5-minute, 15-minute or 6-hour width.
 
-> **Doc drift note**: the original design doc (`docs/features/05-dashboard.md`) specifies a 5-tier bucket scheme (`1m/5m/15m/1h/4h`) — the shipped implementation uses only 4 tiers as shown above. If you're consulting the feature doc for bucket behavior, trust this table instead.
+> **Doc drift note**: the original design doc (`docs/features/05-dashboard.md`) specifies a 5-tier bucket scheme (`1m/5m/15m/1h/4h`). The shipped implementation used 4 tiers until 2026-08-25 and now uses a table with one width per preset. If you are consulting the feature doc for bucket behaviour, trust `shared/utils/dashboard-filters.ts` instead.
 
 ### Zero-fill
 
@@ -107,28 +103,32 @@ The aggregation query only returns buckets that had at least one event (sparse r
 
 ## Organization overview
 
-Cross-project rollup at `/[org]` (`features/overview/services/overview.service.ts`, five raw-SQL aggregations scoped by a list of `project_id`s + time range). URL parsing and row assembly live in `features/overview/utils/`, not in the route.
+Cross-project rollup at `/[org]`. Since 2026-08-25 it reads `shared/services/event-aggregations.service.ts`, shared with the project dashboard; `features/overview/services/overview.service.ts` is deleted. Row assembly lives in `features/overview/utils/`, URL parsing in `shared/utils/dashboard-filters.ts`, neither in the route.
 
 - **KPI row**: total events, errors + fatals, firing alerts (plus total enabled rules), project count. The first two carry a sparkline built from the volume buckets summed across projects.
-- **Volume chart**: one series per project.
+- **Error-ratio chart**: one series per project, plotting `(error + fatal) / total` per bucket. Backed by `eventBuckets` in `shared/services/`, shared with the project dashboard since 2026-08-25, and **narrowed by the environment filter** since the same date — it was the last widget on the page that ignored it.
 - **Projects**: cards by default, switchable to a table. **A project with no events in the range still gets a row, showing zeros** — dropping it would make a quiet project look deleted.
 - **Top errors across org**: `error`/`fatal` grouped by `SUBSTRING(message, 1, 200)`, top 5, each attributed to a project via `mode() WITHIN GROUP (ORDER BY project_id)` — so a message occurring in several projects is labelled with only one of them.
 - **Level breakdown**: counts per level. Rendered in severity order (`fatal → debug`) by the component, not in the order the query returns.
 
 ### Bucket sizing
 
-The overview uses its **own** table (`OVERVIEW_BUCKET_SECONDS`), which does not match the project dashboard's `pickBucket()`:
+Both pages now read `BUCKET_SECONDS` in `shared/utils/dashboard-filters.ts`, one table with two named densities. `OVERVIEW_BUCKET_SECONDS` and the module holding it were deleted on 2026-08-25.
 
-| Range | Overview | Project dashboard |
-|---|---|---|
-| 15m | 60s | 60s |
-| 1h | 300s | 60s |
-| 6h | 900s | 3600s |
-| 24h | 3600s | 3600s |
-| 7d | 6h | 12h |
-| 30d | 1d | 1d |
+| Range | `coarse` (overview) | `fine` (project) | points |
+|---|---|---|---|
+| 15m | 60s | 60s | 15 |
+| 1h | 300s | **60s** | 12 / 60 |
+| 6h | 900s | 900s | 24 |
+| 24h | 3600s | 3600s | 24 |
+| 7d | 6h | 6h | 28 |
+| 30d | 1d | 1d | 30 |
 
-The overview plots one series per project, so it trades resolution for a readable point count. Two bucketing rules in one app is a wart rather than a design; unifying them changes what the chart shows and is deliberately left to the read-path workstream (`PLAN.md` §16.1) rather than done as a refactor.
+`1h` is the only cell where the two disagree, and a test asserts it stays that way. The project dashboard's 1-hour view is a live minute-by-minute tail, which is what makes it useful during an incident; the overview draws one series *per project*, so sixty points times five projects is three hundred marks on a sparkline-height chart.
+
+Everything else is now identical, and the previous project-side widths at 6h (3600s, six points) and 7d (12h, fourteen points) are gone — those were not a resolution trade-off but a consequence of `pickBucket()` having only four widths to choose from. *Superseded note: this section previously described the disagreement as "a wart rather than a design" whose unification was deferred to `PLAN.md` §16.1 because it changes what the chart shows. It does change what the chart shows, and that was decided rather than deferred on 2026-08-25 — see §17.*
+
+Both pages read the table. `eventsPerMinute` was the last holdout and was deleted on 2026-08-25 along with `pickBucket()`; the project dashboard's 6h chart went from six points to twenty-four, and its 7d from fourteen to twenty-eight.
 
 ### Ordering: count columns are cast to text
 
@@ -200,7 +200,7 @@ The filter bar's environment list comes from **`project_environments`**, a per-p
 
 **Not covered by the registry:** the environment pills on each *project card*, which are scoped to the selected range — a registry cannot answer "which environments appeared between X and Y" without storing per-range data.
 
-*Superseded later on 2026-08-20.* They were not left on `events`: the **rollup** answers them, from `by_env` per minute unioned with a raw tail, and the query is `ARRAY_AGG(DISTINCT env)` over that union (`overview.service.ts`). The 23.8% figure this paragraph quoted was the cost of the version it describes and no longer measures anything. The product question about what the pills *mean* was never answered — it stopped mattering, because a per-minute `by_env` can be summed over any range.
+*Superseded later on 2026-08-20.* They were not left on `events`: the **rollup** answers them, from `by_env` per minute unioned with a raw tail, and the query is `ARRAY_AGG(DISTINCT env)` over that union (now `event-aggregations.service.ts`). The 23.8% figure this paragraph quoted was the cost of the version it describes and no longer measures anything. The product question about what the pills *mean* was never answered — it stopped mattering, because a per-minute `by_env` can be summed over any range.
 
 ### ~~Known bug: an environment name containing a comma is split in two~~ — fixed 2026-08-20
 

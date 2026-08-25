@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
-import type { ProjectRow } from "@/features/overview/services/overview.service";
+import type { ProjectRow } from "@/features/overview/utils/build-project-rows";
 import styles from "./ProjectCards.module.scss";
 
 interface ProjectCardsProps {

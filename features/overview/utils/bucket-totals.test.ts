@@ -1,9 +1,14 @@
 import { describe, it, expect } from "vitest";
 import { totalsByTimestamp } from "@/features/overview/utils/bucket-totals";
-import type { OrgEventBucket } from "@/features/overview/services/overview.service";
+import type { EventBucket } from "@/shared/utils/event-buckets";
 
-function bucket(projectId: string, iso: string, count: number, errorCount = 0): OrgEventBucket {
-    return { projectId, ts: new Date(iso), count, errorCount };
+function bucket(projectId: string, iso: string, count: number, errorCount = 0): EventBucket {
+    return {
+        projectId,
+        ts: new Date(iso),
+        total: count,
+        errors: errorCount,
+    };
 }
 
 describe("totalsByTimestamp", () => {

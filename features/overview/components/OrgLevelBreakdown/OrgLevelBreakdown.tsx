@@ -1,8 +1,8 @@
-import type { OrgLevelCount } from "@/features/overview/services/overview.service";
+import type { LevelCount } from "@/shared/services/event-aggregations.service";
 import styles from "./OrgLevelBreakdown.module.scss";
 
 interface OrgLevelBreakdownProps {
-    levels: OrgLevelCount[];
+    levels: LevelCount[];
 }
 
 const LEVEL_ORDER = ["fatal", "error", "warn", "info", "debug"];

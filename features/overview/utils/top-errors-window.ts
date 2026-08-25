@@ -1,4 +1,5 @@
-import { OVERVIEW_PRESETS, type OverviewPreset } from "@/features/overview/utils/overview-filters";
+import { DASHBOARD_PRESETS } from "@/shared/utils/dashboard-filters";
+import type { TimeRangePreset } from "@/shared/utils/event-filters.schema";
 
 /**
  * The widest window the "Top errors across org" widget will aggregate over.
@@ -20,11 +21,11 @@ import { OVERVIEW_PRESETS, type OverviewPreset } from "@/features/overview/utils
  * over 1 h — of which about 6 ms is fixed cost (planning, partition access,
  * round trip) that no window size reduces.
  */
-export const TOP_ERRORS_MAX_PRESET: OverviewPreset = "24h";
+export const TOP_ERRORS_MAX_PRESET: TimeRangePreset = "24h";
 
 export interface TopErrorsWindow {
     /** The preset actually queried — never wider than the cap. */
-    preset: OverviewPreset;
+    preset: TimeRangePreset;
     /** True when the page asked for more than the cap allows. */
     isClamped: boolean;
 }
@@ -41,11 +42,11 @@ export interface TopErrorsWindow {
  * page that already has one — "why does the chart say 30 days and the errors
  * say 15 minutes?". Add it when there is a request naming the windows it needs.
  */
-export function clampTopErrorsWindow(preset: OverviewPreset): TopErrorsWindow {
-    const order = OVERVIEW_PRESETS.indexOf(preset);
-    const capOrder = OVERVIEW_PRESETS.indexOf(TOP_ERRORS_MAX_PRESET);
+export function clampTopErrorsWindow(preset: TimeRangePreset): TopErrorsWindow {
+    const order = DASHBOARD_PRESETS.indexOf(preset);
+    const capOrder = DASHBOARD_PRESETS.indexOf(TOP_ERRORS_MAX_PRESET);
 
-    // OVERVIEW_PRESETS is ordered shortest to longest, so position is width.
+    // DASHBOARD_PRESETS is ordered shortest to longest, so position is width.
     if (order === -1 || order <= capOrder) {
         return { preset, isClamped: false };
     }

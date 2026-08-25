@@ -1,10 +1,28 @@
-import type { ProjectStats, ProjectRow } from "@/features/overview/services/overview.service";
+import type { ProjectStats } from "@/shared/services/event-aggregations.service";
 
 /**
  * Assembly of the overview's per-project table rows, extracted from
  * `app/[org]/(org-shell)/page.tsx` on 2026-08-20 (see `overview-filters.ts`
  * for why).
  */
+
+/**
+ * One row of the projects table or card grid.
+ *
+ * A **view model**, not a query result: it is assembled from `projectStats` and
+ * `listAlertRules` by {@link buildProjectRows}. It lived in the query service
+ * until 2026-08-25 and moved here when that service became shared — nothing in
+ * `shared/` returns this shape, and a type describing a screen does not belong
+ * beside the SQL that feeds it.
+ */
+export type ProjectRow = {
+    project: { id: string; slug: string; name: string };
+    totalEvents: number;
+    errorCount: number;
+    environments: string[];
+    firingAlertsCount: number;
+    enabledAlertsCount: number;
+};
 
 /** The only two fields of an alert rule this assembly reads. */
 export interface AlertRuleFlags {
@@ -23,7 +41,7 @@ export interface OverviewProject {
  *
  * The top error message is **not** here. It arrives on a separate promise and
  * renders into its own `Suspense` boundary per row, because that query costs
- * ~954 ms against ~30 ms for everything in this row — see `getProjectStats`.
+ * ~954 ms against ~30 ms for everything in this row — see `projectStats`.
  *
  * The project list is the spine: a project with no events in the range still
  * gets a row, with zeros. That is deliberate — dropping it would make a quiet

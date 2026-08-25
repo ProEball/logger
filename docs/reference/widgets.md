@@ -12,7 +12,7 @@ Useful beyond that: this is the answer to "where does this number come from" wit
 
 ## Organization overview — `/[org]`
 
-Route: `app/[org]/(org-shell)/page.tsx`. Service: `features/overview/services/overview.service.ts`, reached since 2026-08-20 through `overview-cache.service.ts` — see below. The route makes **six service calls** per load, each handed to its section as an **unawaited promise**.
+Route: `app/[org]/(org-shell)/page.tsx`. Services: `shared/services/event-aggregations.service.ts` for the buckets, level breakdown and top errors — the same functions the project dashboard calls, scoped to several projects instead of one — plus `features/overview/services/overview.service.ts` for what is still overview-only. Both reached through `overview-cache.service.ts` since 2026-08-20 — see below. The route makes **six service calls** per load, each handed to its section as an **unawaited promise**.
 
 **The page has six top-level `Suspense` boundaries** — filter bar, KPI row, volume chart, projects panel, top errors, level breakdown — and each appears as soon as its own query returns. Since 2026-08-20 there are more *nested* inside the projects panel: one per project per view for the streaming top-error cell, so an organization with five projects renders 6 + 10. The six are the page's structure; the rest are one column filling in (changed 2026-08-20 — the route used to await all of them before rendering anything). Sections that need the same data receive the same promise, so the query still runs once: the bucket query feeds both the KPI sparklines and the volume chart, and the per-project statistics feed both the KPI row and the projects panel.
 
@@ -38,24 +38,28 @@ Two consequences worth knowing before reading the Cost column:
 
 | Widget | Backed by | Groups by | Responds to | Cost | Rollup |
 |---|---|---|---|---|---|
-| **Volume chart** (`OrgVolumeChart`) — one series per project | `getOrgEventBuckets` — **rollup + raw tail** since 2026-08-20 | project × epoch-floored bucket | range only — **ignores the environment filter** | 37.6% before the rollup | ✅ done |
+| **Error-ratio chart** (`EventChart`, line mode) — one series per project | `eventBuckets` (shared) — **rollup + raw tail**, filtered or not. Reads `total` and the generated `errors` column, never `by_level`: the jsonb path costs 8× and this chart draws two numbers | project × epoch-floored bucket | range **and environment**, since 2026-08-25 | 37.6% before the rollup | ✅ done |
 | **Environment pills** on each project card | `getProjectStats` (env query) — **rollup + raw tail** since 2026-08-20 | project × environment, `ARRAY_AGG(DISTINCT env)` over the union | range, so the pills change with the filter | 23.8% before the rollup | ✅ done |
-| **Top errors across org** | `getOrgTopErrors` — **template rollup + raw tail** since 2026-08-24 where no environment filter is active, raw `events` otherwise | `template_hash`, or `SUBSTRING(message, 1, 200)` on the fallback | environment, and its **own** range: `min(page range, 24h)`. Levels are fixed at `error, fatal` and no longer overridable | 11.4% before the rollup | ✅ done (unfiltered) |
+| **Top errors across org** | `topMessages` (shared, `levels: [error, fatal]`, limit 5) — **template rollup + raw tail** since 2026-08-24 where no environment filter is active, raw `events` otherwise | `template_hash`, or `SUBSTRING(message, 1, 200)` on the fallback | environment, and its **own** range: `min(page range, 24h)`. Levels are fixed at `error, fatal` and no longer overridable | 11.4% before the rollup | ✅ done (unfiltered) |
 | **Top error per project** (card + table cell) | `getProjectTopMessages` — **template rollup + raw tail** since 2026-08-23 where no environment filter is active, raw `events` otherwise; its own call and its own per-row `Suspense` boundary since 2026-08-20 | project × `template_hash`, or `SUBSTRING(message, 1, 120)` on the fallback | range, environment | was 10.0% and ~954 ms; **19 ms** on the rollup path | ✅ done (unfiltered) |
 | **Per-project events / errors / error rate** | `getProjectStats` (stats query) | project | range, environment | 6.3% | ✅ |
-| **Level breakdown** | `getOrgLevelBreakdown` — **rollup + raw tail**, but falls back entirely to `events` when an environment filter is active | level | range, environment | 6.0% before the rollup | ✅ done (unfiltered) |
+| **Level breakdown** | `levelBreakdown` (shared) — **rollup + raw tail**, filtered or not, since `environment` joined the rollup key on 2026-08-25 | level | range, environment | 6.0% before the rollup | ✅ done (unfiltered) |
 | **Environment filter list** | `getOrgEnvironments` | — | nothing; fixed 30-day window | ~0% | already a registry |
 | **KPI: total events / errors / projects** | derived in `buildProjectRows` + `sumProjectRows` | — | — | free | ✅ (follows the stats query) |
 | **KPI sparklines** | derived from the volume buckets | — | — | free | ✅ |
 | **KPI: firing alerts** | `listAlertRules` per project | — | — | not an `events` query | n/a — `alert_rules` |
 
-One asymmetry remains: the volume chart ignores the environment filter that narrows most other widgets on the page.
+**No asymmetries remain (2026-08-25).** The last one — the volume chart ignoring the environment filter — was closed by merging `getOrgEventBuckets` and the project dashboard's `eventsPerMinute` into one `eventBuckets` in `shared/services/`. The merge is what made it cheap to close: the org query had no `environments` parameter *at all*, so adding one was not a fix to be scheduled but a column the merged query already had to carry. Under a filter it reads raw `events`, since `by_env` and `by_level` are separate marginals and cannot answer a joint question; measured at 15–17 ms on 500k events, the same order as the unfiltered path on that corpus.
 
-There were two. The second — the per-project top error ignoring a level filter that org-wide top errors respected — was closed on 2026-08-20 by **removing the level filter entirely**. It reached three of the eight widgets above and left five visibly unchanged, which reads as broken rather than as scoped; reasoning in `OverviewFilterBar.tsx`. The bar now offers range, environment, and an auto-refresh control.
+There were two before that. The second — the per-project top error ignoring a level filter that org-wide top errors respected — was closed on 2026-08-20 by **removing the level filter entirely**. It reached three of the eight widgets above and left five visibly unchanged, which reads as broken rather than as scoped; reasoning in `OverviewFilterBar.tsx`. The bar now offers range, environment, and an auto-refresh control.
+
+**The bar gained a pending state on 2026-08-25.** Until then it called `router.push()` bare, so a click produced no visible change until the server answered — the pill did not restyle and no skeleton appeared, because a transition deliberately holds the current UI. The project dashboard had the identical defect fixed on 2026-08-22; the fix lived inside that feature's own hook and was never carried here. The mechanism is now `shared/hooks/use-filter-params.ts`, used by both, and the pills dim after a 120 ms delay so a navigation faster than that never flickers.
+
+It was found by measuring rather than by looking: the filtered benchmarks below put the whole page at 19 ms and the unfiltered one at 25 ms on a 500k-event corpus, which cannot produce a wait anybody would report. The wait was the absence of feedback. Recorded because the first hypothesis was that the environment filter was slow, and the measurement said the opposite.
 
 ## Project dashboard — `/[org]/[project]`
 
-Route: `app/[org]/[project]/page.tsx`. Service: `features/dashboard/services/aggregations.service.ts`.
+Route: `app/[org]/[project]/page.tsx`. Service: `shared/services/event-aggregations.service.ts` — shared with the organization overview since 2026-08-25, called with a one-project scope.
 
 **Measured 2026-08-21** by `aggregations.service.bench.ts` — wall-clock per query rather than shares, against 500k events over a 24-hour window (baseline in `bench/baselines/2026-08-21-local-500k-dashboard.json`).
 
@@ -86,10 +90,11 @@ Say "the five", not "everything": the page also issues `getOrgBySlug`, `getMembe
 |---|---|---|---|---|
 | **Events per minute** (stacked area) | `eventsPerMinute` — **rollup + raw tail** since 2026-08-21 | epoch-floored bucket × level | range | ✅ done |
 | **Level breakdown** | `levelBreakdown` — **rollup + raw tail** since 2026-08-21 | level | range | ✅ done |
-| **Top messages** | `topMessages` — template rollup where covered, raw `events` otherwise; its own `Suspense` boundary | `template_hash`, or `SUBSTRING(message, 1, 200)` on the fallback | range | ✅ since 2026-08-23, by template |
+| **Top messages** | `topMessages` (shared, every level, limit 10) — template rollup where covered, raw `events` otherwise; its own `Suspense` boundary | `template_hash`, or `SUBSTRING(message, 1, 200)` on the fallback | range | ✅ since 2026-08-23, by template |
 | **Top sources** | `topSources` — **rollup + raw tail** since 2026-08-24, raw `events` where `by_source` is missing | `by_source` keys, or `COALESCE(source, '(unknown)')` on the fallback | range | ✅ done |
 | **Recent errors** | `recentErrors` — raw `events` | none — returns whole rows | range | ❌ needs rows |
 | **KPI row** | derived in `dashboard-kpis.ts` from the buckets, levels and alert rules | — | — | follows its inputs |
+| **Live rate** — *top bar, not this page* | `eventsInLastMinute` — raw `events`, trailing 60 s | none: one count | **nothing**; see below | ❌ needs the current minute |
 | **Alerts panel** | `listAlertRules` | — | — | n/a — `alert_rules` |
 | **Empty-project gate** | `hasAnyEvents` — rollup **or** raw `events` | — | — | ✅ done, and deliberately **uncached** |
 
@@ -98,6 +103,14 @@ The gate checks the rollup first because one row per minute is a smaller haystac
 `hasAnyEvents` is awaited **before** the rest, not alongside it, because it decides which page renders at all — the dashboard or the onboarding screen. The read-path audit counted that as a serialised round trip worth removing; measuring it on 2026-08-21 put the cost at **1.2 ms of a 170 ms page**, so it stays.
 
 Since 2026-08-21 the route creates the other five queries as **unawaited promises** and each widget is its own `Suspense` boundary, so nothing waits for `topMessages` — verified by delaying that query three seconds and watching the page still start streaming at 318 ms.
+
+### The live rate is in the layout, so it is not a dashboard widget
+
+It is listed above because a reader looking for "where does the events / min number come from" will look here, not because `app/[org]/[project]/page.tsx` issues it. `app/[org]/[project]/layout.tsx` does, which means it renders on **every** project page — events, alerts, API keys, settings — and that it responds to no filter at all: a layout cannot read `searchParams` in the App Router, so neither the range presets nor the environment pills reach it. It counts the whole project over the last sixty seconds. Read it as a heartbeat, not as a statistic about the view.
+
+It also does not re-read on its own. A shared layout is preserved across navigation between its children, so the number updates when the page re-renders — an auto-refresh tick or a reload — and on the settings pages, which have no refresh control, it is a snapshot from arrival.
+
+It has its own cache profile: **10 seconds**, not the 30 the aggregations use, because a 30-second TTL on top of a 30-second refresh interval would let a "last minute" reading describe a minute that ended ninety seconds ago. The query is a `COUNT(*)` over one partition's tail and does not touch the rollup — one minute of events is exactly the window the rollup has not summarised yet.
 
 ### ~~Dead code~~ — deleted 2026-08-21
 

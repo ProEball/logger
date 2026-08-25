@@ -5,18 +5,19 @@ import { getOrgBySlug } from "@/features/organizations/services/organizations.se
 import { getMembership } from "@/features/organizations/services/organizations.service";
 import { getProjectBySlug } from "@/features/projects/services/projects.service";
 import { listApiKeysForProject } from "@/features/api-keys/services/api-keys.service";
-import { hasAnyEvents } from "@/features/dashboard/services/aggregations.service";
+import { hasAnyEvents } from "@/shared/services/event-aggregations.service";
 import {
-    cachedEventsPerMinute,
+    cachedEnvironments,
+    cachedEventBucketsByLevel,
     cachedLevelBreakdown,
     cachedRecentErrors,
     cachedTopMessages,
     cachedTopSources,
-} from "@/features/dashboard/services/dashboard-cache.service";
+} from "@/shared/services/event-aggregations-cache.service";
 import { listAlertRules } from "@/features/alerts/services/alert-rules.service";
 import { DashboardPage } from "@/features/dashboard/components/DashboardPage/DashboardPage";
 import { EmptyProjectState } from "@/features/dashboard/components/EmptyProjectState/EmptyProjectState";
-import { parseDashboardRange } from "@/features/dashboard/utils/dashboard-range";
+import { parseDashboardFilters, resolveRange } from "@/shared/utils/dashboard-filters";
 
 interface DashboardRouteProps {
     params: Promise<{ org: string; project: string }>;
@@ -41,7 +42,7 @@ export default async function DashboardRoute({ params, searchParams }: Dashboard
     if (!project) notFound();
 
     // Guard: if no events have ever been ingested, show onboarding CTA
-    const anyEvents = await hasAnyEvents(project.id);
+    const anyEvents = await hasAnyEvents([project.id]);
     if (!anyEvents) {
         const keys = await listApiKeysForProject(project.id);
         const activeKey = keys.find((k) => !k.revokedAt);
@@ -55,13 +56,18 @@ export default async function DashboardRoute({ params, searchParams }: Dashboard
         );
     }
 
-    const range = parseDashboardRange(sp.range);
+    // "fine": this chart draws one project, so its 1-hour view stays a live
+    // minute-by-minute tail. Every other width matches the overview.
+    const filters = parseDashboardFilters(sp, "fine");
+    const range = filters.range;
+    const dateRange = resolveRange(range);
+    const ids = [project.id];
 
     // NOT awaited. Each query is started here and handed to the section that
     // draws it, so a slow aggregation delays only its own widget instead of the
     // whole page — the same shape the org overview took in §16.1 Stage D.
     //
-    // Measured before the change (`aggregations.service.bench.ts`): `topMessages`
+    // Measured before the change (`event-aggregations.service.bench.ts`): `topMessages`
     // 170 ms, `eventsPerMinute` 44.2, `levelBreakdown` 11.6, `topSources` 11.2,
     // `recentErrors` 0.84. Behind one `Promise.all` the page showed nothing for
     // 170 ms; now everything but the last paints at ~45.
@@ -71,17 +77,23 @@ export default async function DashboardRoute({ params, searchParams }: Dashboard
     // deliberately not among them — it gates the onboarding screen, and the one
     // moment its answer changes is the one moment a stale "no events yet" would
     // be worst.
+    //
+    // The live rate is not started here either: it moved to the application top
+    // bar on 2026-08-25, so the project layout owns that query now. Being in a
+    // layout is what makes it unfiltered by environment - see `ProjectPulse`.
     return (
         <DashboardPage
-            projectName={project.name}
             orgSlug={orgSlug}
             projectSlug={projectSlug}
             range={range}
-            eventsPerMinPromise={cachedEventsPerMinute(project.id, range)}
-            levelBreakdownPromise={cachedLevelBreakdown(project.id, range)}
-            topMessagesPromise={cachedTopMessages(project.id, range)}
-            recentErrorsPromise={cachedRecentErrors(project.id, range)}
-            topSourcesPromise={cachedTopSources(project.id, range)}
+            rangePreset={filters.preset}
+            environment={filters.environment}
+            environmentsPromise={cachedEnvironments(ids)}
+            eventsPerMinPromise={cachedEventBucketsByLevel(ids, filters.preset, dateRange, filters.bucketSecs, filters.environmentsFilter)}
+            levelBreakdownPromise={cachedLevelBreakdown(ids, filters.preset, dateRange, filters.environmentsFilter)}
+            topMessagesPromise={cachedTopMessages(ids, filters.preset, dateRange, filters.environmentsFilter)}
+            recentErrorsPromise={cachedRecentErrors(ids, filters.preset, dateRange, filters.environmentsFilter)}
+            topSourcesPromise={cachedTopSources(ids, filters.preset, dateRange, filters.environmentsFilter)}
             alertRulesPromise={listAlertRules(project.id, membership)}
         />
     );

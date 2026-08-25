@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { readCacheSettings } from "./read-cache-settings";
+import { readCacheSettings, readLiveCacheSettings } from "./read-cache-settings";
 
 describe("readCacheSettings", () => {
     it("caches for 30 seconds off the e2e server", () => {
@@ -39,5 +39,31 @@ describe("readCacheSettings", () => {
 
         expect(ttlMs).toBeGreaterThan(0);
         expect(maxStaleMs).toBeGreaterThanOrEqual(ttlMs);
+    });
+});
+
+describe("readLiveCacheSettings", () => {
+    it("is shorter than the standard profile", () => {
+        // The point of a second profile: a reading about the current minute
+        // cannot be allowed to be as stale as a range aggregate.
+        expect(readLiveCacheSettings(false).ttlMs).toBeLessThan(readCacheSettings(false).ttlMs);
+    });
+
+    it("holds for ten seconds live", () => {
+        expect(readLiveCacheSettings(false).ttlMs).toBe(10_000);
+    });
+
+    /**
+     * The ceiling is about database outages, not freshness — a failing refresh
+     * should keep serving the last good value for as long here as anywhere
+     * else, or this one number would vanish during a blip that left the rest of
+     * the page standing.
+     */
+    it("keeps the same staleness ceiling as the standard profile", () => {
+        expect(readLiveCacheSettings(false).maxStaleMs).toBe(readCacheSettings(false).maxStaleMs);
+    });
+
+    it("collapses to 1 ms under e2e, like the standard profile", () => {
+        expect(readLiveCacheSettings(true)).toEqual({ ttlMs: 1, maxStaleMs: 1 });
     });
 });

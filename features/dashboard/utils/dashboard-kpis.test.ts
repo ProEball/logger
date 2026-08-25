@@ -1,62 +1,43 @@
 import { describe, it, expect } from "vitest";
 import {
     errorCount,
-    eventsPerMinuteRate,
+    totalEvents,
     fatalCount,
     firingRules,
     sparklines,
 } from "./dashboard-kpis";
-import type { BucketRow } from "@/features/dashboard/utils/aggregation-utils";
+import type { LevelledBucket } from "@/shared/utils/event-buckets";
 
-function bucket(total: number, byLevel: Record<string, number> = {}): BucketRow {
-    return { ts: new Date("2026-08-21T00:00:00Z"), total, byLevel };
+function bucket(total: number, byLevel: Record<string, number> = {}): LevelledBucket {
+    const errors = (byLevel.error ?? 0) + (byLevel.fatal ?? 0);
+    return { projectId: "p", ts: new Date("2026-08-21T00:00:00Z"), total, errors, byLevel };
 }
 
-describe("eventsPerMinuteRate", () => {
-    it("divides the total by the preset's length in minutes", () => {
-        // 120 events over an hour is 2 per minute.
-        expect(eventsPerMinuteRate([bucket(60), bucket(60)], { type: "preset", value: "1h" })).toBe(
-            "2",
-        );
+describe("totalEvents", () => {
+    it("sums every bucket", () => {
+        expect(totalEvents([bucket(60), bucket(40)])).toBe("100");
     });
 
-    it("uses the preset's length, not the number of buckets", () => {
-        // The same 120 events over 24 hours is 0.08/min, not 2.
-        expect(
-            eventsPerMinuteRate([bucket(60), bucket(60)], { type: "preset", value: "24h" }),
-        ).toBe("0.08");
+    it("is zero for an empty series", () => {
+        expect(totalEvents([])).toBe("0");
+    });
+
+    it("thousands-separates, matching the org KPI beside it", () => {
+        // The two dashboards show the same number in the same place; a raw
+        // 1234567 next to a formatted one is the kind of difference that makes
+        // a reader wonder whether they are the same metric.
+        expect(totalEvents([bucket(1_234_567)])).toBe((1234567).toLocaleString());
     });
 
     /**
-     * The boundary that decides the format. A rate under 1 rounded to "0" reads
-     * as "nothing is arriving" when the truth is "something is, slowly".
+     * It does **not** divide by the range. That was the previous KPI, and at 30
+     * days it reported a month of traffic over 43,200 minutes — a number that
+     * moved for reasons nobody could see. The live rate replaced it in the
+     * application top bar; see `shared/utils/live-rate.ts`.
      */
-    describe("formatting around a rate of 1", () => {
-        it("shows two decimals below 1", () => {
-            expect(eventsPerMinuteRate([bucket(30)], { type: "preset", value: "1h" })).toBe("0.50");
-        });
-
-        it("rounds at exactly 1", () => {
-            expect(eventsPerMinuteRate([bucket(60)], { type: "preset", value: "1h" })).toBe("1");
-        });
-
-        it("rounds above 1", () => {
-            expect(eventsPerMinuteRate([bucket(90)], { type: "preset", value: "1h" })).toBe("2");
-        });
-
-        it("reports 0.00 rather than 0 for an empty range", () => {
-            expect(eventsPerMinuteRate([], { type: "preset", value: "1h" })).toBe("0.00");
-        });
-    });
-
-    it("falls back to an hour for a custom range", () => {
-        expect(
-            eventsPerMinuteRate([bucket(120)], {
-                type: "custom",
-                from: "2026-08-20T00:00:00Z",
-                to: "2026-08-21T00:00:00Z",
-            }),
-        ).toBe("2");
+    it("is the same number whatever the range", () => {
+        const series = [bucket(60), bucket(60)];
+        expect(totalEvents(series)).toBe("120");
     });
 });
 

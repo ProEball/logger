@@ -2,7 +2,7 @@ import { Suspense, type ReactNode } from "react";
 import { ProjectsSection } from "@/features/overview/components/ProjectsSection/ProjectsSection";
 import { buildProjectRows } from "@/features/overview/utils/build-project-rows";
 import type { AlertRuleFlags, OverviewProject } from "@/features/overview/utils/build-project-rows";
-import type { ProjectStats, ProjectTopMessage } from "@/features/overview/services/overview.service";
+import type { ProjectStats, ProjectTopMessage } from "@/shared/services/event-aggregations.service";
 import {
     TopMessageSlot,
     TopMessageSkeleton,

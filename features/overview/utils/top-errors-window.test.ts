@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { OVERVIEW_PRESETS } from "@/features/overview/utils/overview-filters";
+import { DASHBOARD_PRESETS } from "@/shared/utils/dashboard-filters";
 import {
     clampTopErrorsWindow,
     TOP_ERRORS_MAX_PRESET,
@@ -21,22 +21,22 @@ describe("clampTopErrorsWindow", () => {
     it("never widens the window", () => {
         // Showing more than the page asked for would be surprising in the
         // other direction, and would defeat the point on a narrow range.
-        for (const preset of OVERVIEW_PRESETS) {
+        for (const preset of DASHBOARD_PRESETS) {
             const result = clampTopErrorsWindow(preset);
-            expect(OVERVIEW_PRESETS.indexOf(result.preset)).toBeLessThanOrEqual(
-                OVERVIEW_PRESETS.indexOf(preset),
+            expect(DASHBOARD_PRESETS.indexOf(result.preset)).toBeLessThanOrEqual(
+                DASHBOARD_PRESETS.indexOf(preset),
             );
         }
     });
 
     it("returns a preset the range resolver understands, for every input", () => {
-        for (const preset of OVERVIEW_PRESETS) {
-            expect(OVERVIEW_PRESETS).toContain(clampTopErrorsWindow(preset).preset);
+        for (const preset of DASHBOARD_PRESETS) {
+            expect(DASHBOARD_PRESETS).toContain(clampTopErrorsWindow(preset).preset);
         }
     });
 
     it("only reports isClamped when it actually narrowed something", () => {
-        for (const preset of OVERVIEW_PRESETS) {
+        for (const preset of DASHBOARD_PRESETS) {
             const result = clampTopErrorsWindow(preset);
             expect(result.isClamped).toBe(result.preset !== preset);
         }

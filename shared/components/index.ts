@@ -119,3 +119,4 @@ export type { TopbarProps } from './Topbar/Topbar';
 
 export { ToastProvider, useToast } from './Toast';
 export type { ToastApi, ToastItem, ToastOptions, ToastProviderProps, ToastVariant } from './Toast';
+export { DashboardFilterBar } from "./DashboardFilterBar/DashboardFilterBar";

@@ -1,4 +1,4 @@
-import type { ProjectTopMessage } from "@/features/overview/services/overview.service";
+import type { ProjectTopMessage } from "@/shared/services/event-aggregations.service";
 import styles from "./TopMessageSlot.module.scss";
 
 /**

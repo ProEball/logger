@@ -43,3 +43,28 @@ export function readCacheSettings(isE2E: boolean): { ttlMs: number; maxStaleMs: 
     return { ttlMs: 30_000, maxStaleMs: 5 * 60_000 };
 }
 
+
+/**
+ * The shorter window for a reading that is **about right now**.
+ *
+ * The 30-second profile above is sized to the shortest auto-refresh interval, so
+ * a number can be up to 30 s old by design. That is right for a range aggregate
+ * — nobody can tell a 30-day total from one computed half a minute ago — and
+ * wrong for "events in the last minute", where 30 s of staleness means the
+ * header can be describing a minute that ended ninety seconds ago.
+ *
+ * Ten seconds is the compromise, and it is affordable because the query it
+ * fronts is a trailing-60s index scan rather than an aggregate: recomputing it
+ * six times a minute instead of twice costs almost nothing, and the cache is
+ * still doing its real job of collapsing N concurrent readers into one query.
+ *
+ * The staleness ceiling stays at five minutes. It governs how long a *failing*
+ * refresh may keep serving the last good value, which is a question about
+ * database outages rather than about freshness — and answering it differently
+ * here would mean this one number vanished from the page during a blip that
+ * left everything else standing.
+ */
+export function readLiveCacheSettings(isE2E: boolean): { ttlMs: number; maxStaleMs: number } {
+    if (isE2E) return { ttlMs: 1, maxStaleMs: 1 };
+    return { ttlMs: 10_000, maxStaleMs: 5 * 60_000 };
+}

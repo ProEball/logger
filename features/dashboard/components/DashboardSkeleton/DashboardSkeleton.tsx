@@ -1,4 +1,4 @@
-import { Skeleton, WidgetSkeleton } from "@/shared/components";
+import { WidgetSkeleton } from "@/shared/components";
 /**
  * The page's own stylesheet, deliberately imported across the component folder
  * rather than restated here. This skeleton exists to occupy the dashboard's
@@ -37,7 +37,7 @@ const CELLS = [
     // Row 2 — events chart, level breakdown.
     "span8",
     "span4",
-    // Row 3 — recent errors, top hosts.
+    // Row 3 — recent errors, top sources.
     "span8",
     "span4",
     // Row 4 — top messages, full width. The slow one.
@@ -47,10 +47,14 @@ const CELLS = [
 export function DashboardSkeleton() {
     return (
         <div className={styles.page} role="status" aria-label="Loading dashboard">
-            <div className={styles.headerFallback}>
-                <Skeleton width={200} height={20} />
-                <Skeleton width={120} height={12} />
-            </div>
+            {/*
+              * One bar-shaped block, not a title-and-subtitle pair. This stood
+              * in for `DashboardHeader` until that component was deleted on
+              * 2026-08-25; the page now opens with the shared filter bar, and a
+              * placeholder that does not match what arrives shifts the grid
+              * when it does.
+              */}
+            <div className={styles.filterBarFallback} />
 
             <div className={styles.grid}>
                 {CELLS.map((span, i) => (

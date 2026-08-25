@@ -2,7 +2,7 @@
 import { useState, type ReactNode } from "react";
 import { ProjectCards } from "@/features/overview/components/ProjectCards/ProjectCards";
 import { ProjectStatsTable } from "@/features/overview/components/ProjectStatsTable/ProjectStatsTable";
-import type { ProjectRow } from "@/features/overview/services/overview.service";
+import type { ProjectRow } from "@/features/overview/utils/build-project-rows";
 import styles from "./ProjectsSection.module.scss";
 
 interface ProjectsSectionProps {

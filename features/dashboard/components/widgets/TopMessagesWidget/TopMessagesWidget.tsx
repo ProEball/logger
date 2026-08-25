@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { WidgetCard } from "../../WidgetCard/WidgetCard";
 import { LevelBadge } from "@/shared/components";
 import { serializeFilters } from "@/features/events/utils/serialize-filters";
-import type { TopMessage } from "@/features/dashboard/services/aggregations.service";
+import type { TopMessage } from "@/shared/services/event-aggregations.service";
 import type { TimeRange } from "@/features/events/utils/event-filters.types";
 import styles from "./TopMessagesWidget.module.scss";
 

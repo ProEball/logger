@@ -3,16 +3,15 @@ import { getCurrentUser } from "@/core/auth/server";
 import { getOrgBySlug, getMembership } from "@/features/organizations/services/organizations.service";
 import { listProjectsForOrg } from "@/features/projects/services/projects.service";
 import { listAlertRules } from "@/features/alerts/services/alert-rules.service";
-import { resolveRange } from "@/features/dashboard/utils/aggregation-utils";
+import { parseDashboardFilters, resolveRange } from "@/shared/utils/dashboard-filters";
 import {
     cachedProjectStats,
-    cachedProjectTopMessages,
-    cachedOrgLevelBreakdown,
-    cachedOrgTopErrors,
-    cachedOrgEnvironments,
-    cachedOrgEventBuckets,
-} from "@/features/overview/services/overview-cache.service";
-import { parseOverviewFilters } from "@/features/overview/utils/overview-filters";
+    cachedTopMessagePerProject,
+    cachedLevelBreakdown,
+    cachedTopErrors,
+    cachedEnvironments,
+    cachedEventBuckets,
+} from "@/shared/services/event-aggregations-cache.service";
 import { clampTopErrorsWindow } from "@/features/overview/utils/top-errors-window";
 import type { AlertRuleFlags } from "@/features/overview/utils/build-project-rows";
 import { OverviewPage } from "@/features/overview/components/OverviewPage/OverviewPage";
@@ -34,8 +33,10 @@ export default async function OrgPage({ params, searchParams }: OrgPageProps) {
     const membership = await getMembership(user.id, org.id);
     if (!membership) redirect("/login");
 
-    const filters = parseOverviewFilters(rawSearch);
-    const dateRange = resolveRange({ type: "preset", value: filters.preset });
+    // "coarse": this chart draws one series per project, so it trades chart
+    // resolution for a readable number of marks. See `BucketDensity`.
+    const filters = parseDashboardFilters(rawSearch, "coarse");
+    const dateRange = resolveRange(filters.range);
 
     // Awaited: the project list decides what every other query is scoped to,
     // and the page has nothing to render without it.
@@ -54,7 +55,7 @@ export default async function OrgPage({ params, searchParams }: OrgPageProps) {
     //
     // These are the `cached*` wrappers, not the services themselves: every
     // reader of an organization asks the same question, so it is answered once
-    // per 30 s and shared (`overview-cache.service.ts`). Both the preset and
+    // per 30 s and shared (`event-aggregations-cache.service.ts`). Both the preset and
     // the resolved range are passed — the preset keys the cache, the range is
     // used only when the query actually runs. Keying on the range instead
     // would key on `Date.now()` and never hit.
@@ -70,7 +71,7 @@ export default async function OrgPage({ params, searchParams }: OrgPageProps) {
         dateRange,
         filters.environmentsFilter,
     );
-    const topMessagesPromise = cachedProjectTopMessages(
+    const topMessagesPromise = cachedTopMessagePerProject(
         projectIds,
         filters.preset,
         dateRange,
@@ -81,24 +82,27 @@ export default async function OrgPage({ params, searchParams }: OrgPageProps) {
     // of the page's — see `clampTopErrorsWindow` — and the cache is keyed on
     // the capped window, which is the range this actually asks for.
     const topErrorsWindow = clampTopErrorsWindow(filters.preset);
-    const topErrorsPromise = cachedOrgTopErrors(
+    const topErrorsPromise = cachedTopErrors(
         projectIds,
         topErrorsWindow.preset,
         resolveRange({ type: "preset", value: topErrorsWindow.preset }),
         filters.environmentsFilter,
     );
-    const levelBreakdownPromise = cachedOrgLevelBreakdown(
+    const levelBreakdownPromise = cachedLevelBreakdown(
         projectIds,
         filters.preset,
         dateRange,
         filters.environmentsFilter,
     );
-    const environmentsPromise = cachedOrgEnvironments(projectIds);
-    const bucketsPromise = cachedOrgEventBuckets(
+    const environmentsPromise = cachedEnvironments(projectIds);
+    // The environment filter reaches this since 2026-08-25. It did not before —
+    // the chart was the one widget on the page that ignored the filter bar.
+    const bucketsPromise = cachedEventBuckets(
         projectIds,
         filters.preset,
         dateRange,
         filters.bucketSecs,
+        filters.environmentsFilter,
     );
 
     const alertRulesPromise = Promise.all(
@@ -116,7 +120,6 @@ export default async function OrgPage({ params, searchParams }: OrgPageProps) {
             range={filters.preset}
             environment={filters.environment}
             environmentsPromise={environmentsPromise}
-            searchString={filters.searchString}
             statsPromise={statsPromise}
             topMessagesPromise={topMessagesPromise}
             alertRulesPromise={alertRulesPromise}

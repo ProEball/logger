@@ -1,20 +1,20 @@
 import { KpiCard } from "@/features/dashboard/components/KpiCard/KpiCard";
 import {
     errorCount,
-    eventsPerMinuteRate,
+    totalEvents,
     fatalCount,
     firingRules,
     sparklines,
 } from "@/features/dashboard/utils/dashboard-kpis";
-import type { BucketRow } from "@/features/dashboard/utils/aggregation-utils";
-import type { LevelCount } from "@/features/dashboard/services/aggregations.service";
+import type { LevelledBucket } from "@/shared/utils/event-buckets";
+import type { LevelCount } from "@/shared/services/event-aggregations.service";
 import type { AlertRule } from "@/core/db/schema";
 import type { TimeRange } from "@/shared/utils/event-filters.schema";
 import styles from "../DashboardPage.module.scss";
 
 interface KpiSectionProps {
     range: TimeRange;
-    eventsPerMinPromise: Promise<BucketRow[]>;
+    eventsPerMinPromise: Promise<LevelledBucket[]>;
     levelBreakdownPromise: Promise<LevelCount[]>;
     alertRulesPromise: Promise<AlertRule[]>;
 }
@@ -49,9 +49,8 @@ export async function KpiSection({
         <>
             <div className={styles.span3}>
                 <KpiCard
-                    label="Events / min"
-                    value={eventsPerMinuteRate(buckets, range)}
-                    unit="/ min"
+                    label="Total events"
+                    value={totalEvents(buckets)}
                     sparklineData={spark.total}
                     sparklineColor="cyan"
                     footerLeft={`over last ${range.type === "preset" ? range.value : "range"}`}

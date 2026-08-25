@@ -7,6 +7,8 @@ import { AppSidebar } from "@/features/organizations/components/AppSidebar/AppSi
 import { AppShell } from "@/shared/components";
 import { OrgHydrator } from "@/core/store/OrgHydrator";
 import { OrgTopBar } from "@/features/organizations/components/OrgTopBar/OrgTopBar";
+import { ProjectPulse } from "@/features/projects/components/ProjectPulse/ProjectPulse";
+import { cachedEventsInLastMinute } from "@/shared/services/event-aggregations-cache.service";
 import { getThemeFromCookie } from "@/core/theme/cookie";
 import type { ThemeValue } from "@/core/store/slices/theme";
 import { hasPermission } from "@/shared/permissions/check";
@@ -65,7 +67,27 @@ export default async function ProjectLayout({ children, params }: ProjectLayoutP
                     />
                 }
             >
-                <OrgTopBar userName={user.name} userEmail={user.email} />
+                {/*
+                  * The rate query is started here and handed down unawaited —
+                  * `ProjectPulse` holds the `Suspense` boundary. Awaiting it in
+                  * this layout would put the sidebar and every project page
+                  * behind an aggregation.
+                  *
+                  * Unfiltered by environment on purpose: a layout cannot read
+                  * `searchParams`, and this is a heartbeat for the project
+                  * rather than a statistic about the current view. See the note
+                  * on `ProjectPulse`.
+                  */}
+                <OrgTopBar
+                    userName={user.name}
+                    userEmail={user.email}
+                    left={
+                        <ProjectPulse
+                            name={project.name}
+                            ratePromise={cachedEventsInLastMinute([project.id])}
+                        />
+                    }
+                />
                 {children}
             </AppShell>
         </>

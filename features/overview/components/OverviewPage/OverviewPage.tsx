@@ -1,18 +1,17 @@
 import { Suspense } from "react";
 import { CardSkeleton, WidgetSkeleton } from "@/shared/components";
-import { OverviewFilterBar } from "@/features/overview/components/OverviewFilterBar/OverviewFilterBar";
+import { DashboardFilterBar } from "@/shared/components/DashboardFilterBar/DashboardFilterBar";
 import { OverviewKpiRow } from "@/features/overview/components/OverviewKpiRow/OverviewKpiRow";
 import { OverviewVolumeSection } from "@/features/overview/components/OverviewVolumeSection/OverviewVolumeSection";
 import { OverviewProjectsPanel } from "@/features/overview/components/OverviewProjectsPanel/OverviewProjectsPanel";
 import { OverviewTopErrorsPanel } from "@/features/overview/components/OverviewTopErrorsPanel/OverviewTopErrorsPanel";
 import { OverviewLevelBreakdownPanel } from "@/features/overview/components/OverviewLevelBreakdownPanel/OverviewLevelBreakdownPanel";
 import type {
-    OrgEventBucket,
-    OrgLevelCount,
-    OrgTopError,
     ProjectStats,
     ProjectTopMessage,
-} from "@/features/overview/services/overview.service";
+} from "@/shared/services/event-aggregations.service";
+import type { EventBucket } from "@/shared/utils/event-buckets";
+import type { LevelCount, TopMessage } from "@/shared/services/event-aggregations.service";
 import type { AlertRuleFlags, OverviewProject } from "@/features/overview/utils/build-project-rows";
 import type { TopErrorsWindow } from "@/features/overview/utils/top-errors-window";
 import styles from "./OverviewPage.module.scss";
@@ -45,7 +44,6 @@ interface OverviewPageProps {
     range: string;
     environment: string;
     environmentsPromise: Promise<string[]>;
-    searchString: string;
     statsPromise: Promise<Map<string, ProjectStats>>;
     /**
      * Passed down **unawaited** all the way to the per-project `Suspense`
@@ -54,10 +52,10 @@ interface OverviewPageProps {
      */
     topMessagesPromise: Promise<Map<string, ProjectTopMessage>>;
     alertRulesPromise: Promise<Map<string, AlertRuleFlags[]>>;
-    topErrorsPromise: Promise<OrgTopError[]>;
+    topErrorsPromise: Promise<TopMessage[]>;
     topErrorsWindow: TopErrorsWindow;
-    levelBreakdownPromise: Promise<OrgLevelCount[]>;
-    bucketsPromise: Promise<OrgEventBucket[]>;
+    levelBreakdownPromise: Promise<LevelCount[]>;
+    bucketsPromise: Promise<EventBucket[]>;
 }
 
 /** The filter bar needs the environment list, which is now a registry lookup. */
@@ -65,14 +63,12 @@ async function FilterBarSection({
     range,
     environment,
     environmentsPromise,
-    searchString,
-}: Pick<OverviewPageProps, "range" | "environment" | "environmentsPromise" | "searchString">) {
+}: Pick<OverviewPageProps, "range" | "environment" | "environmentsPromise">) {
     return (
-        <OverviewFilterBar
+        <DashboardFilterBar
             range={range}
             environment={environment}
             environments={await environmentsPromise}
-            searchString={searchString}
         />
     );
 }
@@ -83,7 +79,6 @@ export function OverviewPage({
     range,
     environment,
     environmentsPromise,
-    searchString,
     statsPromise,
     topMessagesPromise,
     alertRulesPromise,
@@ -99,7 +94,6 @@ export function OverviewPage({
                     range={range}
                     environment={environment}
                     environmentsPromise={environmentsPromise}
-                    searchString={searchString}
                 />
             </Suspense>
 

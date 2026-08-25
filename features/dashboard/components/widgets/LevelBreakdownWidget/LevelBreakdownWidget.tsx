@@ -6,7 +6,7 @@ import { WidgetCard } from "../../WidgetCard/WidgetCard";
 import { t } from "@/core/i18n/t";
 import { levelColor } from "@/features/dashboard/utils/level-colors";
 import { serializeFilters } from "@/features/events/utils/serialize-filters";
-import type { LevelCount } from "@/features/dashboard/services/aggregations.service";
+import type { LevelCount } from "@/shared/services/event-aggregations.service";
 import type { TimeRange } from "@/features/events/utils/event-filters.types";
 import type { EventLevel } from "@/features/ingest/utils/event-schema";
 import styles from "./LevelBreakdownWidget.module.scss";

@@ -3,7 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { sql } from "drizzle-orm";
 import { db } from "@/core/db/client";
 import { recordEnvironments } from "@/features/ingest/services/environment-registry.service";
-import { getOrgEnvironments } from "@/features/overview/services/overview.service";
+import { environmentsInUse } from "@/shared/services/event-aggregations.service";
 import { ORG_A } from "@/itest/support/fixture";
 
 /**
@@ -115,17 +115,17 @@ describe("recordEnvironments", () => {
     });
 });
 
-describe("getOrgEnvironments reads the registry, not events", () => {
+describe("environmentsInUse reads the registry, not events", () => {
     it("offers an environment that has a registry row but no events", async () => {
         // The whole point of the change: the dropdown no longer scans `events`.
         // This project has never had a single event inserted.
         await recordEnvironments([{ environment: "registry-only" }], projectId);
-        expect(await getOrgEnvironments([projectId])).toContain("registry-only");
+        expect(await environmentsInUse([projectId])).toContain("registry-only");
     });
 
     it("labels the NULL row '(unset)', as the events scan used to", async () => {
         await recordEnvironments([{ environment: null }], projectId);
-        expect(await getOrgEnvironments([projectId])).toContain("(unset)");
+        expect(await environmentsInUse([projectId])).toContain("(unset)");
     });
 
     it("drops an environment whose last_seen_at is older than 30 days", async () => {
@@ -135,7 +135,7 @@ describe("getOrgEnvironments reads the registry, not events", () => {
             SET last_seen_at = now() - interval '31 days'
             WHERE project_id = ${projectId}::uuid AND environment = 'decommissioned'
         `);
-        expect(await getOrgEnvironments([projectId])).not.toContain("decommissioned");
+        expect(await environmentsInUse([projectId])).not.toContain("decommissioned");
     });
 
     it("keeps one just inside the 30-day window", async () => {
@@ -145,6 +145,6 @@ describe("getOrgEnvironments reads the registry, not events", () => {
             SET last_seen_at = now() - interval '29 days'
             WHERE project_id = ${projectId}::uuid AND environment = 'barely-alive'
         `);
-        expect(await getOrgEnvironments([projectId])).toContain("barely-alive");
+        expect(await environmentsInUse([projectId])).toContain("barely-alive");
     });
 });

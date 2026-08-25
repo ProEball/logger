@@ -274,7 +274,7 @@ test.describe.serial("Organization overview", () => {
         // Removed 2026-08-20. The chips narrowed three of the page's eight
         // widgets and left five visibly unchanged, which reads as a broken
         // filter rather than one with a documented scope — reasoning in
-        // `OverviewFilterBar.tsx`. Asserting their absence is what stops them
+        // `DashboardFilterBar.tsx`. Asserting their absence is what stops them
         // reappearing by habit.
         await openOverview(page);
         await expect(page.getByRole("group", { name: "Levels" })).toHaveCount(0);

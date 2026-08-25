@@ -1,16 +1,29 @@
 import dynamic from "next/dynamic";
 import { WidgetSkeleton } from "@/shared/components";
-import { eventsPerMinuteRate } from "@/features/dashboard/utils/dashboard-kpis";
+
+import { activeLevels, levelPoints } from "@/shared/utils/chart-points";
+/**
+ * Recharts is heavy and neither dashboard needs it in the shell, so the chart is
+ * loaded lazily — `PROJECT.md` §10. Each page does its own `dynamic()` rather
+ * than a shared wrapper, because §2.2 allows one component per folder and a
+ * second file next to `EventChart.tsx` for this would be a structure invented to
+ * save two lines.
+ */
+const EventChart = dynamic(
+    () => import("@/shared/components/EventChart/EventChart").then((m) => ({ default: m.EventChart })),
+    { loading: () => <WidgetSkeleton /> },
+);
+import { KNOWN_LEVELS, levelColor } from "@/features/dashboard/utils/level-colors";
+import { t } from "@/core/i18n/t";
 import { LevelBreakdownWidget } from "@/features/dashboard/components/widgets/LevelBreakdownWidget/LevelBreakdownWidget";
 import { RecentErrorsWidget } from "@/features/dashboard/components/widgets/RecentErrorsWidget/RecentErrorsWidget";
 import { TopSourcesWidget } from "@/features/dashboard/components/widgets/TopSourcesWidget/TopSourcesWidget";
 import { TopMessagesWidget } from "@/features/dashboard/components/widgets/TopMessagesWidget/TopMessagesWidget";
-import type { BucketRow } from "@/features/dashboard/utils/aggregation-utils";
+import type { LevelledBucket } from "@/shared/utils/event-buckets";
 import type {
-    LevelCount,
     SourceCount,
-    TopMessage,
-} from "@/features/dashboard/services/aggregations.service";
+} from "@/shared/services/event-aggregations.service";
+import type { LevelCount, TopMessage } from "@/shared/services/event-aggregations.service";
 import type { Event } from "@/core/db/schema";
 import type { TimeRange } from "@/shared/utils/event-filters.schema";
 
@@ -26,7 +39,7 @@ import type { TimeRange } from "@/shared/utils/event-filters.schema";
  * half: they hold the await, the boundary sits around them in `DashboardPage`,
  * and what crosses into the client is finished data.
  *
- * **Measured 2026-08-21** (`aggregations.service.bench.ts`): `topMessages`
+ * **Measured 2026-08-21** (`event-aggregations.service.bench.ts`): `topMessages`
  * 170 ms, `eventsPerMinute` 44.2 ms, `levelBreakdown` 11.6, `topSources` 11.2,
  * `recentErrors` 0.84. Only the first is far enough from the rest to be worth a
  * boundary of its own on today's numbers; the others get one each because it
@@ -34,14 +47,6 @@ import type { TimeRange } from "@/shared/utils/event-filters.schema";
  * ratios change on a slower host.
  */
 
-/** Client component, charts. Loaded lazily so Recharts stays out of the shell. */
-const EventsPerMinuteWidget = dynamic(
-    () =>
-        import("@/features/dashboard/components/widgets/EventsPerMinuteWidget/EventsPerMinuteWidget").then(
-            (m) => ({ default: m.EventsPerMinuteWidget }),
-        ),
-    { loading: () => <WidgetSkeleton /> },
-);
 
 /** Range plus slugs — every widget turns a click into a filtered events URL. */
 export interface WidgetClickProps {
@@ -50,8 +55,26 @@ export interface WidgetClickProps {
     projectSlug: string;
 }
 
-export async function EventsChartSection({ promise }: { promise: Promise<BucketRow[]> }) {
-    return <EventsPerMinuteWidget data={await promise} />;
+/**
+ * The project's volume chart: one stacked area per level.
+ *
+ * Same `EventChart` the organization overview draws, in its other mode. Shaping
+ * happens here because the chart is a client component and this is not — see
+ * `chart-points.ts`.
+ */
+export async function EventsChartSection({ promise }: { promise: Promise<LevelledBucket[]> }) {
+    const buckets = await promise;
+    const levels = activeLevels(buckets, KNOWN_LEVELS);
+
+    return (
+        <EventChart
+            title={t("dashboard.widgets.eventsPerMinute")}
+            points={levelPoints(buckets, levels)}
+            series={levels.map((level) => ({ key: level, label: level, color: levelColor(level) }))}
+            mode="stacked-area"
+            emptyLabel="No events in this range"
+        />
+    );
 }
 
 export async function LevelBreakdownSection({
@@ -84,15 +107,4 @@ export async function TopMessagesSection({
     ...clickProps
 }: { promise: Promise<TopMessage[]> } & WidgetClickProps) {
     return <TopMessagesWidget data={await promise} {...clickProps} />;
-}
-
-/** The header's subtitle, which reads off the bucket query like the KPI does. */
-export async function HeaderRateSection({
-    promise,
-    range,
-}: {
-    promise: Promise<BucketRow[]>;
-    range: TimeRange;
-}) {
-    return <>{eventsPerMinuteRate(await promise, range)} events / min</>;
 }

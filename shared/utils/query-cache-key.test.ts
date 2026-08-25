@@ -46,7 +46,7 @@ describe("queryCacheKey", () => {
     /**
      * The scope is the permission boundary. These are the assertions that stop
      * a future per-project visibility rule from turning the cache into a leak
-     * silently — see the header of `overview-cache.service.ts`.
+     * silently — see the header of `event-aggregations-cache.service.ts`.
      */
     describe("keeps project scopes apart", () => {
         it("separates disjoint project sets", () => {

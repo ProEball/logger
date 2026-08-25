@@ -1,8 +1,8 @@
 import { OrgLevelBreakdown } from "@/features/overview/components/OrgLevelBreakdown/OrgLevelBreakdown";
-import type { OrgLevelCount } from "@/features/overview/services/overview.service";
+import type { LevelCount } from "@/shared/services/event-aggregations.service";
 
 interface OverviewLevelBreakdownPanelProps {
-    levelBreakdownPromise: Promise<OrgLevelCount[]>;
+    levelBreakdownPromise: Promise<LevelCount[]>;
 }
 
 /**

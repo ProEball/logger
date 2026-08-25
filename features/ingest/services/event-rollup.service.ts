@@ -16,11 +16,23 @@ import { rollupState } from "@/core/db/schema";
  *
  * `environment` is client-supplied and validated only as a string of at most
  * 128 characters, so a project sending a unique value per deploy would grow the
- * JSON without bound. The cap turns that from unbounded growth into a fixed
- * ceiling; twenty is far above what a real project uses and far below what
- * would make the row expensive to read.
+ * table without bound. Since 2026-08-25 it is a **key column** rather than a
+ * jsonb key, so the cap now bounds *rows* rather than object size — which is
+ * why it came down from twenty to five.
+ *
+ * A project with more than five concurrently-active environments is unusual,
+ * and one that has them is not silently mis-served: the tail lands in
+ * `(other)`, and a filtered read that finds an `(other)` row anywhere in its
+ * range refuses the rollup and scans raw `events` instead. Slower, and correct.
+ * See `envRollupFloor` in `event-aggregations.service.ts`.
+ *
+ * That check is also why a per-project "top five" set was **not** built. It
+ * would have needed an event counter on `project_environments` maintained from
+ * the ingest path — a dead tuple per environment per batch, on a table whose
+ * whole point was to avoid that cost — to make a guarantee the `(other)` row
+ * already makes exactly, from data the job writes anyway.
  */
-export const ENVIRONMENT_KEY_CAP = 20;
+export const ENVIRONMENT_KEY_CAP = 5;
 
 /**
  * The same cap for `source`, and the same reason.
@@ -148,65 +160,72 @@ export async function rebuildRollupForProject(
                   AND timestamp <  ${to.toISOString()}::timestamptz
                 GROUP BY 1, 2, 3, 4
             ),
-            levels AS (
-                SELECT minute, jsonb_object_agg(level, n) AS by_level, SUM(n)::int AS total
-                FROM (SELECT minute, level, SUM(n)::int AS n FROM cells GROUP BY 1, 2) l
-                GROUP BY minute
-            ),
-            env_totals AS (
-                SELECT minute, env, SUM(n)::int AS n FROM cells GROUP BY 1, 2
-            ),
-            env_capped AS (
-                -- Keep the busiest environments and fold the tail into
-                -- "(other)", so a project inventing an environment per deploy
-                -- fattens a row instead of unbounding it.
+            capped AS (
+                -- The cap is applied once, here, so every aggregate below sees
+                -- the same environment labels. Doing it per aggregate would let
+                -- a minute's level counts and its source counts disagree about
+                -- which environment a row belongs to.
+                --
+                -- Keeping the busiest and folding the tail into "(other)" is
+                -- what bounds the row count: environment is client-supplied,
+                -- so without it a project inventing one per deploy would
+                -- multiply this table without limit.
                 SELECT
-                    minute,
-                    CASE WHEN rn <= ${ENVIRONMENT_KEY_CAP} THEN env ELSE '(other)' END AS env,
-                    SUM(n)::int AS n
+                    c.minute,
+                    CASE WHEN r.rn <= ${ENVIRONMENT_KEY_CAP} THEN c.env ELSE '(other)' END AS env,
+                    c.level,
+                    c.src,
+                    c.n
+                FROM cells c
+                JOIN (
+                    SELECT minute, env,
+                           ROW_NUMBER() OVER (
+                               PARTITION BY minute ORDER BY SUM(n) DESC, env
+                           ) AS rn
+                    FROM cells
+                    GROUP BY minute, env
+                ) r ON r.minute = c.minute AND r.env = c.env
+            ),
+            levels AS (
+                SELECT minute, env,
+                       jsonb_object_agg(level, n) AS by_level,
+                       SUM(n)::int                AS total
                 FROM (
-                    SELECT minute, env, n,
-                           ROW_NUMBER() OVER (PARTITION BY minute ORDER BY n DESC, env) AS rn
-                    FROM env_totals
-                ) ranked
-                GROUP BY 1, 2
-            ),
-            envs AS (
-                SELECT minute, jsonb_object_agg(env, n) AS by_env
-                FROM env_capped
-                GROUP BY minute
-            ),
-            src_totals AS (
-                SELECT minute, src, SUM(n)::int AS n FROM cells GROUP BY 1, 2
+                    SELECT minute, env, level, SUM(n)::int AS n
+                    FROM capped GROUP BY 1, 2, 3
+                ) l
+                GROUP BY minute, env
             ),
             src_capped AS (
                 -- Same cap as environments, for the same reason: source is
                 -- client-supplied, so the tail folds into "(other)" rather than
-                -- growing the object without bound.
+                -- growing the object without bound. It stays a jsonb marginal
+                -- because nothing filters by source -- see eventRollup.ts.
                 SELECT
-                    minute,
+                    minute, env,
                     CASE WHEN rn <= ${SOURCE_KEY_CAP} THEN src ELSE '(other)' END AS src,
                     SUM(n)::int AS n
                 FROM (
-                    SELECT minute, src, n,
-                           ROW_NUMBER() OVER (PARTITION BY minute ORDER BY n DESC, src) AS rn
-                    FROM src_totals
+                    SELECT minute, env, src, SUM(n)::int AS n,
+                           ROW_NUMBER() OVER (
+                               PARTITION BY minute, env ORDER BY SUM(n) DESC, src
+                           ) AS rn
+                    FROM capped
+                    GROUP BY minute, env, src
                 ) ranked
-                GROUP BY 1, 2
+                GROUP BY 1, 2, 3
             ),
             sources AS (
-                SELECT minute, jsonb_object_agg(src, n) AS by_source
+                SELECT minute, env, jsonb_object_agg(src, n) AS by_source
                 FROM src_capped
-                GROUP BY minute
+                GROUP BY minute, env
             )
             INSERT INTO event_rollup_minutes
-                (project_id, minute, total, by_level, by_env, by_source, computed_at)
-            SELECT ${projectId}::uuid, l.minute, l.total, l.by_level,
-                   COALESCE(e.by_env, '{}'::jsonb),
+                (project_id, minute, environment, total, by_level, by_source, computed_at)
+            SELECT ${projectId}::uuid, l.minute, l.env, l.total, l.by_level,
                    COALESCE(s.by_source, '{}'::jsonb), now()
             FROM levels l
-            LEFT JOIN envs e    ON e.minute = l.minute
-            LEFT JOIN sources s ON s.minute = l.minute
+            LEFT JOIN sources s ON s.minute = l.minute AND s.env = l.env
         `);
 
 

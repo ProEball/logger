@@ -35,7 +35,7 @@ export const OTHER_ORG_PROJECT = "bbbbbbbb-0000-4000-8000-000000000001";
  * The dashboard is per-project, so which organization owns it does not matter —
  * but `ORG_A_PROJECTS` is the array every overview test passes in, and a fourth
  * project in org A would either have to join that array (changing every
- * expected total in `overview.service.itest.ts`) or sit outside it while
+ * expected total in `event-aggregations.service.itest.ts`) or sit outside it while
  * `listProjectsForOrg(ORG_A)` still returned it. The second is a trap laid for
  * whoever writes the next test.
  */
@@ -48,7 +48,7 @@ export const ORG_A_PROJECTS = [ALPHA, BETA, QUIET];
 
 /**
  * Every timestamp is relative to an anchor, because two queries measure
- * against `NOW()` (`getOrgEnvironments` hardcodes a 30-day window) — a corpus
+ * against `NOW()` (`environmentsInUse` hardcodes a 30-day window) — a corpus
  * pinned to absolute dates would silently fall out of that window overnight.
  *
  * The anchor is written into the data as a marker event rather than shared
@@ -92,9 +92,9 @@ export const LONG_MESSAGE_GROUPED = LONG_PREFIX;
  * It exists because the read path **used to** join environments with
  * `STRING_AGG(…, ',')` and split the result on "," in TypeScript, so this one
  * value arrived on the project card as two. Fixed 2026-08-20 by aggregating
- * into a real array; `getProjectStats` now uses `ARRAY_AGG(DISTINCT env)` and
+ * into a real array; `projectStats` now uses `ARRAY_AGG(DISTINCT env)` and
  * nothing splits a string. The row stays, and the test that pinned the bug was
- * inverted rather than deleted — see `overview.service.itest.ts`, "keeps an
+ * inverted rather than deleted — see `event-aggregations.service.itest.ts`, "keeps an
  * environment name that contains a comma intact".
  */
 export const COMMA_ENVIRONMENT = "eu,prod";
@@ -179,7 +179,7 @@ export const CORPUS: EventSpec[] = [
     {
         project: ALPHA, count: 1, level: "info", message: "alpha archived",
         offsetMinutes: -20 * DAY, environment: "archive",
-        why: "inside getOrgEnvironments' 30-day window but outside every range preset",
+        why: "inside environmentsInUse' 30-day window but outside every range preset",
     },
     {
         project: ALPHA, count: 1, level: "info", message: "alpha ancient",

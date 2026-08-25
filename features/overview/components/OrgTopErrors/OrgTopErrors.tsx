@@ -1,4 +1,4 @@
-import type { OrgTopError } from "@/features/overview/services/overview.service";
+import type { TopMessage } from "@/shared/services/event-aggregations.service";
 import styles from "./OrgTopErrors.module.scss";
 
 interface Project {
@@ -8,7 +8,7 @@ interface Project {
 }
 
 interface OrgTopErrorsProps {
-    errors: OrgTopError[];
+    errors: TopMessage[];
     projects: Project[];
     /**
      * The window actually queried, e.g. "24h". Shown because it can differ from

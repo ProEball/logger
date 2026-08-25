@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 /**
- * The database is mocked; `overview.service` is not. §11 allows mocking a real
+ * The database is mocked; `event-aggregations.service` is not. §11 allows mocking a real
  * system boundary and forbids mocking an internal module, and the thing under
  * test here is precisely whether a second read reaches the database — which is
  * only observable with the real service in the path.
@@ -11,15 +11,15 @@ vi.mock("@/core/db/client", () => ({ db: { execute: executeMock } }));
 
 import {
     cachedProjectStats,
-    cachedProjectTopMessages,
-    cachedOrgTopErrors,
-    cachedOrgLevelBreakdown,
-    cachedOrgEnvironments,
-    cachedOrgEventBuckets,
-    clearOverviewCaches,
-    OVERVIEW_CACHE_TTL_MS,
-    OVERVIEW_CACHE_MAX_STALE_MS,
-} from "./overview-cache.service";
+    cachedTopMessagePerProject,
+    cachedTopErrors,
+    cachedLevelBreakdown,
+    cachedEnvironments,
+    cachedEventBuckets,
+    clearAnalyticsCaches,
+    CACHE_TTL_MS,
+    CACHE_MAX_STALE_MS,
+} from "./event-aggregations-cache.service";
 import { readCacheSettings } from "@/shared/utils/read-cache-settings";
 
 const P1 = "11111111-1111-4111-8111-111111111111";
@@ -32,19 +32,19 @@ function queryCount() {
 }
 
 beforeEach(() => {
-    clearOverviewCaches();
+    clearAnalyticsCaches();
     executeMock.mockReset();
     executeMock.mockResolvedValue([]);
 });
 
-describe("overview cache", () => {
+describe("analytics cache", () => {
     describe("settings", () => {
         it("matches the shortest auto-refresh interval", () => {
-            expect(OVERVIEW_CACHE_TTL_MS).toBe(30_000);
+            expect(CACHE_TTL_MS).toBe(30_000);
         });
 
         it("allows serving stale for longer than the refresh interval", () => {
-            expect(OVERVIEW_CACHE_MAX_STALE_MS).toBeGreaterThan(OVERVIEW_CACHE_TTL_MS);
+            expect(CACHE_MAX_STALE_MS).toBeGreaterThan(CACHE_TTL_MS);
         });
 
         it("caches for 30 seconds off the e2e server", () => {
@@ -82,19 +82,19 @@ describe("overview cache", () => {
 
         it("collapses concurrent readers into one set of queries", async () => {
             await Promise.all([
-                cachedOrgEnvironments([P1]),
-                cachedOrgEnvironments([P1]),
-                cachedOrgEnvironments([P1]),
+                cachedEnvironments([P1]),
+                cachedEnvironments([P1]),
+                cachedEnvironments([P1]),
             ]);
 
             expect(queryCount()).toBe(1);
         });
 
         it.each([
-            ["top errors", () => cachedOrgTopErrors([P1], "24h", RANGE)],
-            ["level breakdown", () => cachedOrgLevelBreakdown([P1], "7d", RANGE)],
-            ["environments", () => cachedOrgEnvironments([P1])],
-            ["buckets", () => cachedOrgEventBuckets([P1], "7d", RANGE, 3600)],
+            ["top errors", () => cachedTopErrors([P1], "24h", RANGE)],
+            ["level breakdown", () => cachedLevelBreakdown([P1], "7d", RANGE)],
+            ["environments", () => cachedEnvironments([P1])],
+            ["buckets", () => cachedEventBuckets([P1], "7d", RANGE, 3600)],
         ])("reuses the result for %s", async (_label, read) => {
             await read();
             const afterFirst = queryCount();
@@ -121,15 +121,15 @@ describe("overview cache", () => {
         });
 
         it("re-queries when a project is added to the scope", async () => {
-            await cachedOrgEnvironments([P1]);
-            await cachedOrgEnvironments([P1, P2]);
+            await cachedEnvironments([P1]);
+            await cachedEnvironments([P1, P2]);
 
             expect(queryCount()).toBe(2);
         });
 
         it("treats a reordered project list as the same scope", async () => {
-            await cachedOrgEnvironments([P1, P2]);
-            await cachedOrgEnvironments([P2, P1]);
+            await cachedEnvironments([P1, P2]);
+            await cachedEnvironments([P2, P1]);
 
             expect(queryCount()).toBe(1);
         });
@@ -150,7 +150,7 @@ describe("overview cache", () => {
         });
 
         it("issues no statistics query when only the top message is read", async () => {
-            await cachedProjectTopMessages([P1], "7d", RANGE);
+            await cachedTopMessagePerProject([P1], "7d", RANGE);
 
             const sql = executeMock.mock.calls.map((c) => JSON.stringify(c[0])).join(" ");
             expect(sql).not.toContain("event_rollup_minutes");
@@ -169,12 +169,12 @@ describe("overview cache", () => {
          * which is what the test exists to catch.
          */
         it("reads the top message without fanning out per project", async () => {
-            await cachedProjectTopMessages([P1], "7d", RANGE);
+            await cachedTopMessagePerProject([P1], "7d", RANGE);
             const forOne = queryCount();
 
-            clearOverviewCaches();
+            clearAnalyticsCaches();
             executeMock.mockClear();
-            await cachedProjectTopMessages([P1, P2, "33333333-3333-4333-8333-333333333333"], "7d", RANGE);
+            await cachedTopMessagePerProject([P1, P2, "33333333-3333-4333-8333-333333333333"], "7d", RANGE);
 
             expect(queryCount()).toBe(forOne);
             expect(forOne).toBeGreaterThan(0);
@@ -184,7 +184,7 @@ describe("overview cache", () => {
             await cachedProjectStats([P1], "7d", RANGE);
             const afterStats = queryCount();
 
-            await cachedProjectTopMessages([P1], "7d", RANGE);
+            await cachedTopMessagePerProject([P1], "7d", RANGE);
 
             expect(queryCount()).toBeGreaterThan(afterStats);
         });
@@ -192,10 +192,10 @@ describe("overview cache", () => {
 
     describe("separates different questions", () => {
         it("re-queries for a different preset", async () => {
-            await cachedOrgTopErrors([P1], "24h", RANGE);
+            await cachedTopErrors([P1], "24h", RANGE);
             const afterFirst = queryCount();
 
-            await cachedOrgTopErrors([P1], "7d", RANGE);
+            await cachedTopErrors([P1], "7d", RANGE);
 
             expect(queryCount()).toBeGreaterThan(afterFirst);
         });
@@ -210,19 +210,19 @@ describe("overview cache", () => {
         });
 
         it("re-queries for a different bucket width", async () => {
-            await cachedOrgEventBuckets([P1], "7d", RANGE, 60);
+            await cachedEventBuckets([P1], "7d", RANGE, 60);
             const afterFirst = queryCount();
 
-            await cachedOrgEventBuckets([P1], "7d", RANGE, 3600);
+            await cachedEventBuckets([P1], "7d", RANGE, 3600);
 
             expect(queryCount()).toBeGreaterThan(afterFirst);
         });
 
         it("keeps two queries with identical arguments apart", async () => {
-            await cachedOrgLevelBreakdown([P1], "7d", RANGE);
+            await cachedLevelBreakdown([P1], "7d", RANGE);
             const afterBreakdown = queryCount();
 
-            await cachedOrgTopErrors([P1], "7d", RANGE);
+            await cachedTopErrors([P1], "7d", RANGE);
 
             expect(queryCount()).toBeGreaterThan(afterBreakdown);
         });
@@ -232,23 +232,23 @@ describe("overview cache", () => {
         it("propagates a query failure instead of caching it", async () => {
             executeMock.mockRejectedValue(new Error("db down"));
 
-            await expect(cachedOrgEnvironments([P1])).rejects.toThrow("db down");
+            await expect(cachedEnvironments([P1])).rejects.toThrow("db down");
         });
 
         it("retries after a failure rather than serving nothing forever", async () => {
             executeMock.mockRejectedValueOnce(new Error("transient"));
-            await expect(cachedOrgEnvironments([P1])).rejects.toThrow("transient");
+            await expect(cachedEnvironments([P1])).rejects.toThrow("transient");
 
             executeMock.mockResolvedValue([{ environment: "prod" }]);
 
-            await expect(cachedOrgEnvironments([P1])).resolves.toEqual(["prod"]);
+            await expect(cachedEnvironments([P1])).resolves.toEqual(["prod"]);
         });
     });
 
     it("clears every cache", async () => {
-        await cachedOrgEnvironments([P1]);
-        clearOverviewCaches();
-        await cachedOrgEnvironments([P1]);
+        await cachedEnvironments([P1]);
+        clearAnalyticsCaches();
+        await cachedEnvironments([P1]);
 
         expect(queryCount()).toBe(2);
     });

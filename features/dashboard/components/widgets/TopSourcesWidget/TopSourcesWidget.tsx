@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { WidgetCard } from "../../WidgetCard/WidgetCard";
-import type { SourceCount } from "@/features/dashboard/services/aggregations.service";
+import type { SourceCount } from "@/shared/services/event-aggregations.service";
 import type { TimeRange } from "@/features/events/utils/event-filters.types";
 import { serializeFilters } from "@/features/events/utils/serialize-filters";
 import styles from "./TopSourcesWidget.module.scss";
@@ -27,7 +27,7 @@ export function TopSourcesWidget({ data, range, orgSlug, projectSlug }: TopSourc
     };
 
     return (
-        <WidgetCard title="Top hosts" isEmpty={isEmpty}>
+        <WidgetCard title="Top Sources" isEmpty={isEmpty}>
             <ul className={styles.list}>
                 {data.map((row, i) => {
                     const pct = Math.round((row.count / total) * 100);

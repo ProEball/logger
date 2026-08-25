@@ -24,7 +24,7 @@ export default defineConfig({
         environment: "node",
         globals: true,
         include: ["**/*.bench.ts"],
-        exclude: ["node_modules/**", ".next/**", ".next-e2e/**", "e2e/**"],
+        exclude: ["node_modules/**", ".next/**", ".next-e2e/**", ".claude/worktrees/**", "e2e/**"],
         // A single aggregation was measured at 654 ms on the staging data;
         // vitest's default of running for 500 ms would give one sample.
         benchmark: {

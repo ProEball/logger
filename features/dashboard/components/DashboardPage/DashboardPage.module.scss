@@ -16,21 +16,6 @@
 .span8  { grid-column: span 8; }
 .span12 { grid-column: span 12; }
 
-// Stands in for DashboardHeader while the route prologue runs. Mirrors that
-// header box exactly - same padding, same border, same height - so handing
-// over from the route fallback to the real page does not shift the grid down
-// by a few pixels. Lives here rather than in the skeleton folder because it is
-// this page layout it has to match, and the two should move together.
-.headerFallback {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    padding: var(--space-3) var(--space-6);
-    border-bottom: 1px solid var(--border-1);
-    flex: 0 0 auto;
-}
-
-
 // ── Firing alerts list inside KpiCard children slot ────────────────────
 .firingList {
     list-style: none;
@@ -62,4 +47,17 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+
+// ── Filter bar placeholder ─────────────────────────────────────────────
+// Holds the bar's height while the route prologue runs, so the grid does not
+// jump when the real bar arrives. Its former neighbours here - the project
+// title, the live dot and the "+ New alert" button - left on 2026-08-25: the
+// first two moved to the top bar as `ProjectPulse`, the third was deleted.
+
+.filterBarFallback {
+    height: 46px;
+    background: var(--bg-sidebar);
+    border-bottom: 1px solid var(--border-1);
+    flex-shrink: 0;
 }

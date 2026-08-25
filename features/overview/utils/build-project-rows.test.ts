@@ -5,7 +5,7 @@ import {
     type AlertRuleFlags,
     type OverviewProject,
 } from "@/features/overview/utils/build-project-rows";
-import type { ProjectStats } from "@/features/overview/services/overview.service";
+import type { ProjectStats } from "@/shared/services/event-aggregations.service";
 
 const alpha: OverviewProject = { id: "p1", slug: "alpha", name: "Alpha" };
 const beta: OverviewProject = { id: "p2", slug: "beta", name: "Beta" };

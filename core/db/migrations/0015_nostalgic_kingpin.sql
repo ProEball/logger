@@ -1,0 +1,1 @@
+ALTER TABLE "event_rollup_minutes" DROP COLUMN "by_env";

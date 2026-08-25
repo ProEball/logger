@@ -1,7 +1,8 @@
 import type { AlertRuleFlags, OverviewProject } from "@/features/overview/utils/build-project-rows";
 import { buildProjectRows, sumProjectRows } from "@/features/overview/utils/build-project-rows";
 import { totalsByTimestamp } from "@/features/overview/utils/bucket-totals";
-import type { OrgEventBucket, ProjectStats } from "@/features/overview/services/overview.service";
+import type { ProjectStats } from "@/shared/services/event-aggregations.service";
+import type { EventBucket } from "@/shared/utils/event-buckets";
 import { KpiSparkline } from "./parts/KpiSparkline";
 import styles from "./OverviewKpiRow.module.scss";
 
@@ -24,7 +25,7 @@ interface OverviewKpiRowProps {
      */
     statsPromise: Promise<Map<string, ProjectStats>>;
     alertRulesPromise: Promise<Map<string, AlertRuleFlags[]>>;
-    bucketsPromise: Promise<OrgEventBucket[]>;
+    bucketsPromise: Promise<EventBucket[]>;
 }
 
 export async function OverviewKpiRow({

@@ -1,11 +1,11 @@
 import { OrgTopErrors } from "@/features/overview/components/OrgTopErrors/OrgTopErrors";
-import type { OrgTopError } from "@/features/overview/services/overview.service";
+import type { TopMessage } from "@/shared/services/event-aggregations.service";
 import type { OverviewProject } from "@/features/overview/utils/build-project-rows";
 import type { TopErrorsWindow } from "@/features/overview/utils/top-errors-window";
 
 interface OverviewTopErrorsPanelProps {
     projects: OverviewProject[];
-    topErrorsPromise: Promise<OrgTopError[]>;
+    topErrorsPromise: Promise<TopMessage[]>;
     window: TopErrorsWindow;
 }
 

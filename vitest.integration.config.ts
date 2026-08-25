@@ -12,7 +12,7 @@ import { ITEST_DATABASE_URL } from "./itest/support/env";
  * excludes `**\/*.itest.ts` so a glob change there cannot pull them in by
  * accident.
  *
- * Why these exist: `overview.service.ts` and `aggregations.service.ts` are raw
+ * Why these exist: `shared/services/event-aggregations.service.ts` is raw
  * SQL through `db.execute()`. The repository's mocking pattern stubs the
  * Drizzle query builder and cannot reach them, and asserting on generated SQL
  * text would test the string rather than the answer — it breaks on
@@ -25,7 +25,7 @@ export default defineConfig({
         environment: "node",
         globals: true,
         include: ["**/*.itest.ts"],
-        exclude: ["node_modules/**", ".next/**", ".next-e2e/**", "e2e/**"],
+        exclude: ["node_modules/**", ".next/**", ".next-e2e/**", ".claude/worktrees/**", "e2e/**"],
         globalSetup: ["./itest/support/global-setup.ts"],
         // The corpus is seeded once and every test is read-only, so files can
         // share it. If a test ever needs to write, it must create its own

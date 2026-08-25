@@ -2,11 +2,58 @@
 
 > Single source of truth for "where are we right now". Update after every work session.
 
-**Last updated**: 2026-08-24 (host resize + Postgres tuning profile; rollup key work frozen pending the ClickHouse decision)
+**Last updated**: 2026-08-25 (the two dashboards unified: one service stack, one filter bar, one chart; `environment` in the rollup key)
 
 ---
 
 ## Current Phase
+
+**2026-08-25 — the org overview and the project dashboard became one thing.**
+
+Prompted by a complaint that switching Environment on the org dashboard was
+slow. It was not the SQL: the whole page measured 19–25 ms on a 500k-event
+corpus. The filter bar was calling `router.push()` bare, so a click produced no
+visible change at all until the server answered — no pill restyle, and a
+transition holds the current UI so no skeleton appeared either. Recorded because
+the first hypothesis was the opposite one, and only benchmarking ruled it out.
+
+What shipped, in five phases. Full rationale for each is in
+[`PLAN.md` §17](PLAN.md#17-decision-log) under 2026-08-25:
+
+- **One service stack.** `overview.service.ts` (699 lines) and
+  `aggregations.service.ts` (600) are gone, along with both caches, both range
+  parsers and `aggregation-utils.ts` — 20 files deleted in total. Every query now
+  takes `projectIds: string[]`; the project route passes `[id]`, the org route
+  passes all of them. The merge kept surfacing defects the duplication had hidden:
+  a volume chart that ignored the environment filter entirely, a six-hour range
+  drawn with six points, a cache-key collision that would have served a
+  one-project organization its own project's answers, and **four regression
+  guards that could never have failed** — one of them pre-existing.
+- **`environment` joined the key of `event_rollup_minutes`** (migrations
+  0014/0015), `by_env` dropped, cap 20 → 5. Filtered reads had been scanning raw
+  `events` because neither marginal can answer "how many errors in production".
+- **One filter bar and one chart** for both pages, in place of a four-preset
+  header and two copies of the same Recharts wrapper.
+- **`Events / min` became `Total events`**, and the rate became a reading about
+  the **last completed minute** — now in the application top bar beside the
+  project name, on its own 10-second cache profile.
+
+Measured on 500k events: the page is **unchanged unfiltered** (13.43 → 13.40 ms)
+and **15% faster filtered** (18.12 → 15.44).
+
+**Still open from the phase before this one** — see the section below: the host
+resize and the ClickHouse question are unaffected by any of the above, which
+changed how the read path is organised rather than what it costs.
+
+**Known gap:** `npm run test:e2e` still does not apply migrations to its own
+database. When it is behind, the symptom is `Ingest failed: 500` in five specs,
+which points at ingest rather than at the schema. Documented in
+[misc.md](reference/misc.md#testing); the fix is a line in `package.json` and
+nobody has written it.
+
+---
+
+## Infrastructure phase — still open
 
 **2026-08-24 — the read path stops and the host gets fixed first.**
 
