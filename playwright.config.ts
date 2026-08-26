@@ -31,6 +31,15 @@ export default defineConfig({
             E2E_MODE: "true",
             WORKER_IN_PROCESS: process.env.WORKER_IN_PROCESS ?? "false",
             RATE_LIMIT_PER_MIN: process.env.RATE_LIMIT_PER_MIN ?? "1000",
+            // The e2e run shares the dev ClickHouse *container* but never its
+            // database: since Phase 2 the ingest path writes there, and
+            // `resetDb()` truncates `events` between specs. `.env.e2e.local`
+            // names `logger_test`, and `scripts/bootstrap-e2e.mjs` refuses to
+            // run if it ever says `logger`.
+            CLICKHOUSE_URL: process.env.CLICKHOUSE_URL ?? "http://localhost:8123",
+            CLICKHOUSE_USER: process.env.CLICKHOUSE_USER ?? "logger",
+            CLICKHOUSE_PASSWORD: process.env.CLICKHOUSE_PASSWORD ?? "logger",
+            CLICKHOUSE_DATABASE: process.env.CLICKHOUSE_DATABASE ?? "logger_test",
         },
     },
     projects: [

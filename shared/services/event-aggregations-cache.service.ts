@@ -28,7 +28,7 @@ import {
     type TopMessage,
 } from "@/shared/services/event-aggregations.service";
 import type { EventLevel } from "@/shared/utils/dominant-level";
-import type { Event } from "@/core/db/schema";
+import type { Event } from "@/shared/types/event.types";
 
 /**
  * A read-through cache in front of `event-aggregations.service.ts`.

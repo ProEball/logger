@@ -7,7 +7,7 @@ import { AttributesList } from "../AttributesList/AttributesList";
 import { ContextTree } from "../ContextTree/ContextTree";
 import { StackTraceViewer } from "../StackTraceViewer/StackTraceViewer";
 import { parseStackTrace } from "@/features/events/utils/stack-trace-parser";
-import type { Event } from "@/core/db/schema";
+import type { Event } from "@/shared/types/event.types";
 import styles from "./EventDetailTabs.module.scss";
 
 type TabId = "details" | "attributes" | "context" | "stackTrace";

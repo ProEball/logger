@@ -51,29 +51,35 @@ export function pickDominantLevel(counts: Partial<LevelCounts>): EventLevel {
 }
 
 /**
- * The shape a rollup read returns level counts in since 2026-08-24: one `int`
- * column per level, named `n_<level>`.
+ * The shape a query returns level counts in: one column per level, named
+ * `n_<level>`.
  *
- * Declared here rather than in either service because both the dashboard's
- * `topMessages` and the overview's per-project top message select it, and a
- * second copy of a five-field row shape is exactly the drift this repository
- * keeps paying for.
+ * Declared here rather than in the service because both `topMessages` and the
+ * overview's per-project top message select it, and a second copy of a
+ * five-field row shape is exactly the drift this repository keeps paying for.
+ *
+ * `string` is in the union because that is what a driver hands back. Postgres
+ * returned a `SUM(...)::int` from a CTE as text often enough to be worth
+ * distrusting; ClickHouse is not a maybe — a `UInt64` comes back **quoted** in
+ * `JSONEachRow` unless `output_format_json_quote_64bit_integers` is turned off,
+ * and turning that off would round a fingerprint. Widening the type is what
+ * makes `levelCounts`' `Number(...)` a conversion rather than a superstition.
  */
 export type RollupLevelRow = {
-    n_debug: number;
-    n_info: number;
-    n_warn: number;
-    n_error: number;
-    n_fatal: number;
+    n_debug: number | string;
+    n_info: number | string;
+    n_warn: number | string;
+    n_error: number | string;
+    n_fatal: number | string;
 };
 
 /**
  * Turns those five columns into the map `pickDominantLevel` takes.
  *
- * `Number(...)` rather than a bare read: a generated `int` column comes back as
- * a number from postgres.js, but `SUM(...)::int` in a CTE has arrived as a
- * string often enough in this codebase that trusting the driver here would be
- * the kind of assumption that produces a badge computed from `NaN`.
+ * `Number(...)` rather than a bare read, and no longer a precaution: a
+ * ClickHouse `countIf` is a `UInt64` and arrives as a **string**, so reading it
+ * bare would add strings and badge every group from `NaN`. See
+ * {@link RollupLevelRow}.
  *
  * The five names are restated here and in the SQL rather than derived from
  * `EVENT_LEVELS`, because deriving would mean generating column aliases into a

@@ -5,7 +5,7 @@ import { Drawer } from "@/shared/components/Drawer/Drawer";
 import { t } from "@/core/i18n/t";
 import { EventDetailHeader } from "../EventDetailHeader/EventDetailHeader";
 import { EventDetailTabs } from "../EventDetailTabs/EventDetailTabs";
-import type { Event } from "@/core/db/schema";
+import type { Event } from "@/shared/types/event.types";
 import styles from "./EventDrawer.module.scss";
 
 interface EventDrawerProps {

@@ -1,5 +1,12 @@
 # 05. Dashboard
 
+
+> **Superseded in part, 2026-08-26.** The widgets and their meaning are current;
+> every query behind them is not. The dashboards read ClickHouse through
+> `shared/services/event-aggregations.service.ts`, and the Postgres rollup this
+> doc was written against is deleted. See `docs/reference/widgets.md` for what
+> backs each surface today.
+
 ## Status
 - [x] Not started · [x] In progress · [x] Done
 - Started: 2026-05-08

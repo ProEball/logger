@@ -38,7 +38,6 @@ vi.mock("pg-boss", () => ({
 vi.mock("@/core/db/client", () => ({ db: { execute: vi.fn() } }));
 
 import { getBoss, startWorker, stopWorker } from "./worker";
-import { PARTMAN_JOB_NAME } from "@/features/ingest/jobs/partman-maintenance.job";
 import { ALERT_EVALUATION_JOB } from "@/features/alerts/jobs/alert-evaluation.job";
 import { ALERT_DELIVERY_JOB } from "@/features/alerts/jobs/alert-delivery.job";
 
@@ -56,10 +55,15 @@ describe("startWorker", () => {
     it("registers every background job", async () => {
         await startWorker();
 
+        // Two jobs, not four. Phase 4 deleted the event rollup and the
+        // pg_partman maintenance job with the Postgres `events` table they
+        // maintained; ClickHouse partitions monthly and needs no cron to make
+        // tomorrow's partition exist.
         const queues = latestBoss().work.mock.calls.map(([name]) => name);
-        expect(queues).toContain(PARTMAN_JOB_NAME);
-        expect(queues).toContain(ALERT_EVALUATION_JOB);
-        expect(queues).toContain(ALERT_DELIVERY_JOB);
+        expect(queues).toEqual(
+            expect.arrayContaining([ALERT_EVALUATION_JOB, ALERT_DELIVERY_JOB]),
+        );
+        expect(queues).toHaveLength(2);
     });
 
     it("creates every queue before using it", async () => {
@@ -73,7 +77,7 @@ describe("startWorker", () => {
 
         const created = latestBoss().createQueue.mock.calls.map(([name]) => name);
         expect(created).toEqual(
-            expect.arrayContaining([PARTMAN_JOB_NAME, ALERT_EVALUATION_JOB, ALERT_DELIVERY_JOB]),
+            expect.arrayContaining([ALERT_EVALUATION_JOB, ALERT_DELIVERY_JOB]),
         );
     });
 
@@ -94,15 +98,13 @@ describe("startWorker", () => {
                 boss.schedule.mock.calls.findIndex(([n]) => n === name)
             ];
 
-        for (const name of [PARTMAN_JOB_NAME, ALERT_EVALUATION_JOB, ALERT_DELIVERY_JOB]) {
+        for (const name of [ALERT_EVALUATION_JOB, ALERT_DELIVERY_JOB]) {
             expect(createdAt(name)).toBeLessThan(workedAt(name));
         }
-        for (const name of [PARTMAN_JOB_NAME, ALERT_EVALUATION_JOB]) {
-            expect(createdAt(name)).toBeLessThan(scheduledAt(name));
-        }
+        expect(createdAt(ALERT_EVALUATION_JOB)).toBeLessThan(scheduledAt(ALERT_EVALUATION_JOB));
     });
 
-    it("schedules the two cron jobs with a singleton key", async () => {
+    it("schedules the one cron job with a singleton key", async () => {
         await startWorker();
 
         const schedules = Object.fromEntries(
@@ -111,14 +113,13 @@ describe("startWorker", () => {
                 { cron, options },
             ]),
         );
-        expect(schedules[PARTMAN_JOB_NAME]).toEqual({
-            cron: "0 * * * *",
-            options: { singletonKey: PARTMAN_JOB_NAME },
-        });
+        // Only the alert evaluator runs on a clock now. The singleton key is
+        // what stops a second worker replica running the same minute twice.
         expect(schedules[ALERT_EVALUATION_JOB]).toEqual({
             cron: "* * * * *",
             options: { singletonKey: ALERT_EVALUATION_JOB },
         });
+        expect(Object.keys(schedules)).toEqual([ALERT_EVALUATION_JOB]);
     });
 
     it("is idempotent — a second call does not open a second pg-boss", async () => {

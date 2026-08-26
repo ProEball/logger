@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { withDb } from "@/e2e/support/db";
+import { deleteEventsForProjects } from "@/e2e/support/events";
 import { resetDb } from "@/e2e/support/cleanup";
 import { bootstrapOrg, login } from "@/e2e/support/auth";
 
@@ -10,11 +11,12 @@ const PASS = "AlicePass99!";
 let orgId: string;
 
 async function cleanProjects(): Promise<void> {
+    const { rows } = await withDb((c) =>
+        c.query<{ id: string }>(`SELECT id FROM projects WHERE organization_id = $1`, [orgId]),
+    );
+    await deleteEventsForProjects(rows.map((r) => r.id));
+
     await withDb(async (c) => {
-        await c.query(
-            `DELETE FROM events WHERE project_id IN (SELECT id FROM projects WHERE organization_id = $1)`,
-            [orgId],
-        );
         await c.query(
             `DELETE FROM api_keys WHERE project_id IN (SELECT id FROM projects WHERE organization_id = $1)`,
             [orgId],

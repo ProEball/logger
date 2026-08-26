@@ -1,55 +1,41 @@
-import { db } from "@/core/db/client";
-import { events } from "@/core/db/schema";
 import { enrichEvent, type RequestContext } from "../utils/enrich-event";
+import { toClickhouseRow } from "../utils/to-clickhouse-row";
+import type { NewEvent } from "@/shared/types/event.types";
 import type { IngestEvent } from "../utils/event-schema";
 import { AttributeTypeConflictError } from "../utils/attribute-types";
 import { checkAttributeTypeConflicts } from "./attribute-type-registry.service";
-import { recordEnvironments } from "./environment-registry.service";
-import { recordTemplates } from "./template-registry.service";
-import { markRollupDirty } from "./event-rollup.service";
-import { logger } from "@/core/logger";
+import { insertEvents } from "./clickhouse-ingest.service";
 
 /**
- * Update the derived read-path tables without ever failing the ingest request.
+ * Writes one batch of enriched events.
  *
- * Both are derived data. A lost environment-registry update costs one entry in
- * the filter bar until the next event from that environment; a lost rollup
- * watermark means those events are missing from the dashboards until something
- * else moves the watermark back past them. Neither justifies returning a 500
- * and losing the event itself, which is already durable by this point — so
- * these are the only deliberately swallowed errors on the ingest path, done in
- * a named function and logged rather than hidden behind a bare `.catch()`.
+ * ## What Phase 4 removed, and why the removal is the point
  *
- * The watermark carries the batch's **oldest** timestamp, not the current time.
- * `events` records when an event happened, not when it arrived, so nothing in
- * that table can tell the rollup job that a three-day-old event turned up a
- * moment ago. This is the only place that knows.
+ * Until Phase 4 this wrote to **both** stores and then updated three derived
+ * Postgres tables behind a `try`/`catch` each — an environment registry, a
+ * message-template registry, and a rollup watermark carrying the batch's
+ * *oldest* timestamp so a job could later rebuild the minutes it dirtied.
+ * Those were the only deliberately swallowed errors on the ingest path, and
+ * they existed for one reason: a Postgres rollup is a different table from
+ * `events`, so somebody had to keep it in step.
+ *
+ * ClickHouse maintains the equivalents itself, so there is nothing to keep in
+ * step and nothing left to swallow. Every error on this path now propagates.
+ *
+ * The dual write is gone with them. It was scaffolding with a scheduled end
+ * (§12.2): writing both stores kept all 73 e2e specs green while the reads
+ * moved over three phases, so a regression introduced in Phase 3 stayed
+ * distinguishable from breakage put there on purpose. Both halves have now
+ * moved, and the Postgres `events` table, its partitioning, its `pg_partman`
+ * registration and the maintenance job that renewed it are deleted with them.
+ *
+ * With one store there is also one failure mode: `wait_for_async_insert = 1`
+ * means the promise below is real by the time it returns, and a request either
+ * stored its events or returned an error. The partial write §12.2 accepted as
+ * the cost of the scaffold cannot happen any more.
  */
-async function updateDerivedTablesSafely(
-    rows: Array<{ environment?: string | null; timestamp: Date; message: string }>,
-    projectId: string,
-): Promise<void> {
-    try {
-        await recordEnvironments(rows, projectId);
-    } catch (err) {
-        logger.error({ err, projectId }, "failed to update the project environment registry");
-    }
-
-    try {
-        await recordTemplates(rows, projectId);
-    } catch (err) {
-        logger.error({ err, projectId }, "failed to update the message template registry");
-    }
-
-    try {
-        const oldest = rows.reduce(
-            (min, row) => (row.timestamp < min ? row.timestamp : min),
-            rows[0].timestamp,
-        );
-        await markRollupDirty(projectId, oldest);
-    } catch (err) {
-        logger.error({ err, projectId }, "failed to mark the event rollup dirty");
-    }
+async function writeEvents(rows: NewEvent[], ctx: RequestContext): Promise<void> {
+    await insertEvents(rows.map(toClickhouseRow), ctx.dedupToken);
 }
 
 export interface SingleIngestResult {
@@ -71,8 +57,7 @@ export async function ingestSingle(
     }
 
     const row = enrichEvent(rawEvent, ctx);
-    await db.insert(events).values(row);
-    await updateDerivedTablesSafely([row], ctx.projectId);
+    await writeEvents([row], ctx);
     return { id: row.id };
 }
 
@@ -91,8 +76,7 @@ export async function ingestBatch(
     const acceptedEvents = rawEvents.filter((_, index) => !messagesByIndex.has(index));
     const validRows = acceptedEvents.map((e) => enrichEvent(e, ctx));
     if (validRows.length > 0) {
-        await db.insert(events).values(validRows);
-        await updateDerivedTablesSafely(validRows, ctx.projectId);
+        await writeEvents(validRows, ctx);
     }
 
     const errors = Array.from(messagesByIndex, ([index, messages]) => ({

@@ -59,6 +59,21 @@ Response `202`:
 { "accepted": 2, "errors": [] }
 ```
 
+### Retrying safely
+
+Both routes accept an optional `Idempotency-Key` header (1–128 characters). Send
+the same key when retrying a request whose response you never saw, and the
+repeat is discarded instead of stored twice:
+
+```bash
+curl -X POST http://localhost/api/ingest/batch   -H "Authorization: Bearer lgr_YOUR_API_KEY"   -H "Idempotency-Key: 018f3c9a-7b2e-7c3d-9e1f-2a4b6c8d0e1f"   -H "Content-Type: application/json"   -d '[{ "level": "info", "message": "User signed in" }]'
+```
+
+Without the header there is no deduplication, which is what every client gets by
+default. The key identifies the *request*, so sending different events under a
+key you already used discards them. See
+[docs/reference/api.md](docs/reference/api.md#idempotency-key-optional-request-header).
+
 ### Event Field Reference
 
 | Field | Required | Type | Description |
@@ -140,7 +155,7 @@ Returns `200` when all critical checks pass, `503` otherwise.
     "db": "ok",
     "pgboss": "ok",
     "ingest": "ok",
-    "migrations": "ok"
+    "clickhouse": "ok"
   }
 }
 ```
@@ -150,17 +165,15 @@ Returns `200` when all critical checks pass, `503` otherwise.
 | `db` | Cannot reach PostgreSQL |
 | `pgboss` | pg-boss schema unreachable (only when `WORKER_IN_PROCESS=true`) |
 | `ingest` | No events received in the last hour — warning only (`X-Health-Warn` header), does not cause 503 |
-| `migrations` | Applied migration count < expected — likely a failed deploy |
+| `clickhouse` | Cannot reach ClickHouse |
 
 Use `/api/health/ready` as your container liveness/readiness probe.
 
-## Self-monitoring Alert (pg_partman Watchdog)
+## ~~Self-monitoring Alert (pg_partman Watchdog)~~
 
-The partition maintenance job logs at `ERROR` if `run_maintenance()` fails. To get notified via the alert system, create a rule in any project that monitors a dedicated log stream from your app server:
-
-1. Open a project → **Alerts** → **New rule**
-2. **Condition**: `source` equals `partman-watchdog`, threshold `≥ 1` in `1h`
-3. **Channel**: your webhook endpoint
-4. **Name**: "Partition maintenance failure"
-
-> Requires your app to emit a log event with `source=partman-watchdog` when maintenance fails. This is an optional enhancement — the ERROR-level pino log is always written regardless.
+**Removed 2026-08-26.** There is no partition maintenance job: events live in
+ClickHouse, which partitions monthly and creates partitions on insert. The
+pattern itself is still worth knowing, and the app can be pointed at itself for
+any recurring failure — emit an event with a dedicated `source` when something
+fails, then create a rule whose condition is `source` equals that value with a
+threshold of `≥ 1` in `1h`.

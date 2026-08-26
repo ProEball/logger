@@ -14,8 +14,19 @@ export function parseCursor(params: URLSearchParams): Cursor | undefined {
     const parsed = new Date(beforeTs);
     if (isNaN(parsed.getTime())) return undefined;
 
-    // Validate UUID-ish id (basic check)
-    if (!/^[0-9a-f-]{36}$/.test(beforeId)) return undefined;
+    // A real UUID, not a 36-character run of hex and hyphens.
+    //
+    // The loose check let `------------------------------------` through, and
+    // since Phase 3 the value is bound as a ClickHouse `UUID` parameter, where
+    // anything unparseable is a server-side error — a 500 on the events page
+    // for a hand-edited URL. Postgres was no better; it raised `invalid input
+    // syntax for type uuid` on exactly the same input.
+    //
+    // The rule for this parser is that a malformed cursor resets to the first
+    // page, so it has to actually validate.
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(beforeId)) {
+        return undefined;
+    }
 
     return { beforeTs, beforeId };
 }

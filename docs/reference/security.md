@@ -62,7 +62,9 @@ Three consequences worth understanding before touching this:
 
 ### CORS
 
-Hand-rolled, applied **only** to the two ingest routes: `Access-Control-Allow-Origin: *`, methods `POST, OPTIONS`, headers `Content-Type, Authorization`. Intentional and low-risk for those specific routes (bearer-token auth, no cookies involved, so wildcard CORS doesn't expose session-based CSRF). No other route defines a CORS policy.
+Hand-rolled, applied **only** to the two ingest routes: `Access-Control-Allow-Origin: *`, methods `POST, OPTIONS`, headers `Content-Type, Authorization, Idempotency-Key`. Intentional and low-risk for those specific routes (bearer-token auth, no cookies involved, so wildcard CORS doesn't expose session-based CSRF). No other route defines a CORS policy.
+
+`Idempotency-Key` was added 2026-08-26 with the ClickHouse write path. It is not a credential and grants nothing: the value is scoped to the authenticated project before it is used (`${projectId}:${key}`), so one project's key cannot suppress another's events, and a key longer than 128 characters is ignored rather than truncated — truncation would map two distinct keys onto one and discard a batch that was never a repeat. See [api.md](api.md#idempotency-key-optional-request-header).
 
 ### The reverse proxy must not add security headers
 
@@ -73,6 +75,41 @@ The reason is specific to the nonce. A browser enforces **every** `Content-Secur
 The same reasoning in milder form applies to the rest of the set: duplicated headers resolve to whichever value the browser takes first, so the app's real policy quietly stops being the one in effect.
 
 Verified against the running stack on 2026-08-13: exactly one `Content-Security-Policy` header reaches the client, with a different nonce per request, and the rendered `<script>` tags carry the matching value. Caddy adds only `Via: 1.1 Caddy`.
+
+## ClickHouse queries: parameter binding is now a rule, not a library guarantee
+
+Since 2026-08-26 **every** read and write of an event goes to ClickHouse: the events list, the drawer, the facet counts, both dashboards' aggregations, the alert evaluator's match count and the sample events in an alert webhook. **There is no Drizzle dialect for ClickHouse**, so all of that is raw SQL — the escaping Drizzle used to do on the largest table in the system stops happening for free.
+
+`@clickhouse/client` supplies `query_params`: a query names a placeholder as `{name:Type}` and passes the value separately, and the type is declared server-side. **Every user-supplied value goes through it. No exceptions, no string interpolation, not even for a value that "is obviously a UUID".** A `project_id` interpolated into a query string is a tenant-isolation bypass, not a syntax error.
+
+Three things make this less fragile than it sounds:
+
+- **The write path builds no SQL at all.** `insertEvents` hands the client an array of objects and a table name; the values never enter a query string. The only SQL literal on the ingest path is the table name, which is a module constant.
+- **Binding goes through one class**, `ParamBag` in `core/clickhouse/params.ts`. A caller that cannot name a `{p:Type}` placeholder for a value has to stop and think about it, which is the point. Split out of the filter compiler in Phase 4, when the dashboard aggregations became a second thing that builds ClickHouse SQL by hand.
+- **The filter compiler is one module** — `core/clickhouse/filter-compiler.ts`, shipped 2026-08-26 — not a query builder spread across features, so "does this emit a bound parameter" is a question about a single file with unit tests. The events read path, the alert evaluator's count **and its webhook's sample events** all call it; none builds a clause of its own. The last of those was still Postgres until Phase 4, and while it was, it applied a *narrower* filter than the count beside it — a rule filtering on `source` counted one set of events and illustrated itself with another.
+- **The aggregations interpolate exactly one kind of thing**, and it is never caller data: level names, from a `const` tuple in the module or from `EVENT_LEVELS`. `level` is an `Enum8`, so literals let ClickHouse resolve the names to byte values at parse time. Everything else in `event-aggregations.service.ts` — project ids, range boundaries, environment names, bucket widths, limits, even the `(unset)` label — goes through the bag.
+- **Even the attribute *keys* are bound.** This was the one place a string from a URL looked like it would have to be spliced into the query, because it names a column path rather than a value. It does not: `getSubcolumn(attributes, {k:String})` takes the path as a parameter, which was checked against a real server before the compiler was written (`lab/clickhouse/probe-query-shapes.mjs`). `filter-compiler.test.ts` asserts that a hostile key never reaches the SQL text.
+
+What this replaces is worth stating plainly, because part of it is a **loss**: the `events → projects` foreign key does not exist in ClickHouse and cannot. Tenant isolation rests on the Postgres authorization path resolving `project_id` **before** any ClickHouse query is built.
+
+> **Corrected 2026-08-26.** This section previously said the
+> `innerJoin(projects) WHERE deleted_at IS NULL` defence in depth was lost with
+> the join. It was not. `listEvents`, `getEventById` and `getFacetCounts` each
+> issue that check as a separate Postgres primary-key lookup, run
+> **concurrently** with the ClickHouse query so it costs no latency; if the
+> project is soft-deleted the ClickHouse result is discarded and the caller sees
+> an empty page. The foreign key is genuinely gone; the soft-delete check is
+> not. Asserted in `events-query.service.itest.ts`, which writes rows under a
+> deleted project and checks the reads come back empty.
+
+> **Scope note added 2026-08-26 (Phase 4).** That soft-delete check covers the
+> three **events-page** reads. The dashboard aggregations do not perform it and
+> never did — under Postgres they scoped by a `project_id` list with no join
+> either. It is not a regression, and it is not a hole today: both dashboard
+> routes resolve their scope through `getProjectBySlug` /
+> `listProjectsForOrg`, which filter `deleted_at IS NULL` before any id reaches
+> the service. Worth stating because the defence-in-depth is uneven, and a
+> reader who saw the paragraph above could reasonably assume it is not.
 
 ## Outbound request safety (SSRF)
 
@@ -124,7 +161,10 @@ As of 2026-08-13, **8** variables are schema-validated and fail the app at boot 
 | ~~No TLS terminator yet~~ | **Closed 2026-08-13.** The `proxy` service (Caddy, automatic Let's Encrypt) terminates TLS in the production stack | `Caddyfile`, `docker-compose.yml` |
 | Secrets live in a single `.env` on the host | Anything that can read the file gets `AUTH_SECRET`, the database password, and the offsite-backup credentials. Mitigated only by `chmod 600`; no secret manager, no rotation procedure | `.env.production.example`, compose `env_file:` |
 | Backups are not encrypted at rest | `pg_dump` output goes to a Docker volume and, if offsite is enabled, to the bucket as-is. Bucket-side encryption is the only protection | `scripts/backup.sh` |
-| Postgres superuser is the app's database user | The app connects as the same role that owns the schema; no least-privilege split between migration and runtime credentials | `docker-compose.yml`, `DATABASE_URL` |
+| Postgres superuser is the app's database user | The app connects as the same role that owns the schema; no least-privilege split between schema-creation and runtime credentials | `docker-compose.yml`, `DATABASE_URL` |
+| ClickHouse user is the app's user, with no split either | Same shape as the row above, and the same single credential creates the schema and serves queries. ClickHouse also has **no row-level security and no foreign key** to `projects`, so tenant isolation rests on the Postgres authorization path resolving `project_id` before any ClickHouse query is built. The soft-delete check survived as a concurrent Postgres lookup on the events page (see above); the referential integrity did not | `docker-compose.yml`, `CLICKHOUSE_*` |
+| **Nothing expires events, since 2026-08-26** | pg_partman dropped partitions past 30 days; it went with the Postgres `events` table. The ClickHouse table carries `retention_days` with a default of 30 and **no TTL clause**, so the store grows without bound until Phase 6 wires it up. Not a confidentiality gap — an availability and a data-minimisation one | `core/clickhouse/schema.sql`, `09-clickhouse.md` §9 |
+| **A project can be hard-deleted while it still has events** | `ON DELETE RESTRICT` on the old Postgres foreign key made that impossible; ClickHouse has no foreign key. Nothing in the product does it — `deleteProjectAction` soft-deletes, and that is the only delete path in the UI — so this is a lost guardrail rather than a live defect. A direct `DELETE FROM projects` would now orphan its events instead of failing | `features/projects/actions/delete-project.action.ts` |
 | `last_used_at` debounce is per-process | Cosmetic only (staleness of a display timestamp), not a security issue | `features/ingest/services/api-key-auth.service.ts` |
 | No FK-level DB constraint on `attributeKeyTypes.type` values | App-level-only enforcement of the 3 allowed type strings | `core/db/schema/attributeKeyTypes.ts` |
 

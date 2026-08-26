@@ -56,11 +56,12 @@ const EXEMPT = [
     /\.d\.ts$/,
     // Type-only modules: no behaviour to assert.
     /\.types\.ts$/,
-    // Drizzle table definitions and generated migrations are schema, not logic;
-    // they are covered through the services that use them and by the
-    // integration suite.
+    // Drizzle table definitions are schema, not logic; they are covered through
+    // the services that use them and by the integration suite. (The
+    // generated-migrations pattern that sat beside this was dropped on
+    // 2026-08-26 along with the migration chain — the schema is two .sql files
+    // now, and .sql never reaches this gate.)
     /^core\/db\/schema\//,
-    /^core\/db\/migrations\//,
     // Static authored content and the i18n dictionary are data.
     /^core\/i18n\/dictionary\.ts$/,
     /\/content\//,

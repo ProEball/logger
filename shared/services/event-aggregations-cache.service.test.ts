@@ -1,13 +1,23 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 /**
- * The database is mocked; `event-aggregations.service` is not. §11 allows mocking a real
- * system boundary and forbids mocking an internal module, and the thing under
- * test here is precisely whether a second read reaches the database — which is
- * only observable with the real service in the path.
+ * The database is mocked; `event-aggregations.service` is not. §11 allows
+ * mocking a real system boundary and forbids mocking an internal module, and
+ * the thing under test here is precisely whether a second read reaches the
+ * database — which is only observable with the real service in the path.
+ *
+ * **The boundary moved in Phase 4**: the aggregations read ClickHouse, so this
+ * mocks `clickhouse.query` where it used to mock `db.execute`. Nothing about
+ * what the file asserts changed — the cache does not know or care which store
+ * is behind it, which is the point of testing it at this seam.
  */
-const { executeMock } = vi.hoisted(() => ({ executeMock: vi.fn() }));
-vi.mock("@/core/db/client", () => ({ db: { execute: executeMock } }));
+const { queryMock } = vi.hoisted(() => ({ queryMock: vi.fn() }));
+vi.mock("@/core/clickhouse/client", () => ({ clickhouse: { query: queryMock } }));
+
+/** What `@clickhouse/client` hands back: a result whose rows are awaited. */
+function rows(value: unknown[] = []) {
+    return { json: async () => value };
+}
 
 import {
     cachedProjectStats,
@@ -28,13 +38,18 @@ const RANGE = { from: new Date("2026-08-20T00:00:00Z"), to: new Date("2026-08-20
 
 /** Queries issued since the last reset. The caches are module-level singletons. */
 function queryCount() {
-    return executeMock.mock.calls.length;
+    return queryMock.mock.calls.length;
+}
+
+/** The SQL text of every query issued since the last reset. */
+function issuedSql() {
+    return queryMock.mock.calls.map((call) => String((call[0] as { query: string }).query)).join(" ");
 }
 
 beforeEach(() => {
     clearAnalyticsCaches();
-    executeMock.mockReset();
-    executeMock.mockResolvedValue([]);
+    queryMock.mockReset();
+    queryMock.mockResolvedValue(rows());
 });
 
 describe("analytics cache", () => {
@@ -145,15 +160,20 @@ describe("analytics cache", () => {
         it("issues no message query when only statistics are read", async () => {
             await cachedProjectStats([P1], "7d", RANGE);
 
-            const sql = executeMock.mock.calls.map((c) => JSON.stringify(c[0])).join(" ");
-            expect(sql).not.toContain("ranked");
+            // `LIMIT 1 BY` is what the per-project top message uses and nothing
+            // else does. Asserting on a fragment of the SQL is the exception
+            // §11 allows only because there is no query builder to inspect —
+            // the whole events path is raw text (`09-clickhouse.md` §11).
+            expect(issuedSql()).not.toContain("LIMIT 1 BY");
         });
 
         it("issues no statistics query when only the top message is read", async () => {
             await cachedTopMessagePerProject([P1], "7d", RANGE);
 
-            const sql = executeMock.mock.calls.map((c) => JSON.stringify(c[0])).join(" ");
-            expect(sql).not.toContain("event_rollup_minutes");
+            // The counts query is the only one that groups environments into an
+            // array. It named `event_rollup_minutes` until Phase 4 deleted that
+            // table.
+            expect(issuedSql()).not.toContain("groupUniqArray");
         });
 
         /**
@@ -173,7 +193,7 @@ describe("analytics cache", () => {
             const forOne = queryCount();
 
             clearAnalyticsCaches();
-            executeMock.mockClear();
+            queryMock.mockClear();
             await cachedTopMessagePerProject([P1, P2, "33333333-3333-4333-8333-333333333333"], "7d", RANGE);
 
             expect(queryCount()).toBe(forOne);
@@ -230,16 +250,16 @@ describe("analytics cache", () => {
 
     describe("failure handling", () => {
         it("propagates a query failure instead of caching it", async () => {
-            executeMock.mockRejectedValue(new Error("db down"));
+            queryMock.mockRejectedValue(new Error("db down"));
 
             await expect(cachedEnvironments([P1])).rejects.toThrow("db down");
         });
 
         it("retries after a failure rather than serving nothing forever", async () => {
-            executeMock.mockRejectedValueOnce(new Error("transient"));
+            queryMock.mockRejectedValueOnce(new Error("transient"));
             await expect(cachedEnvironments([P1])).rejects.toThrow("transient");
 
-            executeMock.mockResolvedValue([{ environment: "prod" }]);
+            queryMock.mockResolvedValue(rows([{ environment: "prod" }]));
 
             await expect(cachedEnvironments([P1])).resolves.toEqual(["prod"]);
         });

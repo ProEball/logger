@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { LevelBadge } from "@/shared/components/LevelBadge/LevelBadge";
-import type { Event } from "@/core/db/schema";
+import type { Event } from "@/shared/types/event.types";
 import type { LogLevel } from "@/shared/components/LevelBadge/LevelBadge";
 import styles from "./EventDetailHeader.module.scss";
 

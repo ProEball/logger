@@ -1,7 +1,7 @@
-import { and, desc, eq, gte, inArray, lt } from "drizzle-orm";
-import { db } from "@/core/db/client";
 import { env } from "@/core/env";
-import { events } from "@/core/db/schema";
+import { clickhouse } from "@/core/clickhouse/client";
+import { EVENTS_TABLE } from "@/core/clickhouse/tables";
+import { compileFilters } from "@/core/clickhouse/filter-compiler";
 import type { AlertRule } from "@/core/db/schema";
 import type { AlertCondition } from "@/features/alerts/utils/alert-schemas";
 import type { EventFilters } from "@/shared/utils/event-filters.schema";
@@ -117,47 +117,71 @@ export function assembleAlertPayload({
     };
 }
 
+/**
+ * Three events to put in the webhook body.
+ *
+ * **The whole filter applies here since Phase 4**, not just `levels`. This read
+ * stayed on Postgres when Phase 3 moved the evaluator's count, and while it did
+ * it also kept a narrower predicate — so a rule filtering on `source` counted
+ * one set of events and illustrated itself with another. Both go through
+ * `compileFilters` now, which is the same clause from the same code, so the
+ * samples are drawn from exactly the rows that were counted.
+ *
+ * The window matches the evaluator's: half-open, ending at "now". The two calls
+ * take their `now` a few milliseconds apart, so a sample can in principle be an
+ * event the count did not see — visible only as an illustration slightly newer
+ * than the number beside it, which is what an alert body is for.
+ */
 async function fetchSampleEvents(
     projectId: string,
     filter: EventFilters,
     condition: AlertCondition,
 ): Promise<SampleEvent[]> {
-    const windowFrom = new Date(Date.now() - condition.windowMinutes * 60 * 1000);
-    const now = new Date();
+    const to = new Date();
+    const { where, params } = compileFilters(projectId, filter, {
+        from: new Date(to.getTime() - condition.windowMinutes * 60 * 1000),
+        to,
+        toExclusive: true,
+    });
 
-    const conditions = [
-        eq(events.projectId, projectId),
-        gte(events.timestamp, windowFrom),
-        lt(events.timestamp, now),
-    ];
+    const result = await clickhouse.query({
+        query: `SELECT toString(id) AS id,
+                       toUnixTimestamp64Milli(timestamp) AS ts_ms,
+                       toString(level) AS level,
+                       message, error_type, source
+                FROM ${EVENTS_TABLE}
+                WHERE ${where}
+                ORDER BY timestamp DESC, id DESC
+                LIMIT ${SAMPLE_EVENT_LIMIT}`,
+        query_params: params,
+        format: "JSONEachRow",
+    });
 
-    if (filter.levels?.length) {
-        conditions.push(inArray(events.level, filter.levels));
-    }
-
-    const rows = await db
-        .select({
-            id: events.id,
-            timestamp: events.timestamp,
-            level: events.level,
-            message: events.message,
-            error_type: events.errorType,
-            source: events.source,
-        })
-        .from(events)
-        .where(and(...conditions))
-        .orderBy(desc(events.timestamp))
-        .limit(SAMPLE_EVENT_LIMIT);
-
-    return rows.map((r) => ({
-        id: r.id,
-        timestamp: r.timestamp.toISOString(),
-        level: r.level,
-        message: r.message,
-        error_type: r.error_type,
-        source: r.source,
+    return (await result.json<SampleEventRow>()).map((row) => ({
+        id: row.id,
+        // Built in JavaScript rather than by `formatDateTime`, which emits six
+        // fractional digits (`…:00.123000Z`) where every other timestamp in
+        // this payload has three. A published webhook body is not the place to
+        // change a format by accident.
+        timestamp: new Date(Number(row.ts_ms)).toISOString(),
+        level: row.level,
+        message: row.message,
+        // The columns have no `Nullable` (§4.1) and this payload has always
+        // carried `null` for a field the caller never sent. Integrators match
+        // on that; `""` would be a new value in a published contract.
+        error_type: row.error_type === "" ? null : row.error_type,
+        source: row.source === "" ? null : row.source,
     }));
 }
+
+type SampleEventRow = {
+    id: string;
+    ts_ms: string;
+    level: string;
+    message: string;
+    error_type: string;
+    source: string;
+};
 
 function buildTestSampleEvents(): SampleEvent[] {
     return [

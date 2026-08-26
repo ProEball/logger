@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { pgClient } from "@/core/db/client";
 import { getBoss } from "@/core/worker/worker";
-import { getMigrationStatus } from "@/core/db/migration-status";
+import { clickhouse, pingClickhouse } from "@/core/clickhouse/client";
+import { EVENTS_TABLE } from "@/core/clickhouse/tables";
 
 export async function GET() {
     const checks: Record<string, string> = {};
@@ -32,14 +33,19 @@ export async function GET() {
     }
 
     // ── Last event ingest within 1h ───────────────────────────────────────────
+    // Asks ClickHouse since Phase 4; the Postgres `events` table is gone.
+    // Still a **warning**, never fatal: an install with no traffic in the last
+    // hour is idle, not broken, and failing readiness for it would take the app
+    // out of the load balancer for being quiet.
     try {
-        const [row] = await pgClient`
-            SELECT EXISTS(
-                SELECT 1 FROM events
-                WHERE timestamp > NOW() - INTERVAL '1 hour'
-            ) AS has_recent
-        `;
-        if (!row.has_recent) {
+        const result = await clickhouse.query({
+            query: `SELECT count() AS n
+                    FROM ${EVENTS_TABLE}
+                    WHERE timestamp > now64(3, 'UTC') - INTERVAL 1 HOUR`,
+            format: "JSONEachRow",
+        });
+        const [row] = await result.json<{ n: string }>();
+        if (Number(row?.n ?? 0) === 0) {
             checks.ingest = "stale";
             warnings.push("No events received in the last hour");
         } else {
@@ -49,20 +55,20 @@ export async function GET() {
         checks.ingest = "unavailable";
     }
 
-    // ── Migrations up to date ─────────────────────────────────────────────────
+    // ── ClickHouse ping ───────────────────────────────────────────────────────
+    // Fatal, like the Postgres check above: from Phase 2 on, an unreachable
+    // ClickHouse means ingest drops events and every event view is empty.
+    //
+    // There is no migration check beside it any more, because there are no
+    // migrations. The schema is applied from empty by the one-shot `bootstrap`
+    // container and compose gates `app` on its exit code, so an app that is
+    // serving at all has already had it succeed.
     try {
-        const { applied, expected, isUpToDate } = await getMigrationStatus(pgClient);
-        if (isUpToDate) {
-            checks.migrations = "ok";
-        } else {
-            checks.migrations = `behind: applied=${applied}, expected=${expected}`;
-            isHealthy = false;
-        }
+        await pingClickhouse();
+        checks.clickhouse = "ok";
     } catch {
-        // Reaching the table can fail legitimately — the database is up but has
-        // never been migrated. Not fatal on its own; the `db` check above is
-        // what decides whether Postgres itself is reachable.
-        checks.migrations = "unavailable";
+        checks.clickhouse = "error";
+        isHealthy = false;
     }
 
     const headers: Record<string, string> = {};

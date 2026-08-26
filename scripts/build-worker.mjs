@@ -1,9 +1,9 @@
 /**
  * Bundles the Node entrypoints that live outside the Next.js build:
- * the standalone worker and the one-shot migration runner.
+ * the standalone worker and the one-shot schema bootstrap.
  *
  * `next build` only compiles what is reachable from `app/`, so neither
- * `core/worker/main.ts` nor `core/db/migrate.ts` appears in `.next/standalone`.
+ * `core/worker/main.ts` nor `core/db/bootstrap.ts` appears in `.next/standalone`.
  * Each is bundled here into a single self-contained CJS file with its
  * dependencies inlined — the runtime image therefore needs no `node_modules`
  * of its own for these processes, and a worker-only dependency added later
@@ -26,10 +26,7 @@ const outDir = path.resolve(
 
 const ENTRYPOINTS = {
     worker: "core/worker/main.ts",
-    migrate: "core/db/migrate.ts",
-    // One-shot, run by hand. Bundled with the others so it carries the real
-    // normaliser rather than a copy of its rules.
-    "backfill-template-hash": "core/db/backfill-template-hash.ts",
+    bootstrap: "core/db/bootstrap.ts",
 };
 
 await build({

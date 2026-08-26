@@ -73,3 +73,55 @@ describe("batchEventSchema", () => {
         expect(result.success).toBe(false);
     });
 });
+
+/**
+ * Blank optional fields, added with Phase 2 of the ClickHouse migration.
+ *
+ * The ClickHouse schema has no Nullable column, so "" and absent are the same
+ * row there. Postgres stored them as two distinct values and showed "" as its
+ * own entry in the filter bar beside "(unset)". Collapsing them at the schema
+ * keeps the two stores agreeing for as long as both exist.
+ */
+describe("blank optional fields", () => {
+    it.each([
+        "source",
+        "environment",
+        "release",
+        "user_id",
+        "session_id",
+        "request_id",
+        "trace_id",
+        "error_type",
+        "stack_trace",
+    ])("treats an empty %s as absent rather than as a value", (field) => {
+        const result = eventSchema.safeParse({ level: "info", message: "x", [field]: "" });
+
+        expect(result.success).toBe(true);
+        expect(result.data?.[field as keyof typeof result.data]).toBeUndefined();
+    });
+
+    it("treats a whitespace-only field as absent too", () => {
+        const result = eventSchema.safeParse({ level: "info", message: "x", environment: "   " });
+        expect(result.data?.environment).toBeUndefined();
+    });
+
+    it("accepts the blank rather than rejecting the whole event", () => {
+        // An ingest endpoint must not discard an event because a caller sent
+        // "" for a field it did not have to send at all. Same call as the
+        // X-Forwarded-For guard in to-clickhouse-row.ts.
+        expect(eventSchema.safeParse({ level: "info", message: "x", source: "" }).success).toBe(true);
+    });
+
+    it("keeps a value that is merely short", () => {
+        expect(eventSchema.safeParse({ level: "info", message: "x", environment: "a" }).data?.environment).toBe("a");
+    });
+
+    it("still rejects a blank message, which is the event itself", () => {
+        expect(eventSchema.safeParse({ level: "info", message: "" }).success).toBe(false);
+    });
+
+    it("still enforces the length limits", () => {
+        const tooLong = eventSchema.safeParse({ level: "info", message: "x", environment: "e".repeat(129) });
+        expect(tooLong.success).toBe(false);
+    });
+});

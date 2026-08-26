@@ -18,16 +18,23 @@ Six containers, defined in `docker-compose.yml`:
 | `proxy` | `caddy:2-alpine` | TLS termination, automatic Let's Encrypt, reverse proxy to `app` |
 | `app` | built from `Dockerfile` | Next.js standalone server, listens on **3000** inside the container |
 | `worker` | same image, `node worker.js` | pg-boss job runner — alert evaluation, alert delivery, partition maintenance |
-| `migrate` | same image, `node migrate.js` | One-shot. Applies migrations, exits 0, gates `app` and `worker` |
-| `postgres` | built from `db/Dockerfile` | Postgres 16 + pg_partman. Not published to the host |
+| `bootstrap` | same image, `node bootstrap.js` | One-shot. Applies both schemas from empty, exits 0, gates `app` and `worker` |
+| `postgres` | `postgres:16` | Stock upstream since 2026-08-26 — `db/Dockerfile` existed to add `pg_partman` for the partitioned `events` table, which is now in ClickHouse. Not published to the host |
+| `clickhouse` | `clickhouse/clickhouse-server:25.3` | The events store. Not published to the host. **Written to by ingest since Phase 2** (2026-08-26); nothing reads it until Phases 3–4, so Postgres still holds the copy every page renders — losing the ClickHouse volume today costs no user-visible data, and stops being true when the reads move |
 | `backup` | built from `db/backup.Dockerfile` | `pg_dump` loop with rotation and optional offsite copy |
 
-`app`, `worker` and `migrate` are **the same image with different commands**, so
+`app`, `worker` and `bootstrap` are **the same image with different commands**, so
 all three always run the same application code.
 
-Boot order is enforced by compose, not by chance: `postgres` healthy →
-`migrate` exits 0 → `app` and `worker` start → `proxy` starts once `app` is
-healthy.
+Boot order is enforced by compose, not by chance: `postgres` **and**
+`clickhouse` healthy → `bootstrap` exits 0 → `app` and `worker` start →
+`proxy` starts once `app` is healthy.
+
+> **There are no migrations.** Since 2026-08-26 each store has one file
+> describing its end state, applied whole and idempotently on every `up`. That
+> makes deploys simpler and makes a schema change against a database holding
+> rows unsupported — see the rollback note below and
+> `docs/reference/architecture.md`.
 
 > **Port 3000, not 80.** The container runs `.next/standalone/server.js`, which
 > reads `PORT` from the environment (baked into the image as 3000). It never
@@ -73,8 +80,8 @@ docker compose up -d
 Watch it come up:
 
 ```bash
-docker compose logs -f migrate     # expect "migrations applied", then exit 0
-docker compose ps                  # app, worker, postgres, proxy all (healthy)
+docker compose logs -f bootstrap   # expect "postgres schema applied" then "clickhouse schema applied", exit 0
+docker compose ps                  # app, worker, postgres, clickhouse, proxy all (healthy)
 ```
 
 Open `https://<DOMAIN>`. With no users in the database every route redirects to
@@ -88,8 +95,8 @@ curl -s https://<DOMAIN>/api/health/ready | jq
 curl -s https://<DOMAIN>/api/version | jq
 ```
 
-`/api/health/ready` returns 200 with every check `ok`, or 503 if the database
-is unreachable or migrations are behind. Two entries are informational and do
+`/api/health/ready` returns 200 with every check `ok`, or 503 if either
+database is unreachable. Two entries are informational and do
 **not** fail the probe:
 
 - `pgboss: "not_running_in_process"` — correct in production. The worker is its
@@ -122,8 +129,9 @@ docker compose pull
 docker compose up -d
 ```
 
-`migrate` re-runs on every `up`, applies anything new, and exits 0 — `app` and
-`worker` do not start until it does.
+`bootstrap` re-runs on every `up`, re-applies both schemas, and exits 0 —
+`app` and `worker` do not start until it does. Re-applying is a no-op when
+nothing changed: every statement is `IF NOT EXISTS` or its equivalent.
 
 > **`git pull` first if the release touches anything outside the app image.**
 > `docker compose pull` fetches images; it does not update the files on the
@@ -181,21 +189,23 @@ carries the data across; the outage is the length of one Postgres start.
 docker compose exec postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "CREATE EXTENSION IF NOT EXISTS pg_stat_statements"'
 ```
 
-**The rollup builds in the background, not during migration.** Migration 0008
-seeds each project's watermark at its oldest event and leaves `rolled_up_to`
-NULL, which readers treat as "nothing rolled up yet" and answer entirely from
-`events` — so the deploy is safe before the job has ever run. The `event-rollup`
-job then catches up **one day of history per run**, once a minute. Watch it
-finish:
+**~~The rollup builds in the background~~ — no longer applies (2026-08-26).**
+There is no `event_rollup_minutes`, no `rollup_state` and no `event-rollup`
+job; the dashboards query ClickHouse directly. Nothing has to warm up after a
+deploy and the `worker` service now runs only the alert jobs.
+
+**What to check after upgrading past this release instead:**
 
 ```bash
-docker compose exec postgres sh -c \
-  'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT project_id, refresh_from, rolled_up_to FROM rollup_state"'
+docker compose exec clickhouse clickhouse-client -q \
+  "SELECT count(), min(timestamp), max(timestamp) FROM events"
 ```
 
-`rolled_up_to` advancing to within a minute or two of now means the backfill is
-done. It requires the `worker` service to be running — without it the rollup
-never builds and the dashboards silently keep reading raw events.
+⚠️ **Nothing expires events yet.** pg_partman's 30-day partition drop went with
+the Postgres table, and the ClickHouse TTL is Phase 6 of
+`docs/features/09-clickhouse.md`. The store grows without bound until then;
+watch `SELECT formatReadableSize(sum(bytes_on_disk)) FROM system.parts WHERE
+active` if the install is taking real traffic.
 
 ### Resizing the host and applying the Postgres profile (2026-08-24)
 
@@ -324,52 +334,19 @@ side table is worth anything; the second is the input to every "does this fit on
 disk" estimate in §17. `pg_relation_size` on the partitioned parent returns 0,
 which is why both aggregate over `pg_inherits` instead.
 
-### Backfilling template fingerprints (one-shot, after the §16.3 release)
+### ~~Backfilling template fingerprints~~ — script deleted 2026-08-26
 
-`events.template_hash` is computed at ingest, so events written before that
-release have none — and the template rollup can only summarise events that have
-one. Left alone, `topMessages` keeps taking the raw-text path for any range
-reaching into that history, and only stops when 30-day retention rolls those
-events out. This script closes the gap now instead.
+`backfill-template-hash.js` gave events written before `template_hash` shipped
+a fingerprint, then pulled each project's rollup watermark back so the rollup
+job would rebuild history. Both its subject and its mechanism are gone: there
+is no rollup, and every event in ClickHouse carries a fingerprint because the
+table was created after ingest started writing one.
 
-Check the size of the job first — it writes nothing:
-
-```bash
-docker compose run --rm --entrypoint node app backfill-template-hash.js --dry-run
-```
-
-Then run it:
-
-```bash
-docker compose run --rm --entrypoint node app backfill-template-hash.js --batch 5000 --sleep 50
-```
-
-It reads events with no fingerprint oldest-first, writes the hash and registers
-the template, then pulls each project's rollup watermark back to its oldest
-event so the existing `event-rollup` job rebuilds history — a day per run, with
-its existing cap and its existing self-healing. No second rebuild path exists,
-deliberately.
-
-**Safe to interrupt.** Work is selected by `template_hash IS NULL`, so a killed
-run leaves the rest for the next one. Nothing is destroyed: every write is
-derived, and a normaliser rule found to be wrong is corrected by bumping
-`NORMALIZER_VERSION` and running this again.
-
-⚠️ **It rewrites rows.** Every updated event leaves a dead tuple — roughly one
-heap row each, ~255 bytes on staging — so it temporarily grows the table until
-autovacuum reclaims them. Check headroom with `df -h /` first, and prefer
-off-peak: 9M events is a couple of gigabytes of churn.
-
-⚠️ **The rebuild is the slow half.** The hashes take minutes; the rollup then
-catches up one day of history per run, so 30 days of history is ~30 job cycles.
-Watch it with:
-
-```bash
-docker compose exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT project_id, templates_rolled_up_from, templates_rolled_up_to FROM rollup_state;"'
-```
-
-`templates_rolled_up_from` moving backwards is the rebuild working. When it
-reaches the oldest event, every range is served from the rollup.
+**A ClickHouse row written before `message_template` was added** (2026-08-26)
+reads that column back as `''`, and the top-messages widgets fall back to
+showing the raw message for it. That is a display fallback, not a gap needing
+a backfill — the grouping is keyed on `template_hash`, which those rows do
+have. It corrects itself as retention rolls them out, once retention exists.
 
 ### Building on the host
 
@@ -386,10 +363,21 @@ inlined at build time and cannot be set afterwards in `.env`.
 
 ### Rolling back
 
-Set `IMAGE` back to the previous tag and `docker compose up -d`. **Migrations
-do not roll back.** A previous image runs fine against a database migrated by
-its successor as long as no migration dropped or renamed something the older
-build reads — check the migration diff before relying on this.
+Set `IMAGE` back to the previous tag and `docker compose up -d`.
+
+**Schema changes do not roll back, and since 2026-08-26 they do not roll
+*forward* against existing data either.** There is no migration system: the
+bootstrap creates what is missing and leaves what exists alone, so a release
+that renames or retypes a column will not apply it to a populated database, and
+will not tell you so. A previous image runs fine against a newer schema only as
+long as nothing it reads was dropped or renamed.
+
+> This is a real limitation, not an oversight — it was taken deliberately while
+> no install held data worth keeping (the staging host was destroyed), in
+> exchange for deleting a sixteen-file chain during a migration that removes the
+> largest table in it. **Before the first install anybody depends on, this needs
+> revisiting.** `PLAN.md` §17 (2026-08-26) records the reasoning and names that
+> as the condition.
 
 ---
 
@@ -465,13 +453,22 @@ unrecoverable mistake available here.
 For unattended disaster recovery, set `RESTORE_YES=true` to skip the prompt.
 Nothing else about the run changes.
 
-> **Why drop-and-recreate rather than `pg_restore --clean`:** `events` is
-> declaratively partitioned, and each partition's primary key is an *inherited*
-> constraint that Postgres refuses to drop directly. `--clean` aborts partway
-> through with `cannot drop inherited constraint "events_pYYYYMMDD_pkey"`,
-> leaving the restore half-applied. Restoring into an empty database avoids the
-> problem entirely; the dump carries the `drizzle` and `pgboss` schemas and the
-> `pg_partman` extension, so nothing needs recreating by hand.
+> **Why drop-and-recreate rather than `pg_restore --clean`:** the reason it was
+> chosen is gone and the choice stands. `events` used to be declaratively
+> partitioned, and each partition's primary key was an *inherited* constraint
+> Postgres refuses to drop directly, so `--clean` aborted partway through with
+> `cannot drop inherited constraint "events_pYYYYMMDD_pkey"` and left the
+> restore half-applied. No table is partitioned any more (2026-08-26), so
+> `--clean` would probably work — restoring into an empty database is still
+> strictly safer and there is no reason to find out. The dump carries the
+> `pgboss` schema, so nothing needs recreating by hand.
+
+⚠️ **`pg_dump` no longer backs up your events.** They are in ClickHouse, and
+`scripts/backup.sh` does not touch it. A restore from these dumps returns every
+user, organization, project, API key and alert rule, and **no events at all**.
+A ClickHouse backup is Phase 6 of `docs/features/09-clickhouse.md`; until it
+exists, the events store has no backup and this is the single largest
+operational gap in the install.
 
 ---
 
@@ -580,7 +577,7 @@ a longer note at the point of temptation.
   one `app` replica multiplies the effective limit by the replica count. A
   shared store is required before scaling out.
 - **`projects.retention_days` is not enforced.** Partition retention is
-  globally fixed at 30 days in migration 0003. The column is read and exposed
+  globally fixed at 30 days in `db/events.sql`. The column is read and exposed
   through the API but changing it has no effect.
 - **Password reset does not send email.** `sendResetPassword` writes the reset
   URL to the application log. Recovering an account today means reading it out

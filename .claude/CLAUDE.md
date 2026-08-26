@@ -6,9 +6,11 @@ Guidance for Claude Code working in this repository.
 
 **Logger** — a self-hosted, invite-only, multi-tenant structured event logging / observability service. An **organization** owns **projects**; each project ingests **events** over an HTTP API authenticated by a per-project **API key**; users browse and filter those events, watch a metrics **dashboard**, and configure **alert rules** that evaluate on a schedule and fire webhooks.
 
-One Next.js deployable plus an optional worker process, backed by a single PostgreSQL database (events partitioned daily via `pg_partman`). No Redis, no external queue, no third-party services.
+One Next.js deployable plus an optional worker process, backed by **two stores**: PostgreSQL for everything about people and projects, and ClickHouse for the events themselves. No Redis, no external queue, no third-party services.
 
-Next.js 16 App Router · React 19 · TypeScript `strict` · Drizzle + postgres.js · better-auth · pg-boss · Redux Toolkit · SCSS Modules (no Tailwind) · Zod · Recharts.
+The split is clean and it is worth knowing before opening a file: Postgres holds users, organizations, projects, API keys and alert rules; ClickHouse holds `events` and nothing else. Nothing joins across them — a cross-store question is one query to each, issued concurrently and matched in TypeScript. **There is no Drizzle dialect for ClickHouse**, so every read and write of an event is raw SQL and parameter binding is a rule rather than a library guarantee (`core/clickhouse/params.ts`, `docs/reference/security.md`).
+
+Next.js 16 App Router · React 19 · TypeScript `strict` · Drizzle + postgres.js · @clickhouse/client · better-auth · pg-boss · Redux Toolkit · SCSS Modules (no Tailwind) · Zod · Recharts.
 
 > `AGENTS.md` at the repo root warns that this Next.js version has breaking changes versus older training data — e.g. `middleware.ts` is now `proxy.ts`. Read `node_modules/next/dist/docs/` before writing framework-adjacent code instead of relying on recall.
 
@@ -44,22 +46,28 @@ npm run test             # vitest — unit only, no database needed
 npm run test:it          # vitest integration — creates/seeds logger_itest, needs Postgres up
 npm run test:e2e         # playwright (needs the isolated e2e DB — see misc.md#testing)
 npx tsc --noEmit         # type check — must stay at 0 errors
-npm run db:generate      # drizzle-kit generate
-npm run db:migrate       # apply migrations
+npm run db:schema        # regenerate db/schema.sql from the Drizzle schema
+npm run db:bootstrap     # apply db/schema.sql + core/clickhouse/schema.sql
 npm run db:studio        # drizzle-kit studio
 ```
 
-Postgres for local dev: `docker compose -f docker-compose.dev.yml up -d`.
+Postgres **and ClickHouse** for local dev:
+`docker compose -f docker-compose.dev.yml up -d`, then `npm run db:bootstrap`.
+
+**There are no migrations.** Each store has one file describing its end state,
+applied from empty and idempotently. Change `core/db/schema/*.ts` then re-run
+`npm run db:schema` — never hand-edit `db/schema.sql`. See
+`docs/reference/architecture.md`, and `PLAN.md` §17 for the cost.
 
 ## Structure
 
 ```
 app/          Next.js App Router only — routes compose, they never implement
-core/         app-wide: db, auth, env, store, i18n, theme, logger, worker
+core/         app-wide: db, clickhouse, auth, env, store, i18n, theme, logger, worker
 features/     alerts api-keys auth dashboard events help ingest
               organizations overview projects roles
 shared/       cross-feature components, hooks, types, utils, permissions
-db/           Postgres Dockerfile + init SQL (pg_partman)
+db/           generated Postgres baseline + init SQL (pg_stat_statements)
 e2e/          Playwright specs + support helpers
 docs/         see above
 proxy.ts      auth gating + per-request CSP nonce (Next 16's middleware)

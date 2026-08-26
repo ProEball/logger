@@ -29,7 +29,7 @@
  * Deleted with the rest of `lab/` once §14.3.1 is closed.
  */
 
-import { mkdirSync, writeFileSync, readFileSync, existsSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { exec, one, ping } from "./ch.mjs";
 

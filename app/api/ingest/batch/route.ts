@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic";
 const CORS_HEADERS = {
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Methods": "POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization, Idempotency-Key",
 };
 
 const BATCH_BODY_LIMIT = 5 * 1024 * 1024; // 5 MB

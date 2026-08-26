@@ -31,6 +31,10 @@ export default defineConfig({
             DATABASE_URL: "postgresql://test:test@localhost:5432/test",
             AUTH_SECRET: "test-secret-at-least-32-characters-long",
             APP_URL: "http://localhost",
+            // The only ClickHouse variable without a default. Nothing here
+            // connects to ClickHouse; the value exists so importing
+            // `@/core/env` does not fail schema validation.
+            CLICKHOUSE_PASSWORD: "test",
         },
     },
     resolve: {

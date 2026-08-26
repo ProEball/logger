@@ -26,8 +26,8 @@ Request flow (in order — each step can short-circuit the response):
 5. **Schema validation** (Zod, see [Event schema](#event-schema) below) → `400 { "error": "Validation failed.", "details": <zod fieldErrors> }`
 6. **Attribute type conflict check** (see [logging.md](logging.md#attribute-type-enforcement)) → `400 { "error": "Attribute type conflict.", "details": [{index, key, message}] }`
 7. **Timestamp policy** (see below) — timestamp too old → `400 { "error": "Event timestamp is older than 30-day retention window." }`
-8. **Insert** → `202 { "id": "<uuid>" }`
-9. **Environment registry update** (added 2026-08-20) — records the batch's distinct environments in `project_environments`, so the overview's filter bar need not scan `events`. See [logging.md](logging.md#environment-registry). **Cannot affect the response**: it runs after the insert and its errors are caught and logged, because the events are already durable and the registry is derived data.
+8. **Insert** → `202 { "id": "<uuid>" }` into ClickHouse — see [Where an event is written](#where-an-event-is-written) below. A failure returns `500` and is never swallowed.
+9. ~~**Environment registry update**~~ — **deleted 2026-08-26.** Three derived Postgres tables were maintained after the insert — an environment registry, a message-template registry and a rollup watermark — each behind its own `try`/`catch`, and they were the only deliberately swallowed errors on this path. All three summarised a table that has moved to ClickHouse, which maintains its own aggregates. **Every error on the ingest path now propagates.**
 10. Any unexpected error → logged server-side, `500 { "error": "Internal server error." }`
 
 ### `POST /api/ingest/batch` — up to 500 events
@@ -71,13 +71,57 @@ Only `level` and `message` are required. Unrecognized top-level fields are silen
 | `attributes` | `Record<string, string\|number\|boolean\|null>` | no | flat map, primitives only (nested objects/arrays rejected), default `{}` — see [logging.md](logging.md#attribute-type-enforcement) for the type-consistency rule |
 | `context` | `Record<string, unknown>` | no | free-form nested JSON, default `{}` |
 
-Server always fills/overrides (never trusts the client for these): `id` (random UUID), `project_id` (from the authenticated API key), `user_agent` and `ip` (from request headers — any client-supplied values in the body are ignored).
+**A blank optional string is treated as absent, not as a value** (changed 2026-08-26). `{"environment": ""}` and a missing `environment` produce the same stored event, and `""` no longer appears as its own entry in the filter bar beside `(unset)`. Whitespace-only counts as blank. This applies to every optional string above — not to `message`, which is the event itself and is still rejected when empty.
+
+The reason is storage: the ClickHouse `events` table has **no `Nullable` column anywhere** (a Nullable carries a separate per-column mask and blocks optimizations), so absent is stored as the empty string and the two were about to become indistinguishable regardless. Normalising rather than rejecting is deliberate — an ingest endpoint discarding an event because a caller sent `""` for a field it never had to send is the worse failure.
+
+Server always fills/overrides (never trusts the client for these): `id`, `project_id` (from the authenticated API key), `user_agent` and `ip` (from request headers — any client-supplied values in the body are ignored).
+
+`id` is a **UUIDv7** since 2026-08-26, not the v4 `randomUUID()` gave. It is still an opaque unique id to any caller; the version matters because ClickHouse measured a v4 `id` column at compression ratio 1.0 and a fifth of the whole table, and v7's leading timestamp bits are near-constant inside a sorted granule.
+
+`ip` is now validated. The first hop of `X-Forwarded-For` is stored only if it parses as an IPv4 or IPv6 address; anything else — a hostname, an address with a port, a truncated one — is stored as `::` ("not known"). The ClickHouse column is `IPv6` and rejects an unparseable value by failing the **entire insert**, which for a batch would mean 500 events lost to one malformed proxy header.
 
 **Timestamp policy** (`sanitizeTimestamp`):
 - Absent → server `now()`.
 - More than **5 minutes in the future** → silently coerced to server `now()` (logged as a warning server-side, does not error).
 - More than **30 days in the past** → **rejected** (`400`, matches the 30-day partition retention window — an event that old would be immediately eligible for partition drop anyway).
 - Otherwise → used as provided.
+
+### Where an event is written
+
+An accepted event is written to **ClickHouse**, and nowhere else, since
+2026-08-26 (Phase 4 of `docs/features/09-clickhouse.md`).
+
+For two phases before that it was a **dual write** to ClickHouse and Postgres —
+scaffolding with a scheduled end, so the read surfaces could move one at a time
+while the whole e2e suite stayed green and both stores held identical rows to
+compare. Phase 4 moved the last read and deleted the Postgres `events` table
+with it.
+
+One observable consequence disappeared with it: while both stores were written,
+there was no transaction across them, so a `500` could leave the event in one
+and not the other. With one store a request either stored its events or
+returned an error.
+
+ClickHouse writes use `async_insert = 1` with `wait_for_async_insert = 1`. The server buffers many small requests into properly sized parts, and the `202` is not returned until the data is durable — so an event is readable immediately after the response, and a flush error reaches the caller instead of only a server log. The cost is up to ~200 ms of latency per request; `POST /api/ingest/batch` amortizes it to ~0.4 ms per event.
+
+### `Idempotency-Key` (optional request header)
+
+Both ingest routes accept an `Idempotency-Key` header, 1–128 characters. When present, a repeat of the same request is discarded rather than stored twice.
+
+```bash
+curl -X POST http://localhost/api/ingest/batch   -H "Authorization: Bearer lgr_YOUR_API_KEY"   -H "Idempotency-Key: 018f3c9a-7b2e-7c3d-9e1f-2a4b6c8d0e1f"   -H "Content-Type: application/json"   -d '[{"level":"info","message":"User signed in"}]'
+```
+
+- The key is scoped to the project, so two projects using the same key do not affect each other.
+- A repeat is **discarded silently** — the response is a normal `202`, not a `409`. The caller cannot distinguish "stored" from "already stored", which is the point: an SDK retrying a timeout wants the same answer either way.
+- The window is the last **10,000 inserts** per month-partition. A retry seconds after the original is always covered; a repeat sent hours later, after tens of thousands of other inserts, is not.
+- A key that is blank, whitespace-only, or longer than 128 characters is **ignored**, and the request behaves as if none was sent. It is never truncated, because two keys truncated to the same prefix would discard two genuinely different batches.
+- Sending **different** events under a key already used discards them. The key identifies the request, not its contents.
+
+**Without the header there is no deduplication**, which is the behaviour every existing client has. This is deliberate and not a gap to close later: the token cannot be derived from the payload, because a logging service receives byte-identical payloads constantly — a heartbeat, a retry loop, the same error twice in a second — and content-based deduplication would store one of them and report success for both. Only the caller knows whether a request is new or a repeat.
+
+Header names are case-insensitive, and `Idempotency-Key` is listed in `Access-Control-Allow-Headers` on both routes so a browser can send it cross-origin.
 
 ### Response codes (both ingest routes)
 
@@ -107,19 +151,23 @@ No auth. Trivial liveness probe — always `200`:
 No auth. Real readiness probe, checks four things and returns `200` (all healthy) or **`503`**:
 
 ```json
-{ "status": "ok", "checks": { "db": "ok", "pgboss": "ok", "ingest": "ok", "migrations": "ok" } }
+{ "status": "ok", "checks": { "db": "ok", "pgboss": "ok", "ingest": "ok", "clickhouse": "ok" } }
 ```
 
 | Check | How | Failure behavior |
 |---|---|---|
 | `db` | `SELECT 1` | fails health (503) on error |
 | `pgboss` | queries `pgboss.version` if the in-process worker is running; else reports `not_running_in_process` | `not_running_in_process` does **not** fail health |
-| `ingest` | any `events` row with `timestamp > now() - 1h`? | `"stale"` if none — **warning only**, adds an `X-Health-Warn` response header, does **not** fail health |
-| `migrations` | `core/db/migration-status.ts` compares the applied count in `drizzle."__drizzle_migrations"` against the entries in `core/db/migrations/meta/_journal.json` | fewer applied than expected → fails health (503) — usually a failed or incomplete deploy. Unreadable table → `"unavailable"`, which does **not** fail health (the `db` check owns "is Postgres reachable") |
+| `ingest` | any ClickHouse `events` row with `timestamp > now() - 1h`? | `"stale"` if none — **warning only**, adds an `X-Health-Warn` response header, does **not** fail health |
+| `clickhouse` | `clickhouse.ping({ select: true })` | fails health (503) on error |
 
-More applied than expected is deliberately **not** a failure: an app rolled back one version runs against a database migrated by its successor, which is normal during a staged deploy.
+> **The `ingest` check asks ClickHouse since 2026-08-26** (Phase 4), where it asked Postgres before. It stays a *warning*: an install with no traffic in the last hour is idle, not broken, and failing readiness for it would pull the app out of the load balancer for being quiet.
 
-> **Fixed 2026-08-13.** The query was `FROM "__drizzle_migrations"` — unqualified, so it resolved to `public` and raised `relation does not exist` on every call. The route caught that and reported `migrations: "unavailable"`, so the check silently never ran and an app pointed at a half-migrated database still passed its healthcheck. The table has always lived in the `drizzle` schema.
+> **Replaced the `migrations` check, 2026-08-26.** It compared the applied count in `drizzle."__drizzle_migrations"` against the shipped journal. There are no migrations any more (see [architecture.md](architecture.md#schema-and-the-bootstrap)), and nothing equivalent replaces it: the schema is applied from empty by the one-shot `bootstrap` container, which compose gates `app` on with `condition: service_completed_successfully`, so an app that is serving at all has already had it succeed. The check the deleted one performed has moved from a runtime probe into the boot order.
+>
+> `clickhouse` is fatal rather than a warning for the same reason `db` is: from Phase 2 of `docs/features/09-clickhouse.md` on, an unreachable ClickHouse means ingest drops events and every event view is empty. Verified 2026-08-26 by stopping the container — the endpoint returns 503 with `"clickhouse": "error"`.
+>
+> **`select: true` is load-bearing.** On Node the default `ping()` hits the built-in `/ping` endpoint, which — per `@clickhouse/client`'s own doc comment — *does not verify credentials*. A wrong `CLICKHOUSE_PASSWORD` or a missing database would pass it while every real query failed. `select: true` issues a real `SELECT`, so the server authenticates and resolves the database. Found while writing the test for this function, and it is the same shape as the `migrations` defect above: a check that reports healthy for a reason unrelated to what it was asked. Note also that `ping()` **does not throw** — it returns `{ success: false, error }`, so a bare `await client.ping()` is a healthcheck that can never fail.
 
 Use this endpoint (not `/api/health`) as your container's readiness/liveness probe. The production compose stack does exactly that for `app`.
 
@@ -139,7 +187,7 @@ Delegated entirely to better-auth (`toNextJsHandler(auth)`). Covers sign-in, sig
 
 ## Server Actions (internal, UI-facing)
 
-Not part of the public HTTP API, but this is "how the API works" for the web app itself. 31 action files across 6 features (`alerts`, `api-keys`, `auth`, `organizations`, `projects`, `roles`), all following one uniform pattern — see [architecture.md](architecture.md#server-actions-pattern) for the exact code shape. In short: Zod-validate input → require an authenticated user → look up the org by slug → check `getMembership()` against the relevant permission (`assertPermission`/`assertOwner`) → perform the DB mutation via a service function → `revalidatePath()` → return `{ ...success }` or `{ error: string }` (never throws to the caller).
+Not part of the public HTTP API, but this is "how the API works" for the web app itself. **33** action files across **7** features (`alerts`, `api-keys`, `auth`, `events`, `organizations`, `projects`, `roles`) — recounted 2026-08-26; `features/events` was missing from this list. Its single action, `get-facet-counts.action.ts`, is also the only **read** among the 33 — a deliberate departure from `PROJECT.md` §8, argued in the file itself: the read is triggered by a client interaction the server cannot see, and a route handler would mean re-implementing session auth and permission checks that an action gets for free. All follow one uniform pattern — see [architecture.md](architecture.md#server-actions-pattern) for the exact code shape. In short: Zod-validate input → require an authenticated user → look up the org by slug → check `getMembership()` against the relevant permission (`assertPermission`/`assertOwner`) → perform the DB mutation via a service function → `revalidatePath()` → return `{ ...success }` or `{ error: string }` (never throws to the caller).
 
 Representative examples:
 - `create-api-key.action.ts` — requires `api_keys.manage`, returns the plaintext key **once**.

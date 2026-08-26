@@ -1,8 +1,11 @@
-import { and, count, eq, gte, inArray, lt, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { type PgBoss } from "pg-boss";
 import { db } from "@/core/db/client";
-import { alertRules, alertNotifications, events } from "@/core/db/schema";
+import { alertRules, alertNotifications } from "@/core/db/schema";
 import type { AlertRule } from "@/core/db/schema";
+import { clickhouse } from "@/core/clickhouse/client";
+import { EVENTS_TABLE } from "@/core/clickhouse/tables";
+import { compileFilters } from "@/core/clickhouse/filter-compiler";
 import type { AlertCondition } from "@/features/alerts/utils/alert-schemas";
 import type { EventFilters } from "@/shared/utils/event-filters.schema";
 import { listEnabled } from "./alert-rules.service";
@@ -15,51 +18,42 @@ function resolveWindowBoundary(windowMinutes: number): Date {
     return new Date(Date.now() - windowMinutes * 60 * 1000);
 }
 
+/**
+ * How many events in the rule's window match its filter.
+ *
+ * **The filter is compiled, not rebuilt here.** Until Phase 3 this function
+ * held its own copy of the events page's `buildConditions` — the same eleven
+ * fields, written twice, with no test comparing them, and nothing to stop a
+ * twelfth field being added to one of them. Both are now
+ * `core/clickhouse/filter-compiler.ts`.
+ *
+ * Soft-deleted projects are still excluded, but upstream rather than here:
+ * `listEnabled` joins `projects` and drops their rules before this is reached.
+ *
+ * The window comes from the rule's condition and has nothing to do with the
+ * `range` stored on `filter`, which is why `compileFilters` takes the window as
+ * a parameter. `toExclusive` preserves this function's original half-open
+ * boundary exactly.
+ */
 async function countMatchingEvents(
     projectId: string,
     filter: EventFilters,
     condition: AlertCondition,
 ): Promise<number> {
-    const windowFrom = resolveWindowBoundary(condition.windowMinutes);
-    const now = new Date();
+    const { where, params } = compileFilters(projectId, filter, {
+        from: resolveWindowBoundary(condition.windowMinutes),
+        to: new Date(),
+        toExclusive: true,
+    });
 
-    const conditions = [
-        eq(events.projectId, projectId),
-        gte(events.timestamp, windowFrom),
-        lt(events.timestamp, now),
-    ];
+    const result = await clickhouse.query({
+        query: `SELECT count() AS n FROM ${EVENTS_TABLE} WHERE ${where}`,
+        query_params: params,
+        format: "JSONEachRow",
+    });
 
-    if (filter.levels?.length) {
-        conditions.push(inArray(events.level, filter.levels));
-    }
-    if (filter.environments?.length) {
-        conditions.push(inArray(events.environment, filter.environments as [string, ...string[]]));
-    }
-    if (filter.sources?.length) {
-        conditions.push(inArray(events.source, filter.sources as [string, ...string[]]));
-    }
-    if (filter.releases?.length) {
-        conditions.push(inArray(events.release, filter.releases as [string, ...string[]]));
-    }
-    if (filter.errorTypes?.length) {
-        conditions.push(inArray(events.errorType, filter.errorTypes as [string, ...string[]]));
-    }
-    if (filter.userId) conditions.push(eq(events.userId, filter.userId));
-    if (filter.sessionId) conditions.push(eq(events.sessionId, filter.sessionId));
-    if (filter.requestId) conditions.push(eq(events.requestId, filter.requestId));
-    if (filter.traceId) conditions.push(eq(events.traceId, filter.traceId));
-    if (filter.message) {
-        conditions.push(
-            sql`to_tsvector('simple', ${events.message}) @@ websearch_to_tsquery('simple', ${filter.message})`,
-        );
-    }
-    if (filter.attributes?.length) {
-        for (const { key, value } of filter.attributes) {
-            conditions.push(sql`${events.attributes} @> ${JSON.stringify({ [key]: value })}::jsonb`);
-        }
-    }
-
-    const [row] = await db.select({ n: count() }).from(events).where(and(...conditions));
+    // `count()` is a UInt64 and arrives as a decimal string.
+    const [row] = await result.json<{ n: string }>();
     return Number(row?.n ?? 0);
 }
 

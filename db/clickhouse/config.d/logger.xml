@@ -1,0 +1,43 @@
+<!--
+  ClickHouse server configuration for the Logger stack.
+
+  Mounted as a **file** into /etc/clickhouse-server/config.d/, never as a
+  directory. Mounting the directory hides what the image already put there —
+  including docker_related_config.xml, the only place `<listen_host>` is set.
+  ClickHouse then binds 127.0.0.1 inside the container, the container's own
+  healthcheck (which runs inside) reports healthy, and every request from
+  outside fails as "Empty reply from server". Cost 10 minutes on 2026-08-26;
+  see docs/features/09-clickhouse.md §14.6.
+
+  **The values below are read from the environment with stock fallbacks**, for
+  the same reason docker-compose.yml passes Postgres its tuning on the command
+  line: this file cannot know the host. ClickHouse's defaults assume a
+  dedicated machine and size caches against all visible RAM — on the target
+  host it shares 8 GB with Postgres, the app, the worker and Caddy. The sized
+  profile lives in .env.production.example, next to the RAM figure it was
+  derived from.
+-->
+<clickhouse>
+    <!-- Redundant with the image's own docker_related_config.xml, and stated
+         anyway: cheap insurance against that file moving or being shadowed. -->
+    <listen_host>::</listen_host>
+
+    <!-- `replace="replace"` on all three: ClickHouse refuses a from_env
+         substitution on an element that already carries a value unless it is
+         told the value is a fallback to be overwritten, and fails to start
+         with "Element <level> has value and does not have replace attribute".
+         The value inside each element is the default when the variable is
+         unset. -->
+
+    <!-- Bytes. 0 means "fall back to max_server_memory_usage_to_ram_ratio",
+         which is ClickHouse's own default behaviour. -->
+    <max_server_memory_usage from_env="CLICKHOUSE_MAX_SERVER_MEMORY" replace="replace">0</max_server_memory_usage>
+
+    <!-- Marks are the sparse primary index — the cache that decides whether
+         granule skipping is cheap. 5 GB is the stock default. -->
+    <mark_cache_size from_env="CLICKHOUSE_MARK_CACHE_SIZE" replace="replace">5368709120</mark_cache_size>
+
+    <logger>
+        <level from_env="CLICKHOUSE_LOG_LEVEL" replace="replace">warning</level>
+    </logger>
+</clickhouse>

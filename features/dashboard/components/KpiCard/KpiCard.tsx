@@ -82,7 +82,15 @@ export function KpiCard({
     const resolvedValueColor = valueColor ?? (hasSparkline ? sparklineColor : undefined);
 
     return (
-        <div className={cx(styles.card, critical && styles.critical, className)}>
+        // Named group, for the same reason WidgetCard is a named section: the
+        // label and the value are two spans in two different rows, so without a
+        // name on the card there is no way to ask for "the value under this
+        // label" by role.
+        <div
+            role="group"
+            aria-label={label}
+            className={cx(styles.card, critical && styles.critical, className)}
+        >
             <div className={styles.topRow}>
                 <span className={styles.label}>{label}</span>
                 {hasSparkline && (

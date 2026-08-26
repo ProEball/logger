@@ -16,6 +16,21 @@ export const env = createEnv({
         AUTH_SECRET: z.string().min(32, "AUTH_SECRET must be at least 32 characters"),
         APP_URL: z.string().url().default("http://localhost"),
         LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace"]).default("info"),
+        // ── ClickHouse ────────────────────────────────────────────────────
+        // The events store. Everything else stays in Postgres — see
+        // docs/features/09-clickhouse.md §2 for what moved and what did not.
+        //
+        // The HTTP interface (8123), not the native protocol (9000):
+        // `@clickhouse/client` speaks HTTP, and it is the port the healthcheck
+        // and every debugging `curl` use too.
+        CLICKHOUSE_URL: z.string().url().default("http://localhost:8123"),
+        CLICKHOUSE_USER: z.string().min(1).default("logger"),
+        // No default and no minimum. A self-hosted install must set it; the
+        // dev compose file supplies a throwaway value. An empty string is a
+        // valid ClickHouse password (it means "no password"), so `.min(1)`
+        // here would reject a legitimate local setup.
+        CLICKHOUSE_PASSWORD: z.string(),
+        CLICKHOUSE_DATABASE: z.string().min(1).default("logger"),
         // Runs pg-boss inside the Next.js process. Dev convenience only — in
         // production the worker is a separate container (see feature 08).
         WORKER_IN_PROCESS: z

@@ -1,5 +1,9 @@
-import { randomUUID } from "node:crypto";
 import type { Sql } from "postgres";
+import type { ClickHouseClient } from "@clickhouse/client";
+import { uuidv7 } from "@/shared/utils/uuidv7";
+import { fingerprintMessage } from "@/features/ingest/utils/normalize-message";
+import { toClickhouseRow } from "@/features/ingest/utils/to-clickhouse-row";
+import type { NewEvent } from "@/shared/types/event.types";
 
 /**
  * The integration-test corpus.
@@ -78,8 +82,12 @@ export function canonicalRange(anchor: Date): { from: Date; to: Date } {
 
 /**
  * Two messages identical through character 200 and differing after it.
- * `getOrgTopErrors` groups on `SUBSTRING(message, 1, 200)`, so these must
- * collapse into a single row.
+ *
+ * They must collapse into a single row, and since Phase 4 the mechanism is the
+ * fingerprint rather than a `SUBSTRING`: `normalizeMessage` truncates at 200
+ * characters before hashing, so both yield the same template and therefore the
+ * same `template_hash`. The assertion is unchanged and the reason it holds is
+ * not — which is exactly why it is written down here.
  */
 const LONG_PREFIX = "L".repeat(200);
 export const LONG_MESSAGE_A = `${LONG_PREFIX}-tail-A`;
@@ -116,6 +124,11 @@ interface EventSpec {
 }
 
 const DAY = 24 * 60;
+
+/** A message's template, for a test that needs to name what a group is called. */
+export function templateOf(message: string): string {
+    return fingerprintMessage(message).template;
+}
 
 export const CORPUS: EventSpec[] = [
     // ALPHA — inside the canonical range.
@@ -251,14 +264,36 @@ export const CORPUS: EventSpec[] = [
 
 // ── seeding ──────────────────────────────────────────────────────────────────
 
-export async function seedCorpus(sql: Sql): Promise<void> {
+/** Every project the corpus writes events for. */
+const CORPUS_PROJECTS = [ALPHA, BETA, QUIET, OTHER_ORG_PROJECT, DASH];
+
+/**
+ * Seeds Postgres with the organizations and projects, and **ClickHouse** with
+ * the events.
+ *
+ * The split is Phase 4's: there is no Postgres `events` table any more, and no
+ * `project_environments` registry either — the environment list is a
+ * `SELECT DISTINCT` over the same events.
+ *
+ * ClickHouse is cleaned by project id rather than truncated. The table is
+ * shared with `clickhouse-ingest.service.itest.ts`, which writes under its own
+ * per-run ids, and `fileParallelism` is on — truncating would delete rows a
+ * concurrently running file had just inserted. `mutations_sync = 2` makes the
+ * delete finish before the insert below rather than at some point afterwards,
+ * which on a lightweight delete is otherwise not guaranteed.
+ */
+export async function seedCorpus(sql: Sql, ch: ClickHouseClient): Promise<void> {
     const anchor = computeAnchor();
 
     // Idempotent: the suite is read-only, but a re-run must not double counts.
-    await sql`DELETE FROM project_environments`;
-    await sql`DELETE FROM events`;
     await sql`DELETE FROM projects`;
     await sql`DELETE FROM organizations`;
+
+    await ch.command({
+        query: "ALTER TABLE events DELETE WHERE project_id IN {ids:Array(UUID)}",
+        query_params: { ids: CORPUS_PROJECTS },
+        clickhouse_settings: { mutations_sync: "2" },
+    });
 
     await sql`
         INSERT INTO organizations (id, name, slug) VALUES
@@ -275,38 +310,42 @@ export async function seedCorpus(sql: Sql): Promise<void> {
             (${DASH}::uuid, ${ORG_B}::uuid, 'Dash', 'dash')
     `;
 
-    // `events.id` has no database default — the ingest service generates it —
-    // so the fixture has to supply one per row.
+    // Built through `toClickhouseRow`, the same mapper ingest uses, rather than
+    // by hand. A fixture with its own idea of how a row is shaped would let the
+    // suite pass against a mapper that is wrong — and three of Phase 2's
+    // defects were exactly that: a shape the code produced and the column
+    // rejected.
     const rows = CORPUS.flatMap((spec) =>
-        Array.from({ length: spec.count }, () => ({
-            id: randomUUID(),
-            project_id: spec.project,
-            // ISO string, not a Date: postgres.js cannot infer a column type
-            // for the multi-row insert helper and would send the Date as raw
-            // text. Postgres parses the ISO form into timestamptz itself.
-            timestamp: new Date(anchor.getTime() + spec.offsetMinutes * 60_000).toISOString(),
-            level: spec.level,
-            message: spec.message,
-            environment: spec.environment ?? null,
-            source: spec.source ?? null,
-        })),
+        Array.from({ length: spec.count }, () => toClickhouseRow(eventFor(spec, anchor))),
     );
 
-    // One statement: postgres.js expands the array into a multi-row INSERT.
-    await sql`
-        INSERT INTO events ${sql(rows, "id", "project_id", "timestamp", "level", "message", "environment", "source")}
-    `;
+    await ch.insert({ table: "events", values: rows, format: "JSONEachRow" });
+}
 
-    // The environment registry is maintained at ingest, and this fixture writes
-    // to `events` directly — so it has to derive the registry itself. This is
-    // deliberately the *same* statement migration 0007 uses to backfill an
-    // existing install, so the tests exercise that derivation rather than a
-    // second, hand-written version of it that could disagree.
-    await sql`
-        INSERT INTO project_environments (project_id, environment, first_seen_at, last_seen_at)
-        SELECT project_id, environment, MIN(timestamp), MAX(timestamp)
-        FROM events
-        GROUP BY project_id, environment
-        ON CONFLICT ON CONSTRAINT project_environments_project_env_unique DO NOTHING
-    `;
+/** One corpus row as the enriched event the write path would have produced. */
+function eventFor(spec: EventSpec, anchor: Date): NewEvent {
+    const fingerprint = fingerprintMessage(spec.message);
+
+    return {
+        id: uuidv7(),
+        projectId: spec.project,
+        timestamp: new Date(anchor.getTime() + spec.offsetMinutes * 60_000),
+        level: spec.level,
+        message: spec.message,
+        source: spec.source ?? null,
+        environment: spec.environment ?? null,
+        release: null,
+        errorType: null,
+        userId: null,
+        sessionId: null,
+        requestId: null,
+        traceId: null,
+        stackTrace: null,
+        attributes: {},
+        context: {},
+        userAgent: null,
+        ip: null,
+        templateHash: fingerprint.hash,
+        messageTemplate: fingerprint.template,
+    };
 }

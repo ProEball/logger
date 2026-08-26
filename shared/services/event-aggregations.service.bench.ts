@@ -1,10 +1,10 @@
 import { bench, describe } from "vitest";
-import { sql } from "drizzle-orm";
-import { db } from "@/core/db/client";
+import { clickhouse } from "@/core/clickhouse/client";
 import {
     environmentsInUse,
     eventBuckets,
     eventBucketsByLevel,
+    eventsInLastMinute,
     hasAnyEvents,
     levelBreakdown,
     projectStats,
@@ -20,84 +20,41 @@ import {
     describeTarget,
     resolveBenchEnvironment,
     resolveBenchTarget,
+    resolveBusiestProject,
 } from "@/bench/support/target";
-import { markRollupDirty, rebuildRollupForProject } from "@/features/ingest/services/event-rollup.service";
 
 /**
- * The organization overview's read path, one aggregation at a time.
+ * Both dashboards' read paths, one aggregation at a time.
  *
- * This is the page measured at 1.4–1.6 s on 540k events during the staging run
- * (`PROGRESS.md`, read-path audit). One page load issues **10 SQL statements**
- * across 8 distinct shapes: the six service calls benched below, of which
- * `projectStats` is a rollup boundary plus two queries in parallel, and
- * `levelBreakdown` and `eventBuckets` are a boundary plus one each.
- * Re-counted with `pg_stat_statements` on 2026-08-20 after the per-project top
- * message was split onto its own call — the split changed neither number.
+ * ## What this file is for now (rewritten in Phase 4)
  *
- * What this file can and cannot show:
- * - It measures the queries, so it can prove or disprove Stage E.
- * - It cannot show Stage D. Caching removes a query rather than speeding it up,
- *   and streaming changes when the first pixel appears, not how long the SQL
- *   takes. Those need the page-level benchmark.
+ * It used to be a rollup benchmark. Half its measurements were comparisons
+ * against a summary table — "rollup only, range cut at the boundary" against
+ * "rollup + raw tail", and every filtered twin, whose gap was described as
+ * *what the rollup is worth, measured by taking it away*. None of those
+ * comparisons exists any more: there is one table and one query per read.
+ *
+ * It was rewritten rather than deleted because **Phase 5 needs it**. The plan
+ * requires the `p_minute` projection, the `events_by_template` MV and the
+ * `events_by_correlation` MV each to be measured before and after they are
+ * added (§12), and a projection is picked by the optimizer without the
+ * application knowing — so the only way to see whether one was used is to time
+ * the same call twice. Every benchmark below is currently a tier-2 raw scan,
+ * which makes this run the "before".
+ *
+ * What it can and cannot show:
+ * - It measures the queries, so it can prove or disprove a projection's worth.
+ * - It cannot show what caching or streaming buy. Caching removes a query
+ *   rather than speeding it up, and streaming changes when the first pixel
+ *   appears, not how long the SQL takes.
+ *
+ * The floor benchmark matters more here than it did against Postgres: over an
+ * SSH tunnel to a remote ClickHouse it dominates anything under ~100 ms, and
+ * every number below should be read after subtracting it.
  */
 
 const target = await resolveBenchTarget();
 const range = benchRange(target);
-
-/**
- * Build the rollup before measuring anything.
- *
- * Without this the benchmark would measure a path production never takes:
- * `rolled_up_to` would be NULL for every project, every read would fall back
- * entirely to `events`, and the numbers would describe the code as it was
- * before the rollup existed. The same trap nearly swallowed the environments
- * registry — a benchmark against an empty table reports a speedup that is only
- * the emptiness.
- *
- * Uses the real service, so what is measured is what the job builds.
- */
-for (const projectId of target.projectIds) {
-    if (!target.oldest) break;
-    await markRollupDirty(projectId, target.oldest);
-    for (let i = 0; i < 60; i++) {
-        const [state] = await db.execute<{ refresh_from: Date }>(sql`
-            SELECT refresh_from FROM rollup_state WHERE project_id = ${projectId}::uuid
-        `);
-        if (!state) break;
-        const result = await rebuildRollupForProject(projectId, new Date(state.refresh_from));
-        if (!result.hasMore) break;
-    }
-}
-
-/**
- * Push the completeness boundary back two minutes.
- *
- * Without this the benchmark lies about the tail. The build above finishes
- * *after* the newest event in the corpus, so `rolled_up_to` lands past it and
- * the tail range is empty — the union would measure as free because there was
- * nothing in it to union. Production never looks like that: the job sets the
- * boundary to the start of the current minute, so the tail always holds
- * whatever has arrived since.
- *
- * Rollup rows above the boundary stay in the table and are simply ignored by
- * the read (`minute < LEAST(to, boundary)`), which is exactly what happens
- * between two job runs.
- *
- * Two minutes by default, matching `OVERLAP_MINUTES`. `BENCH_TAIL_MINUTES`
- * widens it, which is how the tail's cost was shown to scale with the events
- * in it rather than with the range being charted.
- */
-const TAIL_MINUTES = Number(process.env.BENCH_TAIL_MINUTES ?? 2);
-
-await db.execute(
-    sql`UPDATE rollup_state SET rolled_up_to = rolled_up_to - (${TAIL_MINUTES} || ' minutes')::interval`,
-);
-
-const [rollupSize] = await db.execute<{ rows: string; boundary: Date | null }>(sql`
-    SELECT
-        (SELECT COUNT(*)::text FROM event_rollup_minutes)  AS rows,
-        (SELECT MIN(rolled_up_to) FROM rollup_state)       AS boundary
-`);
 
 /**
  * The environment the filtered benchmarks below select. See
@@ -107,11 +64,17 @@ const [rollupSize] = await db.execute<{ rows: string; boundary: Date | null }>(s
 const environment = await resolveBenchEnvironment(target, range);
 const envFilter = environment ? [environment.name] : undefined;
 
+const projectId = await resolveBusiestProject(target, range);
+if (!projectId) {
+    throw new Error(
+        "no project has events in the benchmark range — seed a corpus first (npm run bench:seed)",
+    );
+}
+
 // Printed once per run: a timing without the shape of the data behind it
 // cannot be compared with anything.
 console.log(
-    `\n[bench] ${describeTarget(target, range)}\n  rollup ${Number(rollupSize.rows).toLocaleString()} minute rows, ` +
-        `complete to ${rollupSize.boundary ? new Date(rollupSize.boundary).toISOString() : "nothing"}\n` +
+    `\n[bench] ${describeTarget(target, range)}\n` +
         `  env filter: ${
             environment
                 ? `"${environment.name}" — ${environment.events.toLocaleString()} events, ` +
@@ -125,40 +88,30 @@ const ids = target.projectIds;
 /** What the overview's top-errors widget ranks on. */
 const TOP_ERRORS = ["error", "fatal"] as const;
 
-/**
- * The same range, cut off at the rollup boundary — so it reads the summary and
- * nothing else. Subtracting this from the full-range benchmark isolates what
- * the raw tail costs, which is the question the union design has to answer:
- * the tail is what keeps the newest minute visible, and if it were expensive
- * the whole approach would be wrong.
- */
-const rolledOnlyRange = rollupSize.boundary
-    ? { from: range.from, to: new Date(rollupSize.boundary) }
-    : range;
+/** One round trip, no work. Subtract this from every other number. */
+async function roundTrip(): Promise<void> {
+    const result = await clickhouse.query({ query: "SELECT 1 AS one", format: "JSONEachRow" });
+    await result.json();
+}
 
 describe("organization overview", () => {
-    /**
-     * The cost of asking at all — one round trip, no work. Subtract this from
-     * every other number. Over an SSH tunnel to the staging host it is the
-     * dominant term for anything under ~100 ms.
-     */
     bench("round-trip floor (SELECT 1)", async () => {
-        await db.execute(sql`SELECT 1`);
+        await roundTrip();
     });
 
     // Split on 2026-08-20: these were one function, so this benchmark reported
-    // the max of the two rather than either. Measured separately, the gap is the
-    // whole point — the stats are rollup-backed milliseconds and the message
-    // aggregation is hundreds.
-    bench("topMessagePerProject — the message aggregation alone", async () => {
+    // the max of the two rather than either. The gap was the whole point then —
+    // 954 ms of message aggregation holding up ~30 ms of counts. Both group by
+    // `template_hash` now, so watch whether the gap survived the move.
+    bench("topMessagePerProject — one GROUP BY, LIMIT 1 BY project", async () => {
         await topMessagePerProject(ids, range);
     });
 
-    bench("projectStats — 2 queries in parallel, rollup-backed", async () => {
+    bench("projectStats — counts and environment pills in parallel", async () => {
         await projectStats(ids, range);
     });
 
-    bench("topMessages (errors) — group by SUBSTRING(message, 1, 200)", async () => {
+    bench("topMessages (errors) — group by template_hash", async () => {
         await topMessages(ids, range, { levels: TOP_ERRORS, limit: 5 });
     });
 
@@ -166,28 +119,22 @@ describe("organization overview", () => {
         await levelBreakdown(ids, range);
     });
 
-    bench("environmentsInUse — registry lookup (was a 30-day scan)", async () => {
-        // Reads `project_environments`, a registry maintained at ingest.
-        // Until 2026-08-20 it scanned 30 days of `events` on every page load
-        // to build a list of a handful of values: 39.3 ms → 0.67 ms here, and
-        // 13.4% of the page's database time → effectively nothing.
+    bench("environmentsInUse — 30-day SELECT DISTINCT (was a registry table)", async () => {
+        // The number to watch. Under Postgres this was a registry maintained at
+        // ingest precisely because scanning 30 days of events cost 39.3 ms and
+        // 13.4% of the page's database time. Phase 4 went back to the scan on
+        // the argument that a LowCardinality column makes it cheap; this
+        // benchmark is where that argument is either confirmed or paid for.
         await environmentsInUse(ids);
     });
 
-    bench("eventBuckets — rollup + raw tail (what the page does)", async () => {
+    bench("eventBuckets — one scan, no union", async () => {
         await eventBuckets(ids, range, 3600);
-    });
-
-    bench("eventBuckets — rollup only, range cut at the boundary", async () => {
-        await eventBuckets(ids, rolledOnlyRange, 3600);
     });
 
     /**
      * All of it, the way the page actually does it. Not the sum of the parts:
-     * the queries run concurrently and contend for the same connection pool,
-     * which has ten slots for the ten statements one page load issues. That
-     * margin used to be comfortable and is now exactly none — worth watching
-     * before adding a seventh call.
+     * the queries run concurrently and contend for the same client.
      */
     bench("whole page fan-out (what /[org] awaits)", async () => {
         await Promise.all([
@@ -204,40 +151,28 @@ describe("organization overview", () => {
 /**
  * The same page with one environment pill selected.
  *
- * **Why these exist (2026-08-25).** Every benchmark above runs unfiltered, which
- * is the path the rollup work of 2026-08-20…24 optimised — and it is not the
- * path a user takes the moment they click an environment. Four of the six calls
- * abandon the rollup under a filter: `by_level` and `by_env` are marginals, so
- * neither can answer "errors in production", and `event_template_rollup` stores
- * no environment at all. Those four fall back to raw `events`, which is the
- * code as it stood before any of the rollup work landed.
- *
- * So the gap between each pair below is not "what the filter costs". It is
- * **what the rollup is worth**, measured by taking it away — and it is the number
- * the decision to put `environment` into both rollup keys has to justify itself
- * against. Benchmarking only the unfiltered path would have reported the work as
- * finished while half the page's real traffic never touched it.
- *
- * `eventBuckets` gained a filtered twin on 2026-08-25. Until then it had none,
- * and its absence was itself the measurement: the volume chart took no
- * environment argument at all, so there was nothing to compare because there was
- * nothing to call. That was the last asymmetry `widgets.md` recorded, and
- * merging the two bucket queries into one closed it.
+ * **Why these still exist.** Under Postgres the gap between each pair measured
+ * what the rollup was worth, because four of the six calls abandoned it under a
+ * filter. There is nothing to abandon now, so the gap measures something
+ * simpler and still worth knowing: what an extra predicate costs on a
+ * `LowCardinality` column that is **not** in the sort key. If it is close to
+ * free the filter bar is free; if it is not, `environment` is a candidate for
+ * the tier-1 projection's key, which is the decision §6.2 has to make.
  */
 describe("organization overview — one environment selected", () => {
-    bench("projectStats — filtered, now rollup-backed", async () => {
+    bench("projectStats — filtered", async () => {
         await projectStats(ids, range, envFilter);
     });
 
-    bench("topMessagePerProject — filtered, no template rollup", async () => {
+    bench("topMessagePerProject — filtered", async () => {
         await topMessagePerProject(ids, range, envFilter);
     });
 
-    bench("topMessages (errors) — filtered, no template rollup", async () => {
+    bench("topMessages (errors) — filtered", async () => {
         await topMessages(ids, range, { levels: TOP_ERRORS, environments: envFilter, limit: 5 });
     });
 
-    bench("levelBreakdown — filtered, now rollup-backed", async () => {
+    bench("levelBreakdown — filtered", async () => {
         await levelBreakdown(ids, range, envFilter);
     });
 
@@ -254,28 +189,6 @@ describe("organization overview — one environment selected", () => {
     });
 });
 
-const [busiest] = await db.execute<{ project_id: string; n: string }>(sql`
-    SELECT project_id::text, COUNT(*)::text AS n
-    FROM events
-    WHERE project_id = ANY(ARRAY[${sql.join(
-        target.projectIds.map((id) => sql`${id}::uuid`),
-        sql`, `,
-    )}])
-      AND timestamp >= ${range.from.toISOString()}::timestamptz
-      AND timestamp <  ${range.to.toISOString()}::timestamptz
-    GROUP BY project_id
-    ORDER BY COUNT(*) DESC
-    LIMIT 1
-`);
-
-if (!busiest) {
-    throw new Error(
-        "no project has events in the benchmark range — seed a corpus first (npm run bench:seed)",
-    );
-}
-
-const projectId = busiest.project_id;
-
 /**
  * The aggregations take a `TimeRange` and resolve it themselves, so the
  * benchmark hands them a `custom` range rather than a preset. A preset would
@@ -288,20 +201,16 @@ const timeRange: TimeRange = {
     to: range.to.toISOString(),
 };
 
-
 describe("project dashboard — one aggregation at a time", () => {
-    /**
-     * The floor every other number is read against: one round trip, no work.
-     */
     bench("round-trip floor (SELECT 1)", async () => {
-        await db.execute(sql`SELECT 1`);
+        await roundTrip();
     });
 
     bench("hasAnyEvents — serialised gate, runs before the fan-out", async () => {
         await hasAnyEvents([projectId]);
     });
 
-    bench("eventBucketsByLevel — the jsonb path", async () => {
+    bench("eventBucketsByLevel — five countIf over one scan", async () => {
         await eventBucketsByLevel([projectId], resolveRange(timeRange), 60);
     });
 
@@ -309,7 +218,7 @@ describe("project dashboard — one aggregation at a time", () => {
         await levelBreakdown([projectId], resolveRange(timeRange));
     });
 
-    bench("topMessages — message-keyed, never servable from the rollup", async () => {
+    bench("topMessages — group by template_hash", async () => {
         await topMessages([projectId], resolveRange(timeRange));
     });
 
@@ -320,12 +229,19 @@ describe("project dashboard — one aggregation at a time", () => {
     bench("recentErrors — returns whole rows", async () => {
         await recentErrors([projectId], resolveRange(timeRange));
     });
+
+    bench("eventsInLastMinute — the live rate in the top bar", async () => {
+        // Trailing 60 seconds, so against a static corpus it matches nothing.
+        // Benchmarked anyway: it runs on every project page load and its cost
+        // is the granule lookup, not the rows it returns.
+        await eventsInLastMinute([projectId]);
+    });
 });
 
 describe("project dashboard — the page", () => {
     /**
      * The fan-out as the route issues it: five aggregations in parallel.
-     * `listAlertRules` is left out — it reads `alert_rules`, not `events`, and
+     * `listAlertRules` is left out — it reads `alert_rules`, not events, and
      * including it would make the number depend on how many rules happen to
      * exist in whatever database this is pointed at.
      */

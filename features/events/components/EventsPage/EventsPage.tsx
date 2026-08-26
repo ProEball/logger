@@ -17,7 +17,7 @@ const EventDrawer = dynamic(
 );
 import { AutoRefreshControl } from "@/shared/components/AutoRefreshControl/AutoRefreshControl";
 import { TableSkeleton } from "@/shared/components/Skeletons/TableSkeleton";
-import type { Event } from "@/core/db/schema";
+import type { Event } from "@/shared/types/event.types";
 import type { EventFilters, Cursor } from "@/features/events/utils/event-filters.types";
 import type { AutoRefreshValue } from "@/shared/types/user-preferences.types";
 import styles from "./EventsPage.module.scss";

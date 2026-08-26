@@ -1,8 +1,8 @@
 import { beforeAll, describe, expect, it } from "vitest";
-import { sql } from "drizzle-orm";
-import { db } from "@/core/db/client";
 import {
+    eventBuckets,
     eventBucketsByLevel,
+    eventsInLastMinute,
     errorsIn,
     environmentsInUse,
     emptyLevelledBucket,
@@ -17,22 +17,21 @@ import {
     type LevelledBucket,
 } from "@/shared/services/event-aggregations.service";
 import {
-    markRollupDirty,
-    rebuildRollupForProject,
-} from "@/features/ingest/services/event-rollup.service";
-import {
     ALPHA,
     BETA,
     COMMA_ENVIRONMENT,
     DASH,
     LONG_MESSAGE_GROUPED,
-    ORG_B,
     canonicalRange,
     ORG_A_PROJECTS,
     QUIET,
 } from "@/itest/support/fixture";
 import { EVENT_LEVELS } from "@/shared/utils/event-filters.schema";
-import { templateHashForStorage } from "@/features/ingest/utils/normalize-message";
+import { clickhouse } from "@/core/clickhouse/client";
+import { uuidv7 } from "@/shared/utils/uuidv7";
+import { fingerprintMessage } from "@/features/ingest/utils/normalize-message";
+import { toClickhouseRow } from "@/features/ingest/utils/to-clickhouse-row";
+import type { NewEvent } from "@/shared/types/event.types";
 import { readAnchor } from "@/itest/support/read-anchor";
 
 /**
@@ -55,21 +54,19 @@ import { readAnchor } from "@/itest/support/read-anchor";
  * ALPHA error = 10 boom + 2 LONG_A + 2 LONG_B + 3 rare A + 2 rare B.
  * The other organization's 50 fatals must appear in none of it.
  *
- * ## What the shared corpus can and cannot reach
+ * ## What Phase 4 removed from this file
  *
- * The seeded database has **no rollup rows and no watermark**, so
- * `rollupBoundary` returns `null` for every fixture project, the rollup half of
- * the union selects nothing, and every assertion above is served entirely by the
- * raw-`events` half. That is a property of the suite, not of this file — the two
- * services this replaced were covered the same way, so the union's rollup branch
- * has never been exercised by an integration test.
+ * Four `describe` blocks and 513 lines, all of them about a summary table:
+ * "rollup and raw tail", "topMessages — from the template rollup",
+ * "environment as a rollup key", and "a folded minute is not used for a
+ * filtered read". Each built a rollup for a project of its own, then asserted
+ * that the read picked the right branch. There are no branches and no rollup;
+ * every read below is one query over one table.
  *
- * It is exercised here, in "rollup and raw tail" below, against a **project of
- * its own**. That is the fixture's stated rule for a test that needs to write,
- * and here it is load-bearing rather than tidy: building the rollup sets a
- * watermark, a watermark changes which branch `eventBuckets` takes, and
- * `fileParallelism` is on — so doing it to a fixture project would silently
- * change what every other test in the suite is measuring.
+ * The tests that remain are unchanged in what they assert. That is the point of
+ * keeping them: the corpus and every expected number are the same, so a
+ * difference between the Postgres answers and the ClickHouse ones shows up as a
+ * failure here rather than as a number nobody recognises on a dashboard.
  */
 
 let range: { from: Date; to: Date };
@@ -309,145 +306,6 @@ describe("eventBuckets — environment filter", () => {
     });
 });
 
-/**
- * The rollup branch, and the seam between it and the raw tail.
- *
- * Everything above this point is served by raw `events`, because the shared
- * corpus has no rollup. These tests build one — for a project they create
- * themselves, so no other test's branch selection changes underneath it.
- *
- * The property under test is the one the union exists for: **the answer must not
- * depend on where the boundary falls.** A rollup that disagreed with the events
- * it summarises would be invisible on a dashboard, because both halves return
- * plausible numbers.
- */
-describe("eventBuckets — rollup and raw tail", () => {
-    const PROJECT = "cccccccc-0000-4000-8000-000000000009";
-    let rollupRange: { from: Date; to: Date };
-
-    beforeAll(async () => {
-        // Own project, own events: see the note at the top of this file.
-        await db.execute(sql`DELETE FROM events WHERE project_id = ${PROJECT}::uuid`);
-        await db.execute(sql`DELETE FROM rollup_state WHERE project_id = ${PROJECT}::uuid`);
-        await db.execute(sql`DELETE FROM event_rollup_minutes WHERE project_id = ${PROJECT}::uuid`);
-        await db.execute(sql`
-            INSERT INTO projects (id, organization_id, name, slug)
-            VALUES (${PROJECT}::uuid, ${ORG_B}::uuid, 'Rollup Seam', 'rollup-seam')
-            ON CONFLICT (id) DO NOTHING
-        `);
-
-        // Four minutes, four distinct counts, so a dropped or doubled minute
-        // changes the total rather than cancelling out: 3 + 1 + 4 + 2 = 10,
-        // of which 1 fatal + 2 error = 3 are errors.
-        const rows: Array<[number, string, number]> = [
-            [0, "info", 3],
-            [1, "fatal", 1],
-            [2, "info", 4],
-            [3, "error", 2],
-        ];
-        for (const [minute, level, count] of rows) {
-            for (let i = 0; i < count; i++) {
-                await db.execute(sql`
-                    INSERT INTO events (id, project_id, timestamp, level, message, environment)
-                    VALUES (
-                        gen_random_uuid(),
-                        ${PROJECT}::uuid,
-                        ${anchor.toISOString()}::timestamptz + (${minute} || ' minutes')::interval,
-                        ${level},
-                        ${"seam " + level},
-                        'production'
-                    )
-                `);
-            }
-        }
-
-        rollupRange = { from: anchor, to: new Date(anchor.getTime() + 10 * 60_000) };
-
-        // Build it with the real job, so what is measured is what the job writes.
-        await markRollupDirty(PROJECT, anchor);
-        for (let i = 0; i < 5; i++) {
-            const [state] = await db.execute<{ refresh_from: Date }>(sql`
-                SELECT refresh_from FROM rollup_state WHERE project_id = ${PROJECT}::uuid
-            `);
-            if (!state) break;
-            const result = await rebuildRollupForProject(PROJECT, new Date(state.refresh_from));
-            if (!result.hasMore) break;
-        }
-    });
-
-    it("actually built a rollup — otherwise the tests below prove nothing", async () => {
-        const [row] = await db.execute<{ n: string; boundary: Date | null }>(sql`
-            SELECT
-                (SELECT COUNT(*)::text FROM event_rollup_minutes WHERE project_id = ${PROJECT}::uuid) AS n,
-                (SELECT rolled_up_to FROM rollup_state WHERE project_id = ${PROJECT}::uuid)           AS boundary
-        `);
-
-        // Four minutes had events, and only minutes with events get a row.
-        expect(Number(row.n)).toBe(4);
-        expect(row.boundary).not.toBeNull();
-    });
-
-    it("reads the whole range from the rollup when it is fully covered", async () => {
-        const buckets = await eventBucketsByLevel([PROJECT], rollupRange, 3600);
-
-        expect(only(buckets, PROJECT)?.total).toBe(10);
-        expect(only(buckets, PROJECT)?.byLevel).toEqual({ info: 7, fatal: 1, error: 2 });
-        expect(errorsIn(only(buckets, PROJECT)!)).toBe(3);
-    });
-
-    /**
-     * The seam itself. With the boundary pulled back two minutes, minutes 0–1
-     * come from the rollup and minutes 2–3 from raw `events`. The total must not
-     * move — a double-count would read 14 and a dropped half would read 4 or 6.
-     */
-    it("gives the same answer with the boundary in the middle of the range", async () => {
-        const whole = await eventBucketsByLevel([PROJECT], rollupRange, 3600);
-
-        await db.execute(sql`
-            UPDATE rollup_state
-            SET rolled_up_to = ${anchor.toISOString()}::timestamptz + interval '2 minutes'
-            WHERE project_id = ${PROJECT}::uuid
-        `);
-        const split = await eventBucketsByLevel([PROJECT], rollupRange, 3600);
-
-        expect(only(split, PROJECT)?.total).toBe(10);
-        expect(only(split, PROJECT)?.byLevel).toEqual(only(whole, PROJECT)?.byLevel);
-    });
-
-    /**
-     * Per-minute, so a bucket boundary landing on the seam is covered too: the
-     * rollup's grain is a minute and the raw tail is grouped from timestamps, so
-     * the two must produce identical bucket starts or the minute at the seam
-     * would appear twice.
-     */
-    it("keeps per-minute buckets aligned across the seam", async () => {
-        const buckets = (await eventBucketsByLevel([PROJECT], rollupRange, 60)).sort(
-            (a, b) => a.ts.getTime() - b.ts.getTime(),
-        );
-
-        expect(
-            buckets.map((b) => [(b.ts.getTime() - anchor.getTime()) / 60_000, b.total]),
-        ).toEqual([
-            [0, 3],
-            [1, 1],
-            [2, 4],
-            [3, 2],
-        ]);
-    });
-});
-
-/**
- * Org-wide totals for the canonical range, summed across ALPHA and BETA:
- * error 19 + 9 = 28 · info 14 + 6 = 20 · warn 0 + 2 = 2 · fatal 1 + 0 = 1.
- * Total 51, which is what the header comment records.
- */
-/**
- * The composition the project dashboard performs: query, then zero-fill. Each
- * half is covered on its own -- the query here, the fill in
- * `shared/utils/event-buckets.test.ts` -- but the chart depends on them lining
- * up, and a filled timestamp that misses a real one by a second would double
- * every bucket without either test noticing.
- */
 describe("eventBuckets + fillBuckets", () => {
     it("fills the gap between two active minutes rather than leaving it absent", async () => {
         // DASH has events at +5 minutes and a fatal at +40. At minute grain
@@ -828,149 +686,6 @@ it("reports the latest occurrence of each message", async () => {
     });
 });
 
-/**
- * `topMessages` served from the template rollup.
- *
- * Everything in the `topMessages` block above runs on the raw-`events` path,
- * because the shared corpus carries no fingerprints. This block builds a real
- * template rollup for a project of its own — and it is not duplication, because
- * **one property here cannot be tested on the raw path at all**.
- *
- * On the raw path a level restriction is a `WHERE` predicate, so the counters
- * for excluded levels are necessarily zero and `toTopMessage`'s zeroing is
- * redundant. On the rollup path the counters are *stored*, and a template with
- * many `info` lines and a couple of `error`s keeps `n_info = many`. Without the
- * zeroing that row ranks on its errors and is badged `info` — in a widget
- * titled "top errors". The fixture below is that exact shape.
- */
-describe("topMessages — from the template rollup", () => {
-    const PROJECT = "cccccccc-0000-4000-8000-00000000000a";
-    const MOSTLY_INFO = "seam mostly info";
-    const ALL_ERROR = "seam all error";
-    let rollupRange: { from: Date; to: Date };
-
-    beforeAll(async () => {
-        await db.execute(sql`DELETE FROM events WHERE project_id = ${PROJECT}::uuid`);
-        await db.execute(sql`DELETE FROM rollup_state WHERE project_id = ${PROJECT}::uuid`);
-        await db.execute(sql`DELETE FROM event_template_rollup WHERE project_id = ${PROJECT}::uuid`);
-        await db.execute(sql`DELETE FROM message_templates WHERE project_id = ${PROJECT}::uuid`);
-        await db.execute(sql`
-            INSERT INTO projects (id, organization_id, name, slug)
-            VALUES (${PROJECT}::uuid, ${ORG_B}::uuid, 'Template Rollup', 'template-rollup')
-            ON CONFLICT (id) DO NOTHING
-        `);
-
-        // 8 info + 2 error on one template, 3 error on another. Restricted to
-        // errors the ranking is 3 then 2; the badge on the first template is
-        // the property under test.
-        const rows: Array<[string, string, number]> = [
-            [MOSTLY_INFO, "info", 8],
-            [MOSTLY_INFO, "error", 2],
-            [ALL_ERROR, "error", 3],
-        ];
-        for (const [message, level, count] of rows) {
-            for (let i = 0; i < count; i++) {
-                await db.execute(sql`
-                    INSERT INTO events (id, project_id, timestamp, level, message, template_hash)
-                    VALUES (
-                        gen_random_uuid(), ${PROJECT}::uuid,
-                        ${anchor.toISOString()}::timestamptz + interval '1 minute',
-                        ${level}, ${message},
-                        ${templateHashForStorage(message).toString()}::bigint
-                    )
-                `);
-            }
-        }
-        // The registry is written at ingest, not by the rollup job, so a test
-        // inserting events directly must supply it or every message reads
-        // "(unknown template)".
-        for (const message of [MOSTLY_INFO, ALL_ERROR]) {
-            await db.execute(sql`
-                INSERT INTO message_templates (project_id, template_hash, template, normalizer_version)
-                VALUES (
-                    ${PROJECT}::uuid,
-                    ${templateHashForStorage(message).toString()}::bigint,
-                    ${message}, 1
-                ) ON CONFLICT DO NOTHING
-            `);
-        }
-
-        rollupRange = { from: anchor, to: new Date(anchor.getTime() + 10 * 60_000) };
-
-        await markRollupDirty(PROJECT, anchor);
-        for (let i = 0; i < 5; i++) {
-            const [state] = await db.execute<{ refresh_from: Date }>(sql`
-                SELECT refresh_from FROM rollup_state WHERE project_id = ${PROJECT}::uuid
-            `);
-            if (!state) break;
-            const result = await rebuildRollupForProject(PROJECT, new Date(state.refresh_from));
-            if (!result.hasMore) break;
-        }
-    });
-
-    it("actually built a template rollup — otherwise the tests below prove nothing", async () => {
-        const [row] = await db.execute<{ n: string }>(sql`
-            SELECT COUNT(*)::text AS n FROM event_template_rollup
-            WHERE project_id = ${PROJECT}::uuid
-        `);
-
-        // Two templates, both in the same minute.
-        expect(Number(row.n)).toBe(2);
-    });
-
-    it("reads counts and display text from the rollup", async () => {
-        const rows = await topMessages([PROJECT], rollupRange);
-
-        expect(rows.map((r) => [r.message, r.count])).toEqual([
-            [MOSTLY_INFO, 10], // 8 info + 2 error
-            [ALL_ERROR, 3],
-        ]);
-    });
-
-    it("ranks on the restricted levels, not on the template's total", async () => {
-        const rows = await topMessages([PROJECT], rollupRange, { levels: ["error", "fatal"] });
-
-        // Unrestricted, MOSTLY_INFO (10) outranks ALL_ERROR (3). Restricted to
-        // errors it is 2 against 3, so the order inverts.
-        expect(rows.map((r) => [r.message, r.count])).toEqual([
-            [ALL_ERROR, 3],
-            [MOSTLY_INFO, 2],
-        ]);
-    });
-
-    /**
-     * The property the raw path cannot reach. `MOSTLY_INFO` keeps `n_info = 8`
-     * in the rollup; without zeroing the counters outside the restriction,
-     * `pickDominantLevel` badges it `info` in a list of top **errors**.
-     */
-    it("badges a mostly-info template as an error when errors are what was asked for", async () => {
-        const rows = await topMessages([PROJECT], rollupRange, { levels: ["error", "fatal"] });
-        const mostlyInfo = rows.find((r) => r.message === MOSTLY_INFO);
-
-        expect(mostlyInfo?.dominantLevel).toBe("error");
-    });
-
-    it("badges it info when no restriction was asked for", async () => {
-        const rows = await topMessages([PROJECT], rollupRange);
-        const mostlyInfo = rows.find((r) => r.message === MOSTLY_INFO);
-
-        expect(mostlyInfo?.dominantLevel).toBe("info");
-    });
-
-    /**
-     * A template that never occurred at a restricted level must not appear at
-     * all — that is what the `HAVING` does. Without it the row would rank with
-     * a count of zero and `pickDominantLevel` would be handed an all-zero map.
-     */
-    it("drops a template with no events at any restricted level", async () => {
-        const rows = await topMessages([PROJECT], rollupRange, { levels: ["fatal"] });
-
-        expect(rows).toEqual([]);
-    });
-});
-
-// ── topSources ───────────────────────────────────────────────────────────────
-
 describe("topSources", () => {
     it("counts events per source", async () => {
         const rows = await topSources([DASH], range);
@@ -1209,13 +924,19 @@ describe("environmentsInUse", () => {
     });
 
     it("labels a NULL environment and sorts the list", async () => {
-        // "(unset)" lands last, not first: `ORDER BY environment` uses the
-        // database collation, which weights punctuation below letters, so the
-        // value sorts as if it were "unset". Under a plain ASCII ordering the
-        // parenthesis would have put it first. The UI shows the list in this
-        // order, so the placeholder appears at the end of the dropdown.
+        // "(unset)" lands **first**, and this is a visible change from
+        // Postgres. There, `ORDER BY environment` used the database collation,
+        // which weights punctuation below letters, so the value sorted as if it
+        // were "unset" and appeared at the end of the dropdown. ClickHouse
+        // orders bytewise and `(` is 0x28, below every letter.
+        //
+        // Byte order is what this list was always supposed to have: the
+        // Postgres version sorted its *other* environment list in TypeScript
+        // precisely to escape the collation. The two are consistent now, and
+        // the placeholder sits at the top of the dropdown rather than the
+        // bottom.
         const envs = await environmentsInUse(ORG_A_PROJECTS);
-        expect(envs).toEqual(["archive", COMMA_ENVIRONMENT, "production", "staging", "(unset)"]);
+        expect(envs).toEqual(["(unset)", "archive", COMMA_ENVIRONMENT, "production", "staging"]);
     });
 
     it("looks back exactly 30 days regardless of the page's selected range", async () => {
@@ -1229,234 +950,262 @@ describe("environmentsInUse", () => {
     });
 });
 
-
 /**
- * The environment key, end to end.
+ * The reads Phase 4 either introduced or changed, against a **project of this
+ * block's own**.
  *
- * `environment` joined the rollup's primary key on 2026-08-25 so that a filtered
- * read stops scanning raw `events`. These tests build a real rollup for a
- * project of their own and check the two things that can go wrong with that:
- * the filtered answer must **match** the unfiltered arithmetic, and a minute
- * that folded environments into `(other)` must **not** be used for a filtered
- * read at all.
+ * Its own project because these tests write, and the shared corpus is
+ * read-only: `fileParallelism` is on, so adding rows to a fixture project would
+ * silently change what every other assertion in this file is measuring. The id
+ * is minted per run, exactly as `clickhouse-ingest.service.itest.ts` does, so
+ * two runs cannot collide in a table nothing truncates between them.
  */
-describe("environment as a rollup key", () => {
-    const PROJECT = "cccccccc-0000-4000-8000-00000000000b";
-    let envRange: { from: Date; to: Date };
+describe("Phase 4 — what moved to ClickHouse", () => {
+    const PROJECT = uuidv7();
+
+    /** An enriched event, as ingest would have produced it. */
+    function event(spec: Partial<NewEvent> & { message: string; at: Date }): NewEvent {
+        const { at, ...patch } = spec;
+        const fingerprint = fingerprintMessage(spec.message);
+        return {
+            id: uuidv7(),
+            projectId: PROJECT,
+            timestamp: at,
+            level: "info",
+            source: null,
+            environment: null,
+            release: null,
+            userId: null,
+            sessionId: null,
+            requestId: null,
+            traceId: null,
+            errorType: null,
+            stackTrace: null,
+            attributes: {},
+            context: {},
+            userAgent: null,
+            ip: null,
+            templateHash: fingerprint.hash,
+            messageTemplate: fingerprint.template,
+            ...patch,
+        };
+    }
+
+    /** Recent enough for `eventsInLastMinute`, which asks about the wall clock. */
+    const justNow = () => new Date(Date.now() - 5_000);
 
     beforeAll(async () => {
-        await db.execute(sql`DELETE FROM events WHERE project_id = ${PROJECT}::uuid`);
-        await db.execute(sql`DELETE FROM rollup_state WHERE project_id = ${PROJECT}::uuid`);
-        await db.execute(sql`DELETE FROM event_rollup_minutes WHERE project_id = ${PROJECT}::uuid`);
-        await db.execute(sql`
-            INSERT INTO projects (id, organization_id, name, slug)
-            VALUES (${PROJECT}::uuid, ${ORG_B}::uuid, 'Env Key', 'env-key')
-            ON CONFLICT (id) DO NOTHING
-        `);
-
-        // production: 6 info + 2 error · staging: 3 error · no environment: 4 info.
-        // Distinct counts, so a row attributed to the wrong environment changes
-        // a number rather than cancelling out.
-        const rows: Array<[string | null, string, number]> = [
-            ["production", "info", 6],
-            ["production", "error", 2],
-            ["staging", "error", 3],
-            [null, "info", 4],
+        const rows: NewEvent[] = [
+            // Three orders, one template. This is the Phase 4 grouping change:
+            // under the Postgres raw path these were three rows of one.
+            ...["o_1001", "o_1002", "o_1003"].map((id) =>
+                event({ message: `order ${id} failed`, level: "error", at: justNow() }),
+            ),
+            // A message with no variable part, so its template is itself.
+            event({ message: "cache warmed", at: justNow() }),
+            // Outside the trailing minute, so `eventsInLastMinute` must not see
+            // it while `eventBuckets` over a wide range must.
+            event({ message: "cache warmed", at: new Date(Date.now() - 10 * 60_000) }),
         ];
-        for (const [env, level, count] of rows) {
-            for (let i = 0; i < count; i++) {
-                await db.execute(sql`
-                    INSERT INTO events (id, project_id, timestamp, level, message, environment)
-                    VALUES (
-                        gen_random_uuid(), ${PROJECT}::uuid,
-                        ${anchor.toISOString()}::timestamptz + interval '1 minute',
-                        ${level}, 'env key', ${env}
-                    )
-                `);
-            }
-        }
 
-        envRange = { from: anchor, to: new Date(anchor.getTime() + 10 * 60_000) };
-
-        await markRollupDirty(PROJECT, anchor);
-        for (let i = 0; i < 5; i++) {
-            const [state] = await db.execute<{ refresh_from: Date }>(sql`
-                SELECT refresh_from FROM rollup_state WHERE project_id = ${PROJECT}::uuid
-            `);
-            if (!state) break;
-            const result = await rebuildRollupForProject(PROJECT, new Date(state.refresh_from));
-            if (!result.hasMore) break;
-        }
-    });
-
-    it("writes one row per environment, with (unset) for events carrying none", async () => {
-        const rows = await db.execute<{ environment: string; total: number }>(sql`
-            SELECT environment, total FROM event_rollup_minutes
-            WHERE project_id = ${PROJECT}::uuid
-        `);
-
-        // Sorted in JS, not in SQL. A database collation orders punctuation
-        // differently — `ORDER BY environment` puts `(unset)` *after* the letters —
-        // and `projectStats` documents the same trap for the same reason.
-        const sorted = rows
-            .map((r) => [r.environment, Number(r.total)] as [string, number])
-            .sort((x, y) => (x[0] < y[0] ? -1 : 1));
-
-        expect(sorted).toEqual([
-            ["(unset)", 4],
-            ["production", 8],
-            ["staging", 3],
-        ]);
-    });
-
-    it("answers a filtered level breakdown from the rollup", async () => {
-        const rows = await levelBreakdown([PROJECT], envRange, ["production"]);
-
-        // The joint question the marginals could not answer: 6 info + 2 error,
-        // and none of staging's 3 errors.
-        expect(Object.fromEntries(rows.map((r) => [r.level, r.count]))).toEqual({
-            info: 6,
-            error: 2,
+        // `async_insert` is on the shared client, and it merges rows from
+        // several concurrent queries into one block — which changes that
+        // block's checksum and so breaks the deduplication assertion in
+        // `clickhouse-ingest.service.itest.ts`, running in parallel against
+        // this same table. A fixture write wants to be synchronous anyway.
+        await clickhouse.insert({
+            table: "events",
+            values: rows.map(toClickhouseRow),
+            format: "JSONEachRow",
+            clickhouse_settings: { async_insert: 0 },
         });
     });
 
-    it("answers filtered per-project stats from the rollup", async () => {
-        const stats = (await projectStats([PROJECT], envRange, ["staging"])).get(PROJECT);
+    /** A range wide enough to hold everything this block wrote. */
+    const wide = () => ({ from: new Date(Date.now() - 60 * 60_000), to: new Date(Date.now() + 1000) });
 
-        expect(stats?.totalEvents).toBe(3);
-        expect(stats?.errorCount).toBe(3);
+    describe("topMessages groups by template", () => {
+        it("collapses three different order ids into one row", async () => {
+            const rows = await topMessages([PROJECT], wide());
+            const orders = rows.find((r) => r.message.startsWith("order"));
+
+            expect(orders).toBeDefined();
+            expect(orders!.count).toBe(3);
+        });
+
+        it("labels the row with the template, not with any one event's text", async () => {
+            // The visible half of the change, and the reason `message_template`
+            // is stored per row: no query can derive `***` from SQL, so a row
+            // written without it can only be labelled with a concrete instance.
+            const rows = await topMessages([PROJECT], wide());
+
+            expect(rows.map((r) => r.message).sort()).toEqual(["cache warmed", "order *** failed"]);
+        });
+
+        it("leaves a message with no variable part as itself", async () => {
+            const rows = await topMessages([PROJECT], wide());
+            const cache = rows.find((r) => r.message === "cache warmed");
+
+            expect(cache?.count).toBe(2);
+        });
     });
 
-    it("answers filtered buckets from the rollup", async () => {
-        const buckets = await eventBucketsByLevel([PROJECT], envRange, 3600, ["production"]);
+    describe("eventBuckets", () => {
+        it("counts totals and errors per project across the range", async () => {
+            // Five events, three of them errors. `eventBucketsByLevel` is
+            // covered above; this is the cheaper sibling, which had no
+            // integration coverage of its own before Phase 4.
+            //
+            // Summed over every bucket, not read off the first. Buckets are
+            // floored to the **epoch** grid, so an hour-wide bucket splits
+            // these rows in two whenever the clock is within ten minutes of an
+            // hour boundary — which is exactly how this test failed once and
+            // passed on every earlier run. A chart sums them too.
+            const buckets = await eventBuckets([PROJECT], wide(), 3600);
 
-        expect(buckets).toHaveLength(1);
-        expect(buckets[0].byLevel).toEqual({ info: 6, error: 2 });
+            expect(buckets.every((b) => b.projectId === PROJECT)).toBe(true);
+            expect(buckets.reduce((n, b) => n + b.total, 0)).toBe(5);
+            expect(buckets.reduce((n, b) => n + b.errors, 0)).toBe(3);
+        });
+
+        it("returns nothing for a project with no events in the range", async () => {
+            const past = { from: new Date(0), to: new Date(1000) };
+            expect(await eventBuckets([PROJECT], past, 3600)).toEqual([]);
+        });
     });
 
-    /**
-     * The pre-existing defect this work uncovered. `environmentsInUse` offers
-     * `(unset)` as a pill, but `envCond` was a bare `environment = ANY(...)` and
-     * SQL equality never matches NULL — so selecting that pill emptied every
-     * widget and read as a quiet period.
-     */
-    it("matches events carrying no environment when (unset) is selected", async () => {
-        const rows = await levelBreakdown([PROJECT], envRange, ["(unset)"]);
+    describe("eventsInLastMinute", () => {
+        /**
+         * Never covered before Phase 4, in either store. It is the one read
+         * whose window comes from the clock rather than from the page, which is
+         * exactly why nothing in the fixture corpus — anchored two hours back —
+         * could reach it.
+         */
+        it("counts only the trailing sixty seconds", async () => {
+            expect(await eventsInLastMinute([PROJECT])).toBe(4);
+        });
 
-        expect(Object.fromEntries(rows.map((r) => [r.level, r.count]))).toEqual({ info: 4 });
+        it("returns zero for an empty project list without querying", async () => {
+            expect(await eventsInLastMinute([])).toBe(0);
+        });
     });
 
-    it("sums to the unfiltered total across every environment", async () => {
-        const all = await levelBreakdown([PROJECT], envRange);
-        const parts = await Promise.all(
-            [["production"], ["staging"], ["(unset)"]].map((e) =>
-                levelBreakdown([PROJECT], envRange, e),
-            ),
-        );
+    describe("projectStats", () => {
+        it("counts a project written after the fixture was seeded", async () => {
+            const stats = await projectStats([PROJECT], wide());
 
-        const total = (rows: Array<{ count: number }>) => rows.reduce((n, r) => n + r.count, 0);
-        expect(parts.reduce((n, p) => n + total(p), 0)).toBe(total(all));
+            expect(stats.get(PROJECT)).toMatchObject({ totalEvents: 5, errorCount: 3 });
+        });
+
+        it("offers no environment pill for events that named none", async () => {
+            const stats = await projectStats([PROJECT], wide());
+            expect(stats.get(PROJECT)?.environments).toEqual([]);
+        });
     });
-
-    it("does not offer the reserved labels as environment pills", async () => {
-        const envs = (await projectStats([PROJECT], envRange)).get(PROJECT)?.environments ?? [];
-
-        expect(envs).toEqual(["production", "staging"]);
-    });
-
 });
 
 /**
- * The safety net, against a minute that **actually folded**.
+ * Which project a template is attributed to when several of them log it.
  *
- * An earlier version of this test fabricated an `(other)` row and asserted the
- * filtered read still gave the right answer. It passed with the floor check
- * disabled, because the fabricated row was not `production` and the filter
- * excluded it either way — a test whose name promised more than it measured,
- * the third of that shape found in this work.
+ * The rule is "the project contributing the most events, ties broken toward the
+ * smaller id", and it is one `argMin` over a tuple. It had **no coverage at
+ * all** until Phase 4 — under Postgres it was a `ROW_NUMBER` window, and the
+ * shared corpus gives every message to exactly one project, so nothing
+ * exercised it. Found by mutation: replacing the tuple with a plain
+ * `argMin(project_id, per_project)` — which picks the *least* busy project —
+ * failed nothing.
  *
- * What bites is a minute where the environment being asked about is the one
- * that got folded. Six environments, `production` the quietest, cap five: the
- * rollup then has **no production row** for that minute, so a filtered read that
- * trusted it would report zero where raw `events` has one.
+ * Two projects of its own, for the same reason as the block above.
  */
-describe("a folded minute is not used for a filtered read", () => {
-    const PROJECT = "cccccccc-0000-4000-8000-00000000000c";
-    let foldRange: { from: Date; to: Date };
+describe("topMessages — the owning project", () => {
+    // **Which id is "smaller" is ClickHouse's question, not JavaScript's.**
+    // ClickHouse compares a UUID as two UInt64 halves, so its ordering is not
+    // the text ordering Postgres used — two ids that sort one way as strings
+    // can sort the other way in the database. The tie test below therefore
+    // asks the server which one it considers smaller rather than assuming.
+    const [FIRST, SECOND] = [uuidv7(), uuidv7()];
+    const SHARED = "shared *** template";
+
+    function row(project: string, message: string): NewEvent {
+        const fingerprint = fingerprintMessage(message);
+        return {
+            id: uuidv7(),
+            projectId: project,
+            timestamp: new Date(Date.now() - 30_000),
+            level: "info",
+            message,
+            source: null,
+            environment: null,
+            release: null,
+            userId: null,
+            sessionId: null,
+            requestId: null,
+            traceId: null,
+            errorType: null,
+            stackTrace: null,
+            attributes: {},
+            context: {},
+            userAgent: null,
+            ip: null,
+            templateHash: fingerprint.hash,
+            messageTemplate: fingerprint.template,
+        };
+    }
+
+    const wide = () => ({ from: new Date(Date.now() - 60 * 60_000), to: new Date(Date.now() + 1000) });
 
     beforeAll(async () => {
-        await db.execute(sql`DELETE FROM events WHERE project_id = ${PROJECT}::uuid`);
-        await db.execute(sql`DELETE FROM rollup_state WHERE project_id = ${PROJECT}::uuid`);
-        await db.execute(sql`DELETE FROM event_rollup_minutes WHERE project_id = ${PROJECT}::uuid`);
-        await db.execute(sql`
-            INSERT INTO projects (id, organization_id, name, slug)
-            VALUES (${PROJECT}::uuid, ${ORG_B}::uuid, 'Folded', 'folded-env')
-            ON CONFLICT (id) DO NOTHING
-        `);
-
-        // Five busy environments and `production` with a single event. Ranked by
-        // count, production is sixth and lands in `(other)`.
-        const busy = ["a", "b", "c", "d", "e"];
-        for (const env of busy) {
-            for (let i = 0; i < 3; i++) {
-                await db.execute(sql`
-                    INSERT INTO events (id, project_id, timestamp, level, message, environment)
-                    VALUES (
-                        gen_random_uuid(), ${PROJECT}::uuid,
-                        ${anchor.toISOString()}::timestamptz + interval '1 minute',
-                        'info', 'busy', ${env}
-                    )
-                `);
-            }
-        }
-        await db.execute(sql`
-            INSERT INTO events (id, project_id, timestamp, level, message, environment)
-            VALUES (
-                gen_random_uuid(), ${PROJECT}::uuid,
-                ${anchor.toISOString()}::timestamptz + interval '1 minute',
-                'info', 'quiet', 'production'
-            )
-        `);
-
-        foldRange = { from: anchor, to: new Date(anchor.getTime() + 10 * 60_000) };
-
-        await markRollupDirty(PROJECT, anchor);
-        for (let i = 0; i < 5; i++) {
-            const [state] = await db.execute<{ refresh_from: Date }>(sql`
-                SELECT refresh_from FROM rollup_state WHERE project_id = ${PROJECT}::uuid
-            `);
-            if (!state) break;
-            const result = await rebuildRollupForProject(PROJECT, new Date(state.refresh_from));
-            if (!result.hasMore) break;
-        }
+        await clickhouse.insert({
+            table: "events",
+            // Synchronous, for the reason given on the first fixture write above.
+            clickhouse_settings: { async_insert: 0 },
+            values: [
+                // SECOND logs the shared template three times, FIRST once —
+                // so the busier project wins despite having the larger id.
+                ...["u_1", "u_2", "u_3"].map((u) => row(SECOND, `shared ${u} template`)),
+                row(FIRST, "shared u_9 template"),
+                // A second template both log exactly once, which is the tie.
+                row(FIRST, "tied u_1 template"),
+                row(SECOND, "tied u_2 template"),
+            ].map(toClickhouseRow),
+            format: "JSONEachRow",
+        });
     });
 
-    it("really did fold production away — otherwise the test below proves nothing", async () => {
-        const [row] = await db.execute<{ n: string }>(sql`
-            SELECT COUNT(*)::text AS n FROM event_rollup_minutes
-            WHERE project_id = ${PROJECT}::uuid AND environment = 'production'
-        `);
-        const [other] = await db.execute<{ n: string }>(sql`
-            SELECT COUNT(*)::text AS n FROM event_rollup_minutes
-            WHERE project_id = ${PROJECT}::uuid AND environment = '(other)'
-        `);
+    it("attributes a template to the project that logged it most", async () => {
+        const rows = await topMessages([FIRST, SECOND], wide());
+        const shared = rows.find((r) => r.message === SHARED);
 
-        expect(Number(row.n)).toBe(0); // folded
-        expect(Number(other.n)).toBe(1); // and the fold is recorded
+        expect(shared).toMatchObject({ count: 4, projectId: SECOND });
     });
 
-    it("reads the folded environment from events, not from the rollup", async () => {
-        const rows = await levelBreakdown([PROJECT], foldRange, ["production"]);
+    /** Whichever of the two ClickHouse itself orders first. */
+    async function smallerId(): Promise<string> {
+        const result = await clickhouse.query({
+            query: "SELECT min(project_id) AS id FROM events WHERE project_id IN {ids:Array(UUID)}",
+            query_params: { ids: [FIRST, SECOND] },
+            format: "JSONEachRow",
+        });
+        const [row] = await result.json<{ id: string }>();
+        return row.id;
+    }
 
-        // One event. Trusting the rollup would report none at all.
-        expect(Object.fromEntries(rows.map((r) => [r.level, r.count]))).toEqual({ info: 1 });
+    it("breaks a tie toward the id the database orders first", async () => {
+        // Not cosmetic: without a deterministic tie-break the owning project
+        // changes between two identical page loads and the widget's "which
+        // project" column flickers.
+        const rows = await topMessages([FIRST, SECOND], wide());
+        const tied = rows.find((r) => r.message === "tied *** template");
+
+        expect(tied).toMatchObject({ count: 2, projectId: await smallerId() });
     });
 
-    it("still totals correctly unfiltered, where the fold costs nothing", async () => {
-        const rows = await levelBreakdown([PROJECT], foldRange);
+    it("resolves the same tie the same way twice", async () => {
+        const owner = async () =>
+            (await topMessages([FIRST, SECOND], wide())).find(
+                (r) => r.message === "tied *** template",
+            )?.projectId;
 
-        // 5 environments × 3 + production's 1. `(other)` is summed like any
-        // other row when nothing is being filtered.
-        expect(rows.find((r) => r.level === "info")?.count).toBe(16);
+        expect(await owner()).toBe(await owner());
     });
 });

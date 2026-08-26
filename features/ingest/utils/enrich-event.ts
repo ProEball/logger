@@ -1,13 +1,20 @@
-import { randomUUID } from "crypto";
 import type { IngestEvent } from "./event-schema";
 import { sanitizeTimestamp } from "./sanitize-timestamp";
-import { templateHashForStorage } from "./normalize-message";
-import type { NewEvent } from "@/core/db/schema";
+import { fingerprintMessage } from "./normalize-message";
+import { uuidv7 } from "@/shared/utils/uuidv7";
+import { dedupTokenFromRequest } from "./dedup-token";
+import type { NewEvent } from "@/shared/types/event.types";
 
 export interface RequestContext {
     userAgent: string | null;
     ip: string | null;
     projectId: string;
+    /**
+     * `insert_deduplication_token` for this request, or `null` when the caller
+     * did not send an idempotency key. Per request rather than per event: what
+     * an SDK retries is a request.
+     */
+    dedupToken: string | null;
 }
 
 /**
@@ -15,8 +22,17 @@ export interface RequestContext {
  * adds server-side fields, returns a DB-ready NewEvent row.
  */
 export function enrichEvent(raw: IngestEvent, ctx: RequestContext): NewEvent {
+    // One pass of the normaliser for both halves. Until Phase 4 the hash was
+    // computed here and the display text again in a registry service, on the
+    // grounds that threading one result through two modules was not worth the
+    // microseconds; with the template stored on the row there is one caller
+    // and no thread to pull.
+    const fingerprint = fingerprintMessage(raw.message);
+
     return {
-        id: randomUUID(),
+        // UUIDv7, not v4. Phase 0 measured `id` at compression ratio 1.0 and a
+        // fifth of the ClickHouse table (§14.2) — see `shared/utils/uuidv7.ts`.
+        id: uuidv7(),
         projectId: ctx.projectId,
         timestamp: sanitizeTimestamp(raw.timestamp),
         level: raw.level,
@@ -36,12 +52,8 @@ export function enrichEvent(raw: IngestEvent, ctx: RequestContext): NewEvent {
         userAgent: ctx.userAgent,
         ip: ctx.ip,
 
-        // Computed here so the value is written with the event in one
-        // statement. The registry normalises the same message again for its
-        // display text: two passes rather than threading one result through
-        // two functions, because the normaliser costs microseconds against a
-        // 0.2 ms insert and PROJECT.md §10 asks for evidence before cleverness.
-        templateHash: templateHashForStorage(raw.message),
+        templateHash: fingerprint.hash,
+        messageTemplate: fingerprint.template,
     };
 }
 
@@ -55,5 +67,5 @@ export function extractRequestContext(
     const userAgent = req.headers.get("user-agent");
     const forwarded = req.headers.get("x-forwarded-for");
     const ip = forwarded ? forwarded.split(",")[0].trim() : null;
-    return { userAgent, ip, projectId };
+    return { userAgent, ip, projectId, dedupToken: dedupTokenFromRequest(req, projectId) };
 }

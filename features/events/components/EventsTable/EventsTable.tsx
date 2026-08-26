@@ -3,7 +3,7 @@
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import { LevelBadge } from "@/shared/components/LevelBadge/LevelBadge";
 import { t } from "@/core/i18n/t";
-import type { Event } from "@/core/db/schema";
+import type { Event } from "@/shared/types/event.types";
 import type { LogLevel } from "@/shared/components/LevelBadge/LevelBadge";
 import styles from "./EventsTable.module.scss";
 

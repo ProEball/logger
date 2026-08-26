@@ -11,9 +11,17 @@ interface WidgetCardProps {
     actions?: React.ReactNode;
 }
 
+/**
+ * A titled panel.
+ *
+ * `section` with an accessible name rather than a bare `div`: that makes it a
+ * landmark, so a screen reader can jump between widgets and a test can address
+ * one by role and name — which is what `PROJECT.md` §11 asks for and what the
+ * dashboard e2e had no way to do while every card was an anonymous `div`.
+ */
 export function WidgetCard({ title, children, isEmpty, isLoading, footer, actions }: WidgetCardProps) {
     return (
-        <div className={styles.card}>
+        <section className={styles.card} aria-label={title}>
             <div className={styles.header}>
                 <h2 className={styles.title}>{title}</h2>
                 {actions && <div className={styles.actions}>{actions}</div>}
@@ -28,6 +36,6 @@ export function WidgetCard({ title, children, isEmpty, isLoading, footer, action
                 )}
             </div>
             {footer && <div className={styles.footer}>{footer}</div>}
-        </div>
+        </section>
     );
 }
