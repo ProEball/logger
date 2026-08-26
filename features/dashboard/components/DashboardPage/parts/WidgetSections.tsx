@@ -24,7 +24,7 @@ import type {
     SourceCount,
 } from "@/shared/services/event-aggregations.service";
 import type { LevelCount, TopMessage } from "@/shared/services/event-aggregations.service";
-import type { Event } from "@/core/db/schema";
+import type { Event } from "@/shared/types/event.types";
 import type { TimeRange } from "@/shared/utils/event-filters.schema";
 
 /**

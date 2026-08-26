@@ -29,7 +29,8 @@ Deployment artifacts sit at the repo root: `Dockerfile`, `.dockerignore`, `docke
 | Subfolder | Responsibility |
 |---|---|
 | `core/auth/` | better-auth server config (`config.ts`) and session helpers (`server.ts`: `getSession()`, `getCurrentUser()`) |
-| `core/db/` | Drizzle schema (`schema/`), migrations (`migrations/`), Postgres client singleton + slow-query-logging middleware (`middleware/`), the migration-status check used by `/api/health/ready` (`migration-status.ts`), and the standalone migration runner entrypoint (`migrate.ts`) |
+| `core/db/` | Drizzle schema (`schema/`), Postgres client singleton + slow-query-logging middleware (`middleware/`), and `bootstrap.ts` — the standalone entrypoint that applies **both** stores' schemas. There is no `migrations/` folder and no migration-status check; see [Schema and the bootstrap](#schema-and-the-bootstrap) |
+| `core/clickhouse/` | ClickHouse client singleton (`client.ts`), the DDL statement splitter (`ddl.ts`), `schema.sql` — the events schema — and the **query layer**: `params.ts` (the parameter bag every bound value goes through), `filter-compiler.ts` (an `EventFilters` to a bound `WHERE` clause), `search-query.ts` (the message-search grammar, pure), `event-row.types.ts`, `from-event-row.ts` (a stored row back to an `Event`, plus the `SELECT` list that produces it) and `tables.ts`. See the note below on why query-building lives in `core/` |
 | `core/env/` | Validated environment variables (`@t3-oss/env-nextjs` + Zod) |
 | `core/i18n/` | Typed dictionary lookup (`t(key)`), English-only today, falls back to returning the key itself rather than throwing if a key is missing |
 | `core/logger.ts` | App-wide pino logger — see [misc.md](misc.md#app-logger) for an important dead-code note (two other logger files exist and are unused) |
@@ -41,6 +42,8 @@ Deployment artifacts sit at the repo root: `Dockerfile`, `.dockerignore`, `docke
 
 Each feature follows: `actions/` (Server Actions), `components/` (per-component subfolders), `services/` (data access / business logic), `utils/` (pure functions), and where relevant `jobs/` (pg-boss job definitions) and `hooks/`.
 
+**`alerts` is the only feature with a `jobs/` folder** since 2026-08-26. `ingest` had one until Phase 4 deleted both of its jobs along with the Postgres tables they maintained.
+
 | Feature | Responsibility |
 |---|---|
 | `alerts` | Alert rule CRUD, evaluation, webhook delivery |
@@ -48,7 +51,7 @@ Each feature follows: `actions/` (Server Actions), `components/` (per-component 
 | `auth` | Login, logout, setup wizard (first-run bootstrap), password reset, account/session management |
 | `dashboard` | Per-project metrics aggregation (time-bucketed charts, breakdowns) |
 | `events` | Events list/detail UI, filtering, keyset-paginated query service |
-| `ingest` | The event-ingestion pipeline: API-key auth, validation, attribute-type enforcement, enrichment, insert. Also owns the derived read-path tables written from that path — the environment registry and the event rollup — and the two maintenance jobs behind them (`partman-maintenance`, `event-rollup`) |
+| `ingest` | The event-ingestion pipeline: API-key auth, validation, attribute-type enforcement, enrichment, insert. It owned three derived read-path tables and two maintenance jobs until 2026-08-26; ClickHouse maintains its own aggregates, so the feature has no `jobs/` folder any more |
 | `organizations` | Organization CRUD, membership, invitations |
 | `overview` | Org-level (cross-project) rollup dashboard. Per-project row assembly and the top-errors window clamp live in `overview/utils/`; they were in `app/[org]/(org-shell)/page.tsx` until 2026-08-20, which put business logic in a route (against `PROJECT.md` §2.3) and left it untestable. Search-param parsing and chart bucket widths lived there too until 2026-08-25, when they moved to `shared/utils/dashboard-filters.ts` — they were never overview-specific, and keeping them here meant the project dashboard maintained a second copy of both. The route still performs the data-loading fan-out, which §2.3 permits — and since 2026-08-20 it passes each query down as an **unawaited promise** so the page streams section by section. Keeping the fan-out in the route is deliberate: it composes `projects` and `alerts`, and moving that into the feature would make one feature import two others, against §2.1. Since 2026-08-20 the fan-out targets a read-through cache rather than the service directly — see [Read caching](#read-caching). The service it fronts is now `shared/services/event-aggregations.service.ts`, shared with the project dashboard; and since 2026-08-25 the cache is shared too — `features/overview/services/` is now **empty**. |
 | `projects` | Project CRUD with soft delete and per-org unique slugs |
@@ -59,12 +62,14 @@ Each feature follows: `actions/` (Server Actions), `components/` (per-component 
 - `shared/components/` — the UI kit (Button, Table, Modal, Drawer, Combobox, CommandPalette, JsonTree, KeyValue, LevelBadge, LogRow, Timeline, Toast, Tooltip, Sidebar, Topbar, etc.). Its top-level `index.ts` barrel is the **only** allowed barrel file in the project (per-component barrels elsewhere are disallowed by convention).
 - `shared/permissions/` — the RBAC engine: `registry.ts` (permission string catalogue), `groups.ts` (UI grouping), `check.ts` (`hasPermission`), `guards.ts` (`assertPermission`, `assertOwner`), `hooks.ts` (`usePermission` client hook). See [users-roles.md](users-roles.md).
 - `shared/hooks/`, `shared/types/`, `shared/utils/`, `shared/services/` — generic reusable code.
-  - `shared/services/rollup-boundary.service.ts` — the watermark up to which the event rollup is complete. **This is what revived `shared/services/`**, which had been empty since its only occupant, a dead logger module, was removed on 2026-08-13. Both the org overview and the project dashboard read the rollup and both need the boundary; a second copy of it was the alternative, and §2.1 says what to do instead. It returns `null` — meaning "read raw `events`" — for any doubt at all, including the case a project **has events** and no usable watermark: `MIN` and `MAX` both ignore absent and NULL rows, so such a project would otherwise inherit another's boundary and then contribute no summary rows below it, undercounting silently.
-
-**"Has events" is load-bearing in that sentence, since 2026-08-24.** Until then the guard required every requested project to have a `rollup_state` row with a watermark, which is a different and wrong question. `rollup_state` rows are written by `markRollupDirty`, and ingest is what calls it — so a project that has never received an event has no row, and migration 0008 seeded pre-existing event-free projects with a row whose watermark stays `NULL` forever. Either shape sent the whole organization's overview to raw `events`, and staging had one: the §16.3 overview work had therefore never executed in production. A project with no events contributes nothing to the rollup **and** nothing to raw `events`, so it cannot undercount anything; the query now asks `EXISTS (SELECT 1 FROM events WHERE project_id = …)` per project — the 0.79 ms `hasAnyEvents` shape — and counts only projects that have events as blocking. `templateCoverageForProjects` gained the same treatment plus a second fix: it filtered on `templates_rolled_up_to` alone, so a project with a ceiling and no floor would have inherited another project's floor. Covered by `rollup-boundary.service.itest.ts`, which is an integration test because the whole change is in SQL.
+  - `shared/types/event.types.ts` — `Event` and `NewEvent`, **hand-written since 2026-08-26**. Both were `typeof events.$inferSelect` off the Drizzle table that no longer exists. Writing them out is not a loss: inferring a domain type from a storage schema made every `jsonb` column arrive as `unknown`, so each component reading one spent an `as Record<string, unknown>` — a cast §4 allows only with a reason — working around a type that was never accurate.
   - `shared/utils/query-cache-key.ts` — the cache key for a cached read, shared by both pages. See [security.md](security.md#cached-reads-and-the-scope-in-the-cache-key): the key is an authorization boundary, and a second copy of one is the last thing this tree needs.
   - `shared/utils/read-cache-settings.ts` — the 30-second TTL and 5-minute staleness ceiling both read caches use, and the `E2E_MODE` collapse. It lived in `features/overview` until 2026-08-21, which forced `features/dashboard` to import across the feature boundary to reuse it.
-  - `shared/services/event-aggregations.service.ts` — the aggregations behind both dashboards, every one scoped by `projectIds: string[]`. Added 2026-08-25. It has absorbed, in order: `getOrgEventBuckets` + `eventsPerMinute` → `eventBuckets`; `getOrgLevelBreakdown` + `levelBreakdown` → `levelBreakdown`; `getOrgTopErrors` + the project dashboard's `topMessages` → one `topMessages`.
+  - `shared/services/event-aggregations.service.ts` — the aggregations behind both dashboards, every one scoped by `projectIds: string[]`. Added 2026-08-25, **on ClickHouse since 2026-08-26**. It has absorbed, in order: `getOrgEventBuckets` + `eventsPerMinute` → `eventBuckets`; `getOrgLevelBreakdown` + `levelBreakdown` → `levelBreakdown`; `getOrgTopErrors` + the project dashboard's `topMessages` → one `topMessages`.
+
+    It went from **1,449 lines to ~660** in Phase 4, and the half that disappeared was not about the questions. It was about a summary table being a *different table* from `events`: a watermark, a coverage interval, a raw tail unioned above it, four floor checks and two implementations each of `topMessages` and `topSources` chosen at runtime. Every public signature is unchanged, so no caller and no component moved.
+
+    **`rollup-boundary.service.ts` lived beside it until then** and is deleted with the tables it described. One finding from it transfers, because the same mistake is available in any coverage check: it originally required every requested project to have a watermark row, which is a **different question** from whether the project has events — a project that never received one has no row, so an organization containing a single quiet project sent its whole overview to the raw-events path. Staging had exactly that, which meant an optimisation nobody could see was never running in production.
 
     The last of those is the interesting one, because the two queries looked least alike: one ranked every level for a single project and one ranked errors across an organization while attributing each row to a project. The differences turned out to be **scope, a level predicate, and whether an owning project was computed** — none a reason for two implementations of the hardest query on either dashboard. `levels` is an option each caller passes as a constant, never something a request supplies: the overview's removed level filter could once widen its own "top errors" widget to any levels at all. The organization page is the project page over several projects: the project route passes `[id]`, the org route passes all of them, and nothing else about the queries differs. Two copies of a union-over-rollup query is two places for the next `ORDER BY` defect to hide, and this tree has already paid that bill three times.
   - `shared/utils/event-buckets.ts` — the `EventBucket` shape and the pure arithmetic over it (`errorsIn`, `fillBuckets`, `hasEnvFilter`).
@@ -170,9 +175,57 @@ export async function xxxAction(data: Input): Promise<{ ...success } | { error: 
 
 Key convention: **actions never throw to the caller** — every failure path (validation, auth, permission, DB constraint violation) is converted to a typed `{ error: string }` return value. `ForbiddenError` thrown by `assertPermission`/`assertOwner` is always caught locally, not propagated.
 
-## Database schema
+## The two stores
 
-Schema source: `core/db/schema/*.ts` (Drizzle), barrel-exported from `core/db/schema/index.ts`. Migrations: `core/db/migrations/0000`–`0013` (14 migrations as of 2026-08-24), applied via `drizzle-kit migrate`. 0011 adds the partial `events_unfingerprinted_idx`; **0012** adds the five generated `n_<level>` columns to `event_template_rollup` and was **hand-edited after generation** — drizzle-kit emits one `ADD COLUMN … STORED` per column and each of those rewrites the table, so the five are collapsed into a single `ALTER` and a single rewrite.
+Since 2026-08-26 the application talks to **two** databases.
+
+| Store | Holds | Client |
+|---|---|---|
+| **Postgres** | users, sessions, accounts, organizations, roles, organization_members, invitations, projects, api_keys, alert_rules, alert_notifications, attribute_key_types, `pgboss.*` | `drizzle-orm` + `postgres.js` (`core/db/client.ts`) |
+| **ClickHouse** | `events` — and nothing else | `@clickhouse/client` (`core/clickhouse/client.ts`) — raw SQL, no ORM |
+
+**The split is clean as of Phase 4 (2026-08-26).** Events are written to ClickHouse and read from ClickHouse; Postgres holds no event data and no table derived from it. Six tables were deleted in that phase — `events`, `event_rollup_minutes`, `rollup_state`, `event_template_rollup`, `message_templates` and `project_environments` — along with the two pg-boss jobs that maintained them.
+
+**What still crosses the boundary**, and it is always the same shape: a question about *projects* asked of Postgres beside a question about *events* asked of ClickHouse, issued concurrently and joined in TypeScript. The events read path's soft-delete check is one (see [logging.md](logging.md#where-an-event-is-read)); the benchmark harness picking the busiest organization is another. There is no query that joins the two, and there cannot be.
+
+### Query-building for ClickHouse lives in `core/`, not in a feature
+
+`PROJECT.md` §7 puts data access in a feature's `services/`, and that still
+holds — `listEvents` and `countMatchingEvents` are services. What moved to
+`core/clickhouse/` is the piece *underneath* them: turning an `EventFilters`
+into a bound `WHERE` clause.
+
+It is there because two features need it. `features/events` reads pages and
+facets, `features/alerts` counts matches for a rule, and a feature may not
+import another feature (§2.1). Before Phase 3 they had a clause builder each —
+the same eleven fields written twice, with no test comparing them. That is the
+shape of duplication that gave `topMessages` two implementations and two
+answers.
+
+It also concentrates the parameter-binding rule in one file with its own tests
+rather than spreading it across every service that queries `events`; see
+[security.md](security.md#clickhouse-queries-parameter-binding-is-now-a-rule-not-a-library-guarantee).
+
+**Phase 4 gave the layer a second tenant and split one piece out.** The
+dashboard aggregations do not compile an `EventFilters` — their scope is a
+project list, a range and an optional environment — but they build SQL by hand
+in exactly the same way, so the parameter bag became `core/clickhouse/params.ts`
+and both use it. `from-event-row.ts` moved here from `features/events/utils/` at
+the same time, when `recentErrors` in `shared/services/` became its second
+caller: neither `shared/` nor another feature may reach into `features/events`.
+
+The pattern to take from it: what lands in `core/clickhouse/` is what the
+**second** caller makes cross-cutting, not what looked reusable in advance.
+
+**There was a dual write for two phases**, and it is worth recording why rather than only that it existed. Writing only to ClickHouse would have left every read surface staring at an empty Postgres table for the length of Phases 3 and 4, so a regression introduced there could not have been told apart from the breakage put in on purpose. It also meant both stores held the **same rows** from one enrichment pass, so each rewritten read could be checked against the one it replaced. It cost about ten lines and it is gone.
+
+Its named cost is gone with it: there was no transaction across the two stores, so a request failing after the ClickHouse write left the event in one and not the other and returned `500`. One store, one outcome.
+
+Both are created from empty — see [Schema and the bootstrap](#schema-and-the-bootstrap).
+
+## Database schema (Postgres)
+
+Schema source: `core/db/schema/*.ts` (Drizzle), barrel-exported from `core/db/schema/index.ts`. It is rendered to `db/schema.sql` by `npm run db:schema` and applied by `core/db/bootstrap.ts` — there are no migrations, see [Schema and the bootstrap](#schema-and-the-bootstrap).
 
 ### Auth tables (better-auth managed, plural table names)
 
@@ -200,9 +253,18 @@ Schema source: `core/db/schema/*.ts` (Drizzle), barrel-exported from `core/db/sc
 | `projects` | `id` (uuid PK), `organizationId` CASCADE, `name`, `slug`, `retentionDays` (default `30`, not currently enforced dynamically — see [logging.md](logging.md)), `deletedAt` (soft delete) | Partial **unique** index `(organizationId, slug) WHERE deletedAt IS NULL` — slugs are reusable after soft-delete; partial index on `(organizationId) WHERE deletedAt IS NULL` |
 | `apiKeys` (`api_keys`) | `id` (uuid PK), `projectId` CASCADE, `name`, `keyHash` (unique), `keyPrefix`, `rateLimitPerMin` (default `1000`), `lastUsedAt`, `revokedAt`, `createdBy` → `users.id` SET NULL | Partial index `(projectId) WHERE revokedAt IS NULL` |
 
-### Events (partitioned)
+### ~~Events (partitioned)~~ — deleted 2026-08-26
 
-See [logging.md](logging.md#the-events-table) for the full column list and [Events partitioning](#events-partitioning) below for the partitioning mechanics. Events reference `projects.id` with **`ON DELETE RESTRICT`** — a project cannot be hard-deleted while it still has events (soft delete via `deletedAt` is the only delete path in the UI; events naturally age out via partition retention).
+The Postgres `events` table is gone (Phase 4 of `docs/features/09-clickhouse.md`).
+See [The ClickHouse `events` table](#the-clickhouse-events-table) below and
+[logging.md](logging.md#the-events-table) for the domain shape.
+
+One property went with it and has **no replacement**: events referenced
+`projects.id` with `ON DELETE RESTRICT`, so a project could not be hard-deleted
+while it still had events. ClickHouse has no foreign keys. Nothing is at risk
+today — soft delete via `deletedAt` is the only delete path in the UI, and
+`deleteProjectAction` uses it — but the database no longer enforces it. Recorded
+as a known limitation in [security.md](security.md).
 
 ### Alerts
 
@@ -216,61 +278,101 @@ See [logging.md](logging.md#the-events-table) for the full column list and [Even
 | Table | Key columns | Notes |
 |---|---|---|
 | `attributeKeyTypes` (`attribute_key_types`) | PK `(projectId, key)`, `type` (text: `"string"｜"number"｜"boolean"`, app-enforced only — no DB check constraint), `createdAt` | Records the **first-seen** JSON type per `(project, attribute key)`, used to reject subsequent type-mismatched values at ingest — see [logging.md](logging.md#attribute-type-enforcement) |
-| `eventRollupMinutes` (`event_rollup_minutes`) | PK `(project_id, minute, environment)`, `total` (int), `by_level` / `by_source` (jsonb), `errors` (int, **`GENERATED ALWAYS AS` `error` + `fatal` from `by_level`, STORED**), `computed_at`; partial index on `(project_id, minute) WHERE environment = '(all)'` | Added 2026-08-20 (migration 0008). Per-minute event counts, rebuilt from `events` by the `event-rollup` job — see [logging.md](logging.md#the-rollup). **`environment` joined the key on 2026-08-25 (migrations 0014/0015) and `by_env` was dropped.** It was a marginal alongside `by_level`, so neither could answer "how many errors in production" and every filtered read scanned raw `events` — benchmarked at 4.47 ms → 17.20 for `projectStats` and 7.16 → 15.36 for `levelBreakdown`. Three environment labels are reserved and no client can produce them, since ingest never writes a name in parentheses: `(unset)` for an event carrying none, `(other)` for the tail beyond `ENVIRONMENT_KEY_CAP` (now **5**, down from 20 because the cap bounds rows rather than object size), and `(all)` stamped by 0014 on rows written before the key existed. **`(other)` and `(all)` are signals**: a filtered read that finds either in its range refuses the rollup and scans `events` instead — see `envRollupFloor`. Only minutes that had events get a row |
-| `rollupState` (`rollup_state`) | PK `project_id`, `refresh_from`, `rolled_up_to` (nullable) | Added 2026-08-20. `refresh_from` is the watermark the next rebuild starts at, pulled back at ingest by the batch's **oldest** timestamp — `events` records when an event happened, not when it arrived, so nothing in that table can reveal a late arrival. `rolled_up_to` is the exclusive bound the rollup is complete to, `NULL` until the first run; reads take the rollup below it and raw `events` above, which is what keeps a just-ingested event visible immediately |
-| `projectEnvironments` (`project_environments`) | `projectId` → `projects.id` CASCADE, `environment` (text, **nullable**), `firstSeenAt`, `lastSeenAt`; `UNIQUE NULLS NOT DISTINCT (project_id, environment)`; index on `(project_id, last_seen_at)` | Added 2026-08-20 (migration 0007). Which environments a project has sent events from, maintained at ingest, so the overview's filter bar does not scan `events` — see [logging.md](logging.md#environment-registry). **No primary key**: `environment` is nullable, because an absent environment is itself one of the offered options ("(unset)"), and a nullable column cannot be part of a PK. `NULLS NOT DISTINCT` is what stops Postgres treating every NULL as unique and accumulating one row per ingest request |
 
-### Migrations
+**Three tables left this section on 2026-08-26** — `event_rollup_minutes`, `rollup_state` and `project_environments`, deleted with the rollup they served. `attribute_key_types` is the one derived table that stays, and the difference is what it is for: it **validates** an event on the way in rather than summarising events on the way out, so it has no ClickHouse equivalent to be replaced by. It is also the only Postgres query left on the ingest path, and unlike the three that are gone, its failure is **not** swallowed — a registry that cannot be consulted must reject the event, not wave it through.
 
-| # | Notable content |
-|---|---|
-| 0000 | Baseline: auth tables, `organizations`, `roles`, `organizationMembers`, `projectMemberRoles`, `invitations` |
-| 0001 | `apiKeys`, `projects` |
-| 0002 | `ALTER TABLE api_keys ALTER COLUMN created_by SET DATA TYPE text` |
-| 0003 | **Hand-written raw SQL** — creates the partitioned `events` table, FK, indexes (including GIN indexes not modeled in Drizzle), and configures `pg_partman` |
-| 0004 | `alertRules`, `alertNotifications` |
-| 0005 | Adds `apiKeys.rateLimitPerMin` |
-| 0006 | Adds `attributeKeyTypes` (2026-08-12) |
-| 0007 | Adds `projectEnvironments` (2026-08-20). **Generated, then hand-extended** with a backfill: `INSERT … SELECT project_id, environment, MIN(timestamp), MAX(timestamp) FROM events GROUP BY …`. Without it an existing install loses its environment filter until fresh events arrive from every environment it had, since the registry is written at ingest and knows no history. That statement reads every row of `events` once and will dominate the migration's runtime on a large table |
-| 0008 | Adds `eventRollupMinutes` and `rollupState` (most recent, 2026-08-20). **Generated, then hand-extended** to seed `rollup_state.refresh_from` from each project's oldest event. The rollup itself is deliberately *not* built here: a migration that aggregates the whole events table would make deployment time proportional to data volume, and a failure mid-way would block the release instead of retrying on its own. `rolled_up_to` stays NULL, which readers treat as "nothing rolled up yet" and answer entirely from `events` — that is what makes this safe to deploy before the first job run |
+### Schema and the bootstrap
 
-### Template rollup tables (added 2026-08-23, migrations 0009–0010; extended 2026-08-24 by 0012)
+**There are no migrations.** `core/db/migrations/0000`–`0015`, `core/db/migrate.ts` and `core/db/migration-status.ts` were deleted on 2026-08-26. Each store has one file describing its **end state**, and `core/db/bootstrap.ts` applies both:
 
-| Table | Key columns | Notes |
+| File | Store | Maintained by |
 |---|---|---|
-| `message_templates` | PK `(project_id, template_hash)` | Display text per template, plus `normalizer_version`. Never pruned — a vocabulary, not a measurement. |
-| `event_template_rollup` | PK `(project_id, minute, template_hash)`, index `(project_id, template_hash, minute)` | Per-minute counts per template, with `by_level`, `latest_at`, and five **generated** `n_<level>` columns. Pruned at 30 days with the level rollup. |
+| `db/schema.sql` | Postgres | Generated by `npm run db:schema` (`scripts/build-schema.mjs`). Never hand-edited |
+| `core/clickhouse/schema.sql` | ClickHouse | Hand-written |
 
-**`n_debug`…`n_fatal` are `by_level` unpacked**, added 2026-08-24. The job still writes only the JSON; the columns are `GENERATED ALWAYS … STORED`, so they cannot drift from it — the same arrangement `event_rollup_minutes.errors` has always used. They exist because reading the JSON meant `FROM event_template_rollup r, jsonb_each_text(r.by_level) l`, multiplying every row by up to five and parsing JSON per row: the widget it feeds measured **547 ms at 0% I/O**, entirely CPU, so more memory could never have helped. Summing five `int`s needs no lateral, no parse, no row multiplication, and it collapses a self-join in both readers.
+**`db/events.sql` was a third file and is gone** (2026-08-26). It held the one table Drizzle could not emit — `PARTITION BY RANGE`, the composite primary key that forces, two GIN indexes and the `pg_partman` registration — and `build-schema.mjs` stripped every `"events"` statement out of the generated DDL to splice it in. That strip had a subtlety worth remembering even though its subject is gone: it matched the **quoted** identifier, because an unquoted `/events/` would have taken `"event_rollup_minutes"` and `"event_template_rollup"` with it. The Postgres baseline is now entirely generated.
 
-Affordable **only because `level` is a closed set of five** — the one dimension in the inventory that cannot grow. `by_env` and `by_source` stay jsonb precisely because their keys are client-supplied; giving either the same treatment would be the unbounded-column mistake they are jsonb to avoid.
-| `events.template_hash` | `bigint`, nullable | Fingerprint computed at ingest. Permanently nullable: pre-2026-08-23 rows have none and no SQL can derive one, since the normaliser is TypeScript. |
-| `rollup_state.templates_rolled_up_from` / `_to` | — | The **interval** the template rollup covers. Two columns, not one: see below. |
+`scripts/build-schema.mjs` runs `drizzle-kit export` over `core/db/schema/index.ts`, which emits the whole schema as a diff against an empty database. It then does one thing the generator cannot:
 
-Both tables cascade on `projects.id` delete, like every other per-project table.
+- **Makes each statement idempotent**: `CREATE TABLE`/`CREATE INDEX` gain `IF NOT EXISTS`, and `ADD CONSTRAINT` — which has no such form in any Postgres version — is wrapped in `DO $ … EXCEPTION WHEN duplicate_object THEN NULL; END $`. The bootstrap re-applies the whole file on every start, so "already exists" is the normal case rather than an error to be guessed at.
 
-**Why coverage needs two columns.** `event_rollup_minutes` can summarise any
-event, so its coverage is a prefix and `rolled_up_to` describes it completely.
-The template rollup can only summarise events carrying a fingerprint, so it has
-a floor as well as a ceiling. A reader holding only the ceiling would take a
-7-day range, see it ends below the watermark, read the rollup for all of it and
-silently miss every pre-deploy event — on a "top messages" widget,
-indistinguishable from a message nobody sent. `templates_rolled_up_from` moves
-backwards only, so a catch-up run rebuilding an older window widens the interval
-instead of claiming a prefix it never had.
+Unit-tested in `scripts/build-schema.test.mjs`.
 
-The index on `(project_id, template_hash, minute)` covers one template's history
-— the direction the primary key does not lead on.
+**How each side is applied.** Postgres gets the file whole, through `sql.unsafe(ddl).simple()` — one simple-protocol query, which Postgres runs inside a single implicit transaction, so the schema arrives whole or not at all. ClickHouse has no transactional DDL and its HTTP interface takes one statement per request, so `core/clickhouse/ddl.ts` splits the file first (comment- and string-literal-aware, unit-tested in `ddl.test.ts`). A ClickHouse failure halfway therefore leaves the earlier statements applied; every statement is `IF NOT EXISTS`, so the fix is to correct the file and re-run. Both sides refuse an empty file rather than treating it as success — applying nothing looks exactly like applying everything, and the container would exit 0 and let the app start against a database with no tables.
 
-## Events partitioning
+**Where the code lives, and why it is split in two.** `core/db/apply-schema.ts` holds the work and takes every boundary it touches as a parameter — both clients, the DDL splitter and the file reader — so `apply-schema.test.ts` needs no module mocking at all. `core/db/bootstrap.ts` is the entrypoint: it calls `main()` at module scope and `process.exit(1)` on failure, so it must not be importable, and it carries a `test-exempt` comment saying so. Guarding that call with `require.main === module` would make it testable at the cost of letting a bundler quirk turn the bootstrap into a silent no-op — a worse failure than an untested five-line function.
 
-`events` is a native Postgres **partitioned table** (`PARTITION BY RANGE (timestamp)`), which Drizzle's schema DSL cannot express — the Drizzle file in `core/db/schema/events.ts` exists only for type-safe query building; the real DDL lives in raw SQL migration `0003_giant_thena.sql`.
+**Four consumers, one file.** `core/db/bootstrap.ts` (the `bootstrap` container and `npm run db:bootstrap`), `itest/support/global-setup.ts`, `scripts/bootstrap-e2e.mjs` and `scripts/seed-bench.mjs` all apply `db/schema.sql`, and all but the first apply `core/clickhouse/schema.sql` too. None of them defines tables of its own.
 
-- Partition management via **`pg_partman`** (`public.create_parent(p_control := 'timestamp', p_interval := '1 day', p_premake := 7)`), premaking 7 days of future partitions.
-- **Retention: 30 days** (`retention = '30 days'`, `retention_keep_table = false`, `retention_keep_index = false`, `infinite_time_partitions = true`) — old partitions are dropped entirely, not just detached.
-- **Primary key**: composite `(project_id, timestamp, id)` — required because a partitioned table's PK must include the partition key.
-- Indexes: `(project_id, timestamp)`, `(project_id, level, timestamp)`, `(project_id, error_type, timestamp) WHERE error_type IS NOT NULL`, plus two indexes that exist **only in raw SQL** (not modeled in the Drizzle schema file): `GIN` on `attributes` and `GIN` on `to_tsvector('simple', message)` for full-text search.
-- Maintenance runs hourly via a pg-boss cron job (`SELECT public.run_maintenance(p_analyze := false)`) — see below.
+**Two of them now drop and recreate their database rather than creating it when missing** (2026-08-26): the integration setup and the e2e bootstrap. An additive end-state file cannot *remove* a table, so a table deleted from the schema lives on in an existing database for ever — and Phase 4 deleted six. One of them, `events` with its `ON DELETE RESTRICT` foreign key, then broke `resetDb()` in every e2e spec with a constraint violation over rows nothing writes any more: correct code, correct file, wrong database. Both databases are disposable and seeded from scratch, so tearing them down is the cheap answer. **The dev and production databases are not**, and there the answer is the one below.
+
+**What it costs, and it was collected on 2026-08-26.** A schema change against a database holding rows has no upgrade path. Phase 4 removed six tables, and applying the new baseline to an existing database leaves all six in place — inert, but not harmless: `events`' foreign key to `projects` blocks deletes. **A developer with an existing `logger` database must recreate it**, which is what `docker compose -f docker-compose.dev.yml down -v` followed by `npm run db:bootstrap` does. Nothing detects the situation and nothing warns.
+
+That is exactly the cost `PLAN.md` §17 (2026-08-26) named when the migration chain was dropped, arriving one phase later. The drop-and-recreate that makes this simple is safe only while nothing is deployed — true today, because the staging host was destroyed, and it will stop being true.
+
+**The history is in git, not here.** The deleted chain's per-migration notes went with it; where a table's shape only makes sense with its history, that history is kept in the table's own row above.
+
+### ~~Template rollup tables~~ — deleted 2026-08-26
+
+`event_template_rollup` and `message_templates` are gone with the rest of the
+rollup machinery. What they existed for — grouping messages by *shape* rather
+than by text — survives as two columns on the ClickHouse event row,
+`template_hash` and `message_template`. See
+[logging.md](logging.md#the-template-rollup) for what moved where and why the
+display text is now stored per row rather than joined from a vocabulary table.
+
+## The ClickHouse `events` table
+
+DDL: `core/clickhouse/schema.sql`. **The only place events live**, written by the ingest path and read by every surface that shows one. The reasoning for each choice is in `docs/features/09-clickhouse.md` §3–§5, and §14 records what was measured rather than argued.
+
+```
+ENGINE = MergeTree
+PARTITION BY toYYYYMM(timestamp)
+PRIMARY KEY (project_id, timestamp)
+ORDER BY    (project_id, timestamp, id)
+```
+
+**`ORDER BY` and `PARTITION BY` are the only two things here that cannot be changed** without a new table and a full re-insert. Everything else — columns, codecs, skip indexes, TTL, projections — is alterable on a live table.
+
+- **The sort key leads on time, and `level` is deliberately not in it.** The alternative, `(project_id, toStartOfHour(timestamp), level, timestamp, id)`, was loaded alongside it and lost *every* query variant including the level-filtered one it existed to serve, by 23×. The reason generalises: every list query ends `ORDER BY timestamp DESC LIMIT 51`, and a `LIMIT` over a `DESC` sort cannot terminate early when the sort key does not lead on time — so the whole range is read and sorted regardless of what `level` prunes.
+- **`PRIMARY KEY` is shorter than `ORDER BY`.** The sparse index is held in memory and a random UUID contributes nothing to granule pruning; `id` is in the sort key only to make keyset pagination deterministic.
+- **Monthly partitions, not daily.** Daily partitioning of a log table is a named anti-pattern — 365 partitions a year, growing without bound. Retention will be a TTL (Phase 6), not `DROP PARTITION`, because per-project retention makes partitions non-homogeneous anyway. **Nothing expires today**: the `retention_days` column exists with its default and the TTL clause does not, and pg_partman's 30-day drop went with the Postgres table on 2026-08-26.
+- **Column types**: `level` is `Enum8` (one byte, validated at insert, and *ordered*, so `level >= 'error'` works natively), `ip` is `IPv6` (v4 stored v4-mapped), `source`/`environment`/`release`/`error_type` are `LowCardinality(String)`, `user_agent` is plain `String` because browser traffic would blow past the 10k threshold where LowCardinality degrades. **No `Nullable` anywhere** — empty string means absent.
+- **`attributes` is the `JSON` type**, not three `Map`s. A Map is two parallel arrays, so reading one key reads every key in the granule; a JSON path is its own subcolumn. Measured at 18 keys per project: 16× less read and 12× faster, and JSON's cost did not move when the key count grew six-fold while the Map's tripled.
+- **`message_lower` is `MATERIALIZED lowerUTF8(message)`**, backing a `tokenbf_v1` index. It costs a full duplicate of `message`.
+- **`message_template` is a third near-copy of the message text**, added 2026-08-26 and written by ingest rather than materialised — the normaliser is TypeScript and has no SQL equivalent. It is what the top-messages widgets label a group with, and the alternative was to display `any(message)`: one arbitrary instance standing for ten thousand. Its cardinality is far lower than `message`'s (18,080 distinct templates measured across the whole install) and the sort key puts near-identical values in one granule, which is the case ZSTD is best at.
+- **Skip indexes**: bloom filters on `trace_id`, `session_id`, `request_id`, `user_id`, `error_type`, `template_hash`. Postgres has an index on *none* of the four correlation ids today. Nothing on `level`/`source`/`environment`/`release` — they are `Enum8`/`LowCardinality` and appear in every granule, so a set index would skip nothing.
+
+**Deduplication is opt-in and had to be turned on explicitly.** The table carries `non_replicated_deduplication_window = 10000`. Without it, `insert_deduplication_token` is accepted and does **nothing** — deduplication is a `Replicated*` feature unless a plain `MergeTree` opts in, and the default is `0`. The window is a count of the last N inserts **per partition**, with no time dimension; the `_seconds` and `_for_async_inserts` variants exist only for Replicated tables. So the size is a rate decision, and 10,000 is ~86 seconds at the 10M events/day target if every event arrives on its own. It costs ~60 bytes an entry (~600 KB) and insert throughput was identical at 100, 1,000 and 10,000.
+
+One side effect worth knowing, because it is a property of the setting rather than of any code: turning the window on also enables ClickHouse's **checksum** deduplication (`insert_deduplicate` defaults to `1`), so a byte-identical block is discarded even with no token. In practice that fires only when the very same enriched batch is inserted twice, since every row carries its own UUIDv7.
+
+**Two operational limits, both measured, both worth knowing before they bite:**
+
+- **The JSON column's ceiling is the number of distinct attribute key *names* across the whole install**, not the amount of data. Memory per path is the binding limit and it starts failing operations around 180 paths — an order of magnitude below `max_dynamic_paths` (set to 2048), which will therefore not warn in time. Ten projects at 18 keys is 180; a hundred projects is 1,800, which could not be loaded at all under a 3 GiB budget. Width is nearly free; path count is not. Treat the install-wide distinct key count as a monitored quantity with an alarm well below 1,000.
+- **Do not ask ClickHouse what paths exist.** `JSONAllPaths()` materialises every path for every row and failed from 360 paths up. `attribute_key_types` in Postgres is the catalogue; the JSON column is storage.
+
+Not built yet, and each gated on measuring its cost first (Phases 5–6): the `p_minute` projection, the `events_by_template` and `events_by_correlation` materialized views, and the per-project TTL.
+
+## ~~Events partitioning (Postgres)~~ — deleted 2026-08-26
+
+`events` was a native Postgres partitioned table (`PARTITION BY RANGE (timestamp)`),
+managed by **pg_partman** at one-day intervals with seven days premade and a
+30-day retention that dropped whole partitions. All of it is gone with the
+table: `db/events.sql`, `core/db/schema/events.ts`, the `partman-maintenance`
+job, the `pg_partman` extension, and the custom `db/Dockerfile` that existed
+only to install it. Both compose files run stock `postgres:16` again.
+
+**Retention has no replacement yet, and that is a live gap.** Partition drop was
+the only thing expiring events; the ClickHouse table carries a `retention_days`
+column with a default of 30 and **no TTL clause**. Phase 6 wires it up. Until
+then nothing expires — see [security.md](security.md) and `09-clickhouse.md` §9.
+
+The ClickHouse table partitions **monthly**, by `toYYYYMM(timestamp)`, and
+creates partitions on insert. Daily partitioning of a log table is a named
+anti-pattern there — 365 partitions a year, growing without bound — and
+retention is a TTL rather than a partition drop because per-project retention
+makes partitions non-homogeneous anyway.
 
 ## Background jobs
 
@@ -280,14 +382,19 @@ The index on `(project_id, template_hash, minute)` covers one template's history
 
 Both paths call the same `startWorker()`, so a job registered once is picked up by both. That is the point of the split — `main.ts` adds only process concerns (health-touch, signal handling), never job registration.
 
-Three jobs are registered (`registerXJob(boss)` calls, in this order):
+**Two jobs are registered** (`registerXJob(boss)` calls, in this order):
 
 | Job | Trigger | What it does |
 |---|---|---|
-| `partman-maintenance` | Cron `0 * * * *` (hourly), `singletonKey` guards against duplicate execution across replicas | `SELECT public.run_maintenance(p_analyze := false)` — advances/prunes `events` partitions. Failure is logged at `ERROR` and swallowed (not rethrown) |
-| `event-rollup` | Cron `* * * * *` (every minute — pg-boss cron has no finer granularity), `singletonKey` so a run that overruns its minute is not doubled up | `runRollupCycle()` in `features/ingest/services/event-rollup.service.ts`: rebuilds `event_rollup_minutes` for every project whose watermark is behind, then prunes rows past retention. Catch-up is capped at **one day per run**, so the first run after migration 0008 — which starts at the oldest event — cannot aggregate the whole table in one job. Rebuild is delete-then-insert per window, not upsert, so a minute whose events have aged out loses its row instead of keeping a stale count. Failure is logged at `ERROR` and swallowed; the effect is increasingly stale dashboards, not a failed request |
-| `alert-evaluation` | Cron `* * * * *` (every minute), `singletonKey` | Calls `evaluateAllEnabled(boss)` — evaluates every enabled alert rule, updates state, enqueues `alert-delivery` jobs for state transitions |
+| `alert-evaluation` | Cron `* * * * *` (every minute — pg-boss cron has no finer granularity), `singletonKey` | Calls `evaluateAllEnabled(boss)` — evaluates every enabled alert rule, updates state, enqueues `alert-delivery` jobs for state transitions |
 | `alert-delivery` | On-demand (`boss.work`, no cron — enqueued by the evaluator) | Delivers one webhook notification, `retryLimit: 3, retryDelay: 30, retryBackoff: true` |
+
+**Two were deleted on 2026-08-26** (Phase 4 of `docs/features/09-clickhouse.md`), and both existed only to maintain Postgres tables that no longer do:
+
+- `partman-maintenance` (hourly) ran `public.run_maintenance()` to advance and prune `events` partitions. ClickHouse creates partitions on insert.
+- `event-rollup` (every minute) rebuilt `event_rollup_minutes` from `events` and pruned it. A ClickHouse projection is maintained by the engine inside the table.
+
+Both swallowed their failures and logged at `ERROR`, because a stale dashboard is better than a failed request — the kind of trade a summary table forces and an in-engine aggregate does not. That is the whole of §1.2's argument, visible in one table row.
 
 **Every registrar calls `boss.createQueue(name)` before `schedule()`/`work()`.** pg-boss 12 dropped implicit queue creation; without it both calls violate the foreign key from `pgboss.schedule` to `pgboss.queue` and the worker crashes on startup. `createQueue` is `INSERT … ON CONFLICT DO NOTHING`, so it runs unconditionally on every start.
 
@@ -301,11 +408,13 @@ Because `singletonKey` alone isn't bulletproof under a rolling deploy, the `work
 
 ## Query performance / observability
 
-`core/db/middleware/slow-query-logger.ts` wraps the raw `postgres.js` client in a `Proxy` that times every query and logs (`logger.warn({ sql, duration_ms, params_count }, "slow query")`) any query taking **≥ 500ms**. The timing branch attaches a **rejection handler as well as a fulfilment one** — see the note below. Wired in once, in `core/db/client.ts`, ahead of the Drizzle instance — every query issued through `db`, anywhere in the app, is covered. The Postgres client itself is a `global`-cached singleton outside production to avoid connection-pool exhaustion across Next.js hot-reloads (`postgres(url, { max: 10, idle_timeout: 20, connect_timeout: 10 })`). That "outside production" test reads `NODE_ENV`, which is one reason the Docker image bakes `NODE_ENV=production` in rather than leaving it to the env file — the `worker` and `migrate` containers are plain `node` and have no framework to default it.
+`core/db/middleware/slow-query-logger.ts` wraps the raw `postgres.js` client in a `Proxy` that times every query and logs (`logger.warn({ sql, duration_ms, params_count }, "slow query")`) any query taking **≥ 500ms**. The timing branch attaches a **rejection handler as well as a fulfilment one** — see the note below. Wired in once, in `core/db/client.ts`, ahead of the Drizzle instance — every query issued through `db`, anywhere in the app, is covered. The Postgres client itself is a `global`-cached singleton outside production to avoid connection-pool exhaustion across Next.js hot-reloads (`postgres(url, { max: 10, idle_timeout: 20, connect_timeout: 10 })`). That "outside production" test reads `NODE_ENV`, which is one reason the Docker image bakes `NODE_ENV=production` in rather than leaving it to the env file — the `worker` and `bootstrap` containers are plain `node` and have no framework to default it.
 
 > **Fixed 2026-08-13: every failed query raised an unhandled rejection.** The timing branch was `void Promise.resolve(result).then(onFulfilled)` with no second argument, which forks a promise nobody owns. A caller's own `try/catch` could not suppress it — it is a separate chain — so any query error was reported twice: once to the caller, once as an `unhandledRejection`. Next traps the event and logs it, so in the app it looked like noise; a bare Node process (the worker) would terminate on it. Found when the containerised app logged `⨯ unhandledRejection: relation "__drizzle_migrations" does not exist` on every readiness probe. Covered by `slow-query-logger.test.ts`, which asserts no `unhandledRejection` fires and that the caller still sees the rejection.
 
-The migration runner (`core/db/migrate.ts`) deliberately opens its **own** `postgres(url, { max: 1 })` connection rather than reusing this singleton: migrations run one at a time and the process exits immediately afterwards, so a pool of ten would just leave nine idle connections to time out.
+The bootstrap (`core/db/bootstrap.ts`) deliberately opens its **own** `postgres(url, { max: 1 })` connection rather than reusing this singleton: it applies one file and the process exits immediately afterwards, so a pool of ten would just leave nine idle connections to time out.
+
+`core/clickhouse/client.ts` is the same pattern for the other store — a `global`-cached `@clickhouse/client` outside production, for the same hot-reload reason. It is the *whole* abstraction: there is no Drizzle dialect for ClickHouse, so everything past it is raw SQL and parameter binding becomes a rule rather than a library guarantee. See [security.md](security.md).
 
 ## Read caching
 
@@ -313,7 +422,9 @@ The migration runner (`core/db/migrate.ts`) deliberately opens its **own** `post
 
 Merging the two exposed a **latent key collision**: they namespaced keys `overview.*` and `dashboard.*`, and that prefix was the only thing separating two genuinely different questions — the dashboard asks `topMessages` for every level with limit 10, the overview asks it for `error, fatal` with limit 5, and neither `levels` nor `limit` was in the key. A one-project organization and that project's dashboard would have collided the moment the prefixes merged. The fix is two named wrappers with every distinguishing option in the key, not a prefix that encodes which page asked.
 
-**Why a cache rather than a faster query.** Measured on staging at 1.3M events, one overview load costs ~2 s of database CPU. That is fine for one reader and does not survive a hundred: 100 readers on a 30-second refresh means 200 loads a minute, ~6.8 cores, for *one answer computed two hundred times*. Reducing the two message-keyed queries to zero would leave ~0.29 cores — real headroom, but still 200 identical computations a minute, and at 1,000 readers the same residue is ~2.9 cores. The rollup (§16.1 Stage D) made those numbers **identical across readers**, which is the precondition that makes them shareable at all.
+**Why a cache rather than a faster query.** Measured on staging at 1.3M events, one overview load costs ~2 s of database CPU. That is fine for one reader and does not survive a hundred: 100 readers on a 30-second refresh means 200 loads a minute, ~6.8 cores, for *one answer computed two hundred times*. Reducing the two message-keyed queries to zero would leave ~0.29 cores — real headroom, but still 200 identical computations a minute, and at 1,000 readers the same residue is ~2.9 cores.
+
+**A faster store does not change that argument, which is why the cache stayed through Phase 4.** Its subject was never the cost of one query but the number of times one identical answer is computed, and ClickHouse computes it just as many times. What the rollup used to supply — every reader seeing the *same* numbers — is now the cache's own property rather than the storage's.
 
 **Keyed on the preset, never on a resolved range.** `resolveRange()` returns `to = new Date()`. A resolved range in the key is unique to the millisecond, so the hit rate would be exactly zero — a cache that appears to work and does nothing. The route resolves the range and passes it alongside the preset; the range is captured in the compute closure and used only if the query actually runs, so a background refresh uses a range resolved microseconds earlier rather than a stale one.
 
@@ -323,8 +434,8 @@ The key also carries the project scope, which makes it an authorization boundary
 
 **One call per answer, not per section.** `getProjectSummaries` was split into `getProjectStats` and `getProjectTopMessages` on 2026-08-20, with a cache entry each. They were one function returning one map behind one promise, which meant the ~30 ms rollup-backed half could not be served until the ~954 ms message aggregation was also ready — so the KPI row, whose numbers are entirely rollup-backed, waited on a message it does not display. The top message now streams into a per-row `Suspense` boundary inside the projects table.
 
-This is a latency change, not a cost one: measured after the split, a page load still issues 10 statements and `rollupBoundary` still runs 3 times. Nothing got faster; the cheap things stopped waiting.
+This is a latency change, not a cost one: measured after the split, a page load still issued 10 statements and `rollupBoundary` still ran 3 times. Nothing got faster; the cheap things stopped waiting. (It is **seven** statements since 2026-08-26 — the three `rollupBoundary` calls went with the rollup.)
 
 The boundary lives on the server even though the projects table is a client component (its Cards/Table toggle is `useState`). A Server Component cannot render *inside* a client one, but it can be passed *into* one as a prop — the documented slot pattern — which is how `OverviewProjectsPanel` hands each row a ready `ReactNode`.
 
-**What it does not do.** It bounds how often an expensive query runs, not what it costs. The two message-keyed aggregations that the rollup cannot serve still account for ~96% of the page's database time when they do run, and they grow with the data. Deliberately in-process, not shared between instances: at one deployable and ~100 readers, a per-instance cache costs one recomputation per instance per TTL. See `PLAN.md` §17 for why an external store stayed out.
+**What it does not do.** It bounds how often an expensive query runs, not what it costs. The two message-keyed aggregations accounted for ~96% of the page's database time under Postgres when they did run, and they grew with the data; both group by a `UInt64` fingerprint over one scan now, and **what that costs has not been measured** — `event-aggregations.service.bench.ts` is the rig and Phase 5 is what needs the number. Deliberately in-process, not shared between instances: at one deployable and ~100 readers, a per-instance cache costs one recomputation per instance per TTL. See `PLAN.md` §17 for why an external store stayed out.

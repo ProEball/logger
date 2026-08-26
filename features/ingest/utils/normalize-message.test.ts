@@ -2,8 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
     normalizeMessage,
     templateHash,
-    templateHashForStorage,
-    toSignedBigint,
+    fingerprintMessage,
     NORMALIZER_RULES,
     NORMALIZER_VERSION,
 } from "./normalize-message";
@@ -153,16 +152,16 @@ describe("normalizeMessage", () => {
 });
 
 /**
- * Frozen because the value is **persisted**: every row of the template rollup
- * is keyed by it. Recomputing the expectation at runtime would compare the
- * function with a copy of itself and could never fail.
+ * Frozen because the value is **persisted**: every event row is keyed by it and
+ * every "top messages" answer groups on it. Recomputing the expectation at
+ * runtime would compare the function with a copy of itself and could never
+ * fail.
  *
  * If this test fails, the fingerprint changed. That is not a number to update —
  * it means every stored key just became wrong, and the correct response is a
  * `NORMALIZER_VERSION` bump so the two generations cannot be summed.
  */
 const FROZEN_UNSIGNED = "12497911170121219274";
-const FROZEN_STORED = "-5948832903588332342";
 
 describe("templateHash", () => {
     it("gives two messages of the same shape one key", () => {
@@ -184,32 +183,35 @@ describe("templateHash", () => {
     });
 });
 
-describe("templateHashForStorage", () => {
-    it("matches its own frozen value", () => {
-        expect(templateHashForStorage("User u_487 signed in").toString()).toBe(FROZEN_STORED);
+describe("fingerprintMessage", () => {
+    it("returns the template beside the hash of that template", () => {
+        const fingerprint = fingerprintMessage("User u_487 signed in");
+        expect(fingerprint.template).toBe("User *** signed in");
+        expect(fingerprint.hash.toString()).toBe(FROZEN_UNSIGNED);
     });
 
-    it("fits the range Postgres bigint provides", () => {
-        const MIN = BigInt("-9223372036854775808");
-        const MAX = BigInt("9223372036854775807");
-        for (const m of ["", "a", "User u_487 signed in", "щ".repeat(200)]) {
-            const v = templateHashForStorage(m);
-            expect(v >= MIN && v <= MAX).toBe(true);
+    it("agrees with templateHash on every input, which is what lets ingest call it once", () => {
+        // The hazard this guards is specific: `templateHash` normalises
+        // internally and `fingerprintMessage` normalises once and hashes the
+        // result. If those ever diverge, the label on a group and the key it is
+        // grouped by would describe different things.
+        for (const m of ["", "a", "User u_487 signed in", "щ".repeat(300), "Retry 1 of 3"]) {
+            expect(fingerprintMessage(m).hash).toBe(templateHash(m));
+            expect(fingerprintMessage(m).template).toBe(normalizeMessage(m));
         }
     });
 
-    it("keeps distinct templates distinct through the fold", () => {
-        expect(templateHashForStorage("alpha u_1 done").toString()).not.toBe(
-            templateHashForStorage("beta u_1 done").toString(),
-        );
+    it("stays inside the unsigned 64-bit range the column holds", () => {
+        const MAX = BigInt("18446744073709551615");
+        for (const m of ["", "a", "User u_487 signed in", "щ".repeat(200)]) {
+            const v = fingerprintMessage(m).hash;
+            expect(v >= BigInt(0) && v <= MAX).toBe(true);
+        }
     });
 
-    it("folds the top half of the range into negatives, and only once", () => {
-        // The fold is a bijection, not an involution: applying it twice must
-        // leave an already-folded value alone rather than send it back.
-        const unsigned = templateHash("User u_487 signed in");
-        const once = toSignedBigint(unsigned);
-        expect(toSignedBigint(once)).toBe(once);
-        expect(once).not.toBe(unsigned);
+    it("keeps distinct templates distinct", () => {
+        expect(fingerprintMessage("alpha u_1 done").hash).not.toBe(
+            fingerprintMessage("beta u_1 done").hash,
+        );
     });
 });

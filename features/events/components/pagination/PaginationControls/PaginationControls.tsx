@@ -3,7 +3,7 @@
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import { Button } from "@/shared/components/Button/Button";
 import { t } from "@/core/i18n/t";
-import type { Event } from "@/core/db/schema";
+import type { Event } from "@/shared/types/event.types";
 import type { Cursor } from "@/features/events/utils/event-filters.types";
 import { serializeCursor } from "@/features/events/utils/parse-cursor";
 import styles from "./PaginationControls.module.scss";

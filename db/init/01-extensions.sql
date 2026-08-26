@@ -1,4 +1,11 @@
-CREATE EXTENSION IF NOT EXISTS pg_partman;
+-- pg_partman was here until Phase 4 of docs/features/09-clickhouse.md. It
+-- existed for one table — the daily-partitioned `events` — which now lives in
+-- ClickHouse, partitioned monthly by the engine. Removing it also removed the
+-- custom `db/Dockerfile` this directory existed to build: both compose files
+-- run stock `postgres:16` again.
+--
+-- An existing install keeps the extension objects; they are inert and can be
+-- dropped by hand along with the `events` table.
 
 -- Query-level statistics. Requires `shared_preload_libraries=pg_stat_statements`,
 -- which both compose files pass on the postgres command line.

@@ -112,7 +112,7 @@ describe("postgres tuning configuration", () => {
      * Postgres values and stay that way, because the file cannot know the host
      * it will run on. This holds the file to that claim.
      *
-     * Values are for the `postgres:16` image the db/Dockerfile builds from. If
+     * Values are for the `postgres:16` image both compose files run. If
      * that base image is upgraded and a default changes with it, this test
      * fails — which is the intent: the comment would have become false.
      */

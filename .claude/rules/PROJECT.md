@@ -41,7 +41,9 @@ A feature contains **only the subfolders it needs**, drawn from:
 | `jobs/` | pg-boss job definitions | `alerts`, `ingest` |
 | `content/` | static authored content | `help` |
 
-- **[MUST]** A feature never imports from another feature. If two need it, it moves to `shared/`.
+- **[MUST]** A feature never imports from another feature. If two need it, it moves to `shared/` — or to `core/` when the thing shared is infrastructure rather than a helper. `core/clickhouse/filter-compiler.ts` (2026-08-26) is the worked example: `features/events` and `features/alerts` both compile an `EventFilters` into a ClickHouse `WHERE` clause, and it sits beside the client it emits SQL for. The test is "would putting this in a feature create a cross-feature import", **not** "might this be reusable one day".
+
+  Phase 4 added two more by the same test and neither by anticipation: `core/clickhouse/params.ts` (the parameter bag, split out when `shared/services/event-aggregations.service.ts` became a second thing building ClickHouse SQL by hand) and `core/clickhouse/from-event-row.ts` (moved out of `features/events/utils/` when `recentErrors` in `shared/` became its second caller — `shared/` reaching into a feature is worse than one feature reaching into another). **What lands in `core/` is what the second caller makes cross-cutting.**
 - **[MUST]** Use the `@/` alias for all cross-folder imports: `@/core/…`, `@/shared/…`, `@/features/…`.
 
 ### 2.2 Component folders
@@ -142,6 +144,19 @@ components/
 
   *Updated 2026-08-21:* `npm run test` now runs **63 files / 726 tests** and `npm run test:it` **4 files / 112 tests**. `features/dashboard/services/aggregations.service.ts` — flagged here as uncovered since 2026-08-20 — is covered by 26 integration tests, which is what finally allowed the two text-alias `ORDER BY` defects in it to be fixed.
 
+  *Updated 2026-08-26:* **76 files / 945 tests** and **6 files / 254 integration tests**, after ClickHouse Phases 2 and 3. Still zero `.test.tsx`.
+
+  *Updated 2026-08-26, after Phase 4:* **73 files / 912 tests** and **3 files /
+  156 integration tests** — **down on both**, which is what a phase that deletes
+  a subsystem looks like. Three integration files went with the Postgres rollup
+  and 513 lines came out of a fourth, all of it asserting which branch a read
+  took between a summary table and a raw tail. Nothing was weakened: the
+  remaining assertions are the same corpus and the same expected numbers, which
+  is exactly what let them catch a query that returned nothing (see below).
+  Still zero `.test.tsx`.
+
+  **A second file was found testing a copy of its subject.** `features/alerts/services/alert-evaluator.service.test.ts` imported *nothing* — it declared its own `determineNewState` and `shouldNotify` beside the real ones and asserted on the copies, so the evaluator's threshold, its optimistic-concurrency guard and its notification rules had no coverage whatever. Rewritten 2026-08-26 against the real `evaluateOne`. Note what the naming rule does **not** catch: this file was named correctly and sat in the right folder. Only reading it, or noticing that changing the evaluator broke no test, reveals it. The Stop hook's second check (a changed `X.test.ts` must import `X`) fires only when the *test* changes, so a test that never imported anything and is never touched stays invisible.
+
 ## 12. Styling
 
 - **[MUST]** SCSS Modules. Global styles only in `app/globals.scss`. Design tokens over literal values.
@@ -172,6 +187,30 @@ components/
 - `camelCase` — variables, functions, hooks, methods. `PascalCase` — components, types, interfaces, classes. `UPPER_SNAKE_CASE` — constants.
 - **[MUST]** Booleans start with `is`, `has`, `should`, or `can`.
 - Files: components `PascalCase/PascalCase.tsx` · hooks `use-kebab-case.ts` · utils `camelCase.ts` · services `camelCase.service.ts` · types `camelCase.types.ts` · jobs `kebab-case.job.ts` · actions `kebab-case.action.ts` · tests `<source>.test.ts` **in the source's own folder** (§11) · integration tests `<source>.itest.ts`, same folder · e2e `kebab-case.spec.ts` in `e2e/`.
+
+### The third lying test, and what only an integration test can see
+
+Two files in this repository have been found testing a copy of their subject
+(`aggregations.service.test.ts`, `alert-evaluator.service.test.ts`). Phase 4
+found a different failure with the same effect — a green suite over a wrong
+answer — and it is worth naming because the shape recurs:
+
+```sql
+SELECT toString(project_id) AS project_id …
+WHERE project_id IN {p:Array(UUID)}
+```
+
+ClickHouse resolves a select-list alias inside `WHERE`, so this compares a
+`String` against an array of `UUID` and returns **no rows without raising**.
+Every bucket and every per-project count on both dashboards was empty. The SQL
+is valid, the types check, and a unit test asserting on the query *text* would
+have passed.
+
+The integration suite caught it in the first run after the rewrite, and nothing
+else could have: it is the only place a query executes against a server holding
+known rows with a literal expected number beside it. That is the whole argument
+for §11's `.itest.ts` rule, and since Phase 4 **every read of an event is raw
+SQL**, so the rule now reaches the entire events path.
 
 ## 16. Anti-Patterns
 

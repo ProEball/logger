@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import { randomUUID } from "crypto";
 import { withDb } from "@/e2e/support/db";
 import { resetDb } from "@/e2e/support/cleanup";
@@ -6,11 +6,47 @@ import { bootstrapOrg, login } from "@/e2e/support/auth";
 import { generateApiKey, extractKeyPrefix, hashApiKey } from "@/e2e/support/api-keys";
 import { BASE_URL } from "@/e2e/support/env";
 
+/**
+ * The project dashboard, **through the page**.
+ *
+ * ## Why this file was rewritten in Phase 4
+ *
+ * Six of its eight tests used to query the database directly — `SELECT level,
+ * COUNT(*) FROM events GROUP BY level` and five more of the same shape — and
+ * assert on the rows. They ran no aggregation the application owns and rendered
+ * nothing; the two that did open a browser checked that an `<h2>` existed and
+ * that the empty state contained the word "curl".
+ *
+ * That made "dashboards e2e green" — the stated gate for moving the
+ * aggregations to ClickHouse — a gate a completely broken dashboard would have
+ * passed. Phase 3 hit the same thing in `events.spec.ts` and said so; §12.3
+ * flagged that Phase 4's gate was phrased identically. This is that flag being
+ * acted on rather than repeated.
+ *
+ * Every assertion below reads a number the page computed. A widget that returns
+ * nothing, ranks wrongly, or loses a level fails here.
+ */
+
 const ORG_SLUG = "dash-corp";
 const EMAIL = "alice@dash.test";
 const PASS = "AlicePass99!";
 const PROJECT_SLUG = "dash-project";
 const EMPTY_PROJECT_SLUG = "dash-empty-project";
+
+/**
+ * The corpus, chosen so the widgets have something to be wrong about.
+ *
+ * - 20 identical info messages: one template, the largest group.
+ * - 5 errors whose order ids differ. `order o_1000 failed` normalises to
+ *   `order *** failed`, so they are one group of five rather than five of one.
+ *   That collapse is what `topMessages` groups by since Phase 4, and this is
+ *   the only end-to-end check that the template reaches the page.
+ * - 5 warns, in their own environment, so the level breakdown has three bars
+ *   and the environment filter has something to narrow to.
+ */
+const HEARTBEAT = "dashboard heartbeat";
+const ORDER_TEMPLATE = "order *** failed";
+const TOTAL_EVENTS = 30;
 
 interface ProjectCtx {
     projectId: string;
@@ -33,23 +69,42 @@ async function seedProject(orgId: string, name: string, slug: string): Promise<P
     return { projectId, apiKey };
 }
 
-async function seedEvents(apiKey: string, count: number, overrides: Record<string, unknown> = {}): Promise<void> {
-    const batch = Array.from({ length: count }, (_, i) => ({
-        level: "info",
-        message: `dashboard test event ${i}`,
-        ...overrides,
-    }));
+/** Through the real ingest endpoint, so the rows are the ones ingest writes. */
+async function ingest(apiKey: string, events: Array<Record<string, unknown>>): Promise<void> {
     const res = await fetch(`${BASE_URL}/api/ingest/batch`, {
         method: "POST",
         headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-        body: JSON.stringify(batch),
+        body: JSON.stringify(events),
     });
     if (!res.ok) throw new Error(`Ingest failed: ${res.status}`);
 }
 
 let orgId: string;
 let project: ProjectCtx;
-let emptyProject: ProjectCtx;
+
+/**
+ * Open the dashboard and wait for the KPI row.
+ *
+ * `env` is the search param the filter bar emits — a single value, not a list;
+ * see `parseDashboardFilters`.
+ */
+async function openDashboard(page: Page, params = "range=1h"): Promise<void> {
+    await login(page, EMAIL, PASS, ORG_SLUG);
+    await page.goto(`/${ORG_SLUG}/${PROJECT_SLUG}?${params}`);
+    await expect(page.getByRole("group", { name: "Total events" })).toBeVisible({
+        timeout: 15_000,
+    });
+}
+
+/** One KPI card, addressed by the label it renders. */
+function kpi(page: Page, label: string) {
+    return page.getByRole("group", { name: label });
+}
+
+/** One widget panel, addressed by its title. */
+function widget(page: Page, title: string) {
+    return page.getByRole("region", { name: title });
+}
 
 test.describe.serial("Dashboard", () => {
     test.beforeAll(async ({ browser }) => {
@@ -70,116 +125,122 @@ test.describe.serial("Dashboard", () => {
         orgId = rows[0].id;
 
         project = await seedProject(orgId, "Dash Project", PROJECT_SLUG);
-        emptyProject = await seedProject(orgId, "Empty Dash Project", EMPTY_PROJECT_SLUG);
+        // Created for its slug alone: the onboarding test navigates to it and
+        // asserts on what the page renders, not on anything about the row.
+        await seedProject(orgId, "Empty Dash Project", EMPTY_PROJECT_SLUG);
 
-        // Seed mixed events: 20 info + 5 error with stack traces + 5 warn
-        await seedEvents(project.apiKey, 20, {});
-        await seedEvents(project.apiKey, 5, {
-            level: "error",
-            error_type: "TypeError",
-            stack_trace: "TypeError: oops\n    at fn (app.js:10:5)",
-            environment: "production",
-        });
-        await seedEvents(project.apiKey, 5, {
-            level: "warn",
-            environment: "staging",
-        });
+        await ingest(project.apiKey, [
+            ...Array.from({ length: 20 }, () => ({
+                level: "info",
+                message: HEARTBEAT,
+                source: "api",
+            })),
+            ...Array.from({ length: 5 }, (_, i) => ({
+                level: "error",
+                message: `order o_100${i} failed`,
+                error_type: "TypeError",
+                stack_trace: "TypeError: oops\n    at fn (app.js:10:5)",
+                environment: "production",
+                source: "worker",
+            })),
+            ...Array.from({ length: 5 }, () => ({
+                level: "warn",
+                message: "disk usage high",
+                environment: "staging",
+                source: "cron",
+            })),
+        ]);
     });
 
-    // ── DB-level aggregation assertions ──────────────────────────────────────
+    test("the KPI row shows the totals the aggregations computed", async ({ page }) => {
+        // 30 events, 5 of them error or fatal, 0 fatal. The three numbers come
+        // from two different queries — the bucket series and the level
+        // breakdown — so a widget that silently returned nothing shows here as
+        // a zero rather than as a blank card.
+        await openDashboard(page);
 
-    test("Level breakdown — 3 distinct levels ingested", async () => {
-        const { rows } = await withDb((c) =>
-            c.query<{ level: string; cnt: string }>(
-                `SELECT level, COUNT(*)::text AS cnt
-                 FROM events WHERE project_id = $1
-                 GROUP BY level ORDER BY cnt DESC`,
-                [project.projectId],
-            ),
-        );
-        const levels = rows.map((r) => r.level);
-        expect(levels).toContain("info");
-        expect(levels).toContain("error");
-        expect(levels).toContain("warn");
+        await expect(kpi(page, "Total events")).toContainText(String(TOTAL_EVENTS));
+        await expect(kpi(page, "Errors")).toContainText("5");
+        await expect(kpi(page, "Fatal")).toContainText("0");
     });
 
-    test("Environment breakdown — 2 distinct environments + nulls", async () => {
-        const { rows } = await withDb((c) =>
-            c.query<{ env: string }>(
-                `SELECT COALESCE(environment, '(unset)') AS env
-                 FROM events WHERE project_id = $1
-                 GROUP BY 1`,
-                [project.projectId],
-            ),
-        );
-        const envs = rows.map((r) => r.env);
-        expect(envs).toContain("production");
-        expect(envs).toContain("staging");
-        expect(envs).toContain("(unset)");
+    test("the level breakdown shows every level that was ingested", async ({ page }) => {
+        await openDashboard(page);
+        const panel = widget(page, "By level");
+
+        await expect(panel).toContainText("info");
+        await expect(panel).toContainText("error");
+        await expect(panel).toContainText("warn");
+        // Its subtitle is the sum, so a breakdown that dropped a level would
+        // disagree with the KPI card above rather than merely look short.
+        await expect(panel).toContainText(`${TOTAL_EVENTS} events`);
     });
 
-    test("Top messages — at least one grouped message row", async () => {
-        const { rows } = await withDb((c) =>
-            c.query<{ cnt: string }>(
-                `SELECT COUNT(*)::text AS cnt FROM (
-                    SELECT SUBSTRING(message, 1, 200)
-                    FROM events WHERE project_id = $1
-                    GROUP BY 1
-                 ) sub`,
-                [project.projectId],
-            ),
-        );
-        expect(Number(rows[0].cnt)).toBeGreaterThan(0);
+    test("top messages groups the five orders into one template row", async ({ page }) => {
+        // The Phase 4 behaviour change, end to end. The five events differ —
+        // `order o_1000 failed` … `order o_1004 failed` — and must appear as a
+        // single row labelled with the template. Under the Postgres raw path
+        // they were five rows of one; under the rollup path one row of five;
+        // which you got depended on coverage and nothing tested it.
+        await openDashboard(page);
+        const panel = widget(page, "Top messages");
+
+        await expect(panel).toContainText(ORDER_TEMPLATE, { timeout: 15_000 });
+        await expect(panel).toContainText(HEARTBEAT);
+
+        // 20 beats 5, so the heartbeat ranks first. Ordering is what three
+        // shipped `ORDER BY` defects in this codebase got wrong.
+        const rows = panel.getByRole("button");
+        await expect(rows.first()).toContainText(HEARTBEAT);
+        await expect(rows.first()).toContainText("20");
     });
 
-    test("Recent errors — 5 error/fatal events seeded", async () => {
-        const { rows } = await withDb((c) =>
-            c.query<{ cnt: string }>(
-                `SELECT COUNT(*)::text AS cnt
-                 FROM events WHERE project_id = $1 AND level IN ('error', 'fatal')`,
-                [project.projectId],
-            ),
-        );
-        expect(Number(rows[0].cnt)).toBe(5);
+    test("top sources ranks the three sources", async ({ page }) => {
+        await openDashboard(page);
+        const panel = widget(page, "Top Sources");
+
+        await expect(panel).toContainText("api");
+        await expect(panel).toContainText("worker");
+        await expect(panel).toContainText("cron");
     });
 
-    test("Time-series buckets — 30 events in last 1h window", async () => {
-        const { rows } = await withDb((c) =>
-            c.query<{ cnt: string }>(
-                `SELECT COUNT(*)::text AS cnt
-                 FROM events
-                 WHERE project_id = $1
-                   AND timestamp >= now() - interval '1 hour'`,
-                [project.projectId],
-            ),
-        );
-        expect(Number(rows[0].cnt)).toBe(30);
+    test("recent errors lists whole events, not templates", async ({ page }) => {
+        // The only widget that returns whole events rather than an aggregate,
+        // so it is the only one exercising the reverse row mapper on this page.
+        await openDashboard(page);
+        const panel = widget(page, "Recent errors");
+
+        // The **raw** message, not the template — which is the difference
+        // between this widget and Top messages above, and the reason both are
+        // asserted. A row here that read "order *** failed" would mean an
+        // individual event had been replaced by its group.
+        await expect(panel).toContainText("order o_100");
+        await expect(panel).not.toContainText(ORDER_TEMPLATE);
+        // Source and environment come off the same row, so a mapper that
+        // dropped a field shows here rather than in a count.
+        await expect(panel).toContainText("worker");
+        await expect(panel).toContainText("production");
     });
 
-    test("Empty project — has_any_events returns false", async () => {
-        const { rows } = await withDb((c) =>
-            c.query<{ has_events: boolean }>(
-                `SELECT EXISTS (SELECT 1 FROM events WHERE project_id = $1 LIMIT 1) AS has_events`,
-                [emptyProject.projectId],
-            ),
-        );
-        expect(rows[0].has_events).toBe(false);
-    });
-
-    // ── Browser-rendered assertions ────────────────────────────────────────
-
-    test("GET /[org]/[project] → dashboard renders", async ({ page }) => {
-        await login(page, EMAIL, PASS, ORG_SLUG);
-        await page.goto(`/${ORG_SLUG}/${PROJECT_SLUG}?range=1h`);
-        // Wait for at least one widget card title to appear
-        await page.waitForSelector("h2", { timeout: 10_000 });
-    });
-
-    test("GET /[org]/[project] (empty project) → shows onboarding CTA", async ({ page }) => {
+    test("an empty project shows the onboarding CTA instead of widgets", async ({ page }) => {
+        // `hasAnyEvents` gates this, and it is the one read with no time bound.
         await login(page, EMAIL, PASS, ORG_SLUG);
         await page.goto(`/${ORG_SLUG}/${EMPTY_PROJECT_SLUG}`);
-        // The empty state page contains the curl example
+
         const text = await page.textContent("body");
         expect(text).toContain("curl");
+        await expect(page.getByRole("group", { name: "Total events" })).toHaveCount(0);
+    });
+
+    test("selecting an environment narrows every widget at once", async ({ page }) => {
+        // production carries the 5 errors and nothing else, so the total and
+        // the error count must agree at 5. Nothing else in this suite would
+        // notice if the environment clause stopped narrowing — or, as it did
+        // under Postgres for the `(unset)` pill, started matching nothing.
+        await openDashboard(page, "range=1h&env=production");
+
+        await expect(kpi(page, "Total events")).toContainText("5");
+        await expect(kpi(page, "Errors")).toContainText("5");
+        await expect(widget(page, "By level")).toContainText("5 events");
     });
 });

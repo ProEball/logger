@@ -23,6 +23,9 @@ jobs:
       # schema. No database is contacted; these only have to satisfy the schema.
       DATABASE_URL: postgresql://ci:ci@localhost:5432/ci
       AUTH_SECRET: ci-placeholder-secret-at-least-32-characters
+      # The one CLICKHOUSE_* variable with no default. Nothing here connects to
+      # ClickHouse; the value only has to satisfy the schema.
+      CLICKHOUSE_PASSWORD: ci-placeholder
 
     steps:
       - uses: actions/checkout@v4
@@ -49,11 +52,23 @@ jobs:
         if: always()
         run: npm run test
 
-      # Also exercises scripts/build-worker.mjs, so a broken worker or migrate
+      # Also exercises scripts/build-worker.mjs, so a broken worker or bootstrap
       # bundle fails here rather than at deploy time.
       - name: Build
         if: always()
         run: npm run build
+
+      # db/schema.sql is generated from core/db/schema/*.ts and committed. With
+      # no migration chain, nothing else forces the two to agree: a Drizzle
+      # table added without re-running the generator would type-check, lint,
+      # test and build clean, and then simply not exist in any database created
+      # afterwards. This is the mechanical guard that replaces "did you generate
+      # a migration?" — regenerate, and fail if the working tree moved.
+      - name: Schema is up to date with the Drizzle definitions
+        if: always()
+        run: |
+          npm run db:schema
+          git diff --exit-code -- db/schema.sql
 
   # Building the image is a separate job: it needs no npm cache and is the
   # slowest gate, so it runs alongside the others rather than after them.

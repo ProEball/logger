@@ -20,3 +20,22 @@ export const ITEST_ADMIN_URL =
 export const ITEST_DATABASE_URL =
     process.env.ITEST_DATABASE_URL ??
     `postgresql://postgres:postgres@localhost:5432/${ITEST_DB_NAME}`;
+
+/**
+ * ClickHouse for the integration suite.
+ *
+ * A separate **database** on the dev container rather than a separate
+ * container: ClickHouse databases are cheap and fully isolated for DDL and
+ * data, and `docker-compose.dev.yml` already publishes 8123. `logger_itest`
+ * keeps the suite's writes out of `logger`, which is the database a developer
+ * is looking at.
+ *
+ * `test:it` needing ClickHouse up as well as Postgres is what
+ * docs/features/09-clickhouse.md §11 predicted: with no Drizzle dialect, the
+ * whole events path is raw SQL, and by PROJECT.md §11's own rule that makes it
+ * integration-tested.
+ */
+export const ITEST_CH_DATABASE = process.env.ITEST_CLICKHOUSE_DATABASE ?? "logger_itest";
+export const ITEST_CH_URL = process.env.ITEST_CLICKHOUSE_URL ?? "http://localhost:8123";
+export const ITEST_CH_USER = process.env.ITEST_CLICKHOUSE_USER ?? "logger";
+export const ITEST_CH_PASSWORD = process.env.ITEST_CLICKHOUSE_PASSWORD ?? "logger";

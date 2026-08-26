@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { randomUUID } from "crypto";
 import { withDb } from "@/e2e/support/db";
+import { deleteEventsForProjects, withEvents } from "@/e2e/support/events";
 import { generateApiKey, extractKeyPrefix, hashApiKey } from "@/e2e/support/api-keys";
 
 interface TestContext {
@@ -34,12 +35,10 @@ async function seedTestContext(): Promise<TestContext> {
     return { orgId, projectId, apiKey: plainKey };
 }
 
-async function cleanTestContext(orgId: string): Promise<void> {
+async function cleanTestContext(orgId: string, projectId: string): Promise<void> {
+    await deleteEventsForProjects([projectId]);
+
     await withDb(async (c) => {
-        await c.query(
-            `DELETE FROM events WHERE project_id IN (SELECT id FROM projects WHERE organization_id = $1)`,
-            [orgId],
-        );
         await c.query(
             `DELETE FROM api_keys WHERE project_id IN (SELECT id FROM projects WHERE organization_id = $1)`,
             [orgId],
@@ -57,7 +56,7 @@ test.describe("Ingest API", () => {
     });
 
     test.afterAll(async () => {
-        if (ctx) await cleanTestContext(ctx.orgId);
+        if (ctx) await cleanTestContext(ctx.orgId, ctx.projectId);
     });
 
     test("POST /api/ingest with valid key → 202 + id", async ({ request }) => {
@@ -72,7 +71,10 @@ test.describe("Ingest API", () => {
         const body = await response.json() as { id: string };
         expect(body.id).toMatch(/^[0-9a-f-]{36}$/);
 
-        const { rows } = await withDb((c) => c.query(`SELECT id, message FROM events WHERE id = $1`, [body.id]));
+        const rows = await withEvents<{ message: string }>(
+            "SELECT message FROM events WHERE id = {id:UUID}",
+            { id: body.id },
+        );
         expect(rows[0]?.message).toBe("e2e test event");
     });
 

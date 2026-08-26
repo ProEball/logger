@@ -21,7 +21,7 @@ const RULES = [
     [/\/core\/env\/index\.ts$/, "`.env.example`, `docs/reference/stack.md` (env table), and the feature doc that introduced the variable"],
     [/\/shared\/permissions\/registry\.ts$/, "`docs/PLAN.md` §5 and `docs/reference/users-roles.md`"],
     [/\/core\/db\/schema\//, "the schema tables in `docs/reference/architecture.md`"],
-    [/\/core\/db\/migrations\//, "`docs/reference/architecture.md` — and confirm the migration is idempotent"],
+    [/(db\/schema\.sql|db\/events\.sql|core\/clickhouse\/schema\.sql)$/, "`docs/reference/architecture.md` (schema tables, indexes, FK behaviour) — and confirm every statement is idempotent, since the bootstrap re-applies the whole file"],
     [/\/app\/api\/.*\/route\.ts$/, "`docs/reference/api.md` (routes, status codes, response bodies)"],
     [/\/(proxy|next\.config)\.ts$/, "`docs/reference/security.md` (headers / CSP). A CSP change also affects the Caddy notes in `docs/PLAN.md` §15.1"],
     [/\/features\/alerts\/(services|jobs)\//, "`docs/reference/logging.md` (alert evaluation / delivery), plus `docs/reference/security.md` if outbound requests changed"],

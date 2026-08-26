@@ -2,11 +2,199 @@
 
 > Single source of truth for "where are we right now". Update after every work session.
 
-**Last updated**: 2026-08-25 (the two dashboards unified: one service stack, one filter bar, one chart; `environment` in the rollup key)
+**Last updated**: 2026-08-26 (ClickHouse Phase 4 shipped — events are in ClickHouse and nowhere else)
 
 ---
 
 ## Current Phase
+
+**2026-08-26 — ClickHouse Phase 4: the dashboards moved, and Postgres stopped holding events.**
+
+Working through [`features/09-clickhouse.md`](features/09-clickhouse.md). Phase 2
+filled the table, Phase 3 read from it, Phase 4 finishes the move. What shipped:
+
+- **Both dashboards read ClickHouse**, and so does the alert webhook's sample
+  events — the last read still on Postgres, which had also been applying a
+  *narrower* filter than the count beside it since Phase 3.
+- **`event-aggregations.service.ts` went from 1,449 lines to ~660**, with every
+  public signature unchanged, so no caller and no component moved. What
+  disappeared was not the questions: a watermark, a coverage interval, a raw
+  tail unioned above it, four floor checks and two implementations each of
+  `topMessages` and `topSources` chosen at runtime. That is what §1.2 exists for,
+  and the count was conservative — it did not include the 513 lines of
+  integration test that existed only to check which branch a read took.
+- **Deleted**: the Postgres `events` table and `db/events.sql`, both rollups,
+  `rollup_state`, the environment and template registries, the rollup and
+  partman jobs, the template-hash backfill, the dual write, the `pg_partman`
+  extension and the custom `db/Dockerfile` that installed it. Both compose files
+  run stock `postgres:16` again, and the worker has two jobs instead of four.
+- **`topMessages` had two answers and now has one.** The rollup path grouped by
+  `template_hash`, the fallback by `SUBSTRING(message, 1, 200)` — different
+  questions, chosen by coverage, invisible on screen, untested. It groups by the
+  fingerprint always, which forced a decision §6.3 had not reached: the template
+  **text** is now a column on the event row, because the normaliser is
+  TypeScript and a template that is not on the row is a group no query can name.
+  Measured: 2.00 bytes/row at 13× compression, 4.4% of the table.
+- **The fingerprint stopped being folded.** Postgres' `bigint` is signed and an
+  FNV-1a hash is not; `UInt64` is the range it already lives in.
+
+**The Phase 4 gate proved nothing, exactly as Phase 3 predicted.** §12.3 flagged
+that "dashboards e2e green" was phrased like the gate that had just turned out to
+be worthless, and asked for it to be checked. **Six of `dashboard.spec.ts`'s
+eight tests queried the database directly** and rendered nothing; the two that
+opened a browser checked that an `<h2>` existed and that the empty state said
+"curl". Rewritten against the rendered page — KPI totals, the level breakdown's
+sum, the template collapse, the source ranking, the environment filter narrowing
+every widget at once. **A gate phrased as "suite X stays green" is only a gate if
+suite X exercises the thing being changed**, and that is now twice in a row.
+
+**One defect only the integration suite could see.**
+`SELECT toString(project_id) AS project_id … WHERE project_id IN {p:Array(UUID)}`
+returns **no rows and raises nothing** — ClickHouse resolves a select-list alias
+inside `WHERE`, so the comparison is `String` against `Array(UUID)`. Every bucket
+and every per-project count was empty. Valid SQL, wrong answer, invisible to a
+type checker and to a unit test. None of the three `toString` calls was needed:
+`JSONEachRow` renders a `UUID`, an `Enum8` and an `IPv6` as strings already.
+
+**The cost of having no migrations was collected.** An end-state schema file is
+applied additively and cannot remove a table. Six were deleted, and `events` —
+with its `ON DELETE RESTRICT` foreign key — then broke `resetDb()` in every e2e
+spec over rows nothing writes any more. The integration and e2e databases drop
+and recreate themselves now. **A developer with an existing dev database must
+recreate it**: `docker compose -f docker-compose.dev.yml down -v`, then
+`npm run db:bootstrap`. Nothing detects a stale one and nothing warns.
+
+**Verified**: `tsc` 0, lint 0, **73 files / 912 unit tests**, **3 files / 156
+integration tests**, **75 e2e specs**, build clean. Counts are *down* on both
+suites, which is the shape of this phase. The e2e run was checked to have
+actually exercised the ClickHouse aggregations — `system.query_log` shows every
+aggregation shape against `logger_test` and **zero** failed `SELECT`s across
+3,086 queries. Seven claims were mutation-checked; one **missed** on the first
+run (the owning-project tie-break had no coverage at all, because the shared
+corpus gives every message to exactly one project) and has a two-project fixture
+now.
+
+**Next: Phase 5** — the `p_minute` projection, the `events_by_template` MV and
+the `events_by_correlation` MV, each added only after its cost is measured.
+
+**Nothing on the read path has been measured for speed.** The benchmark harness
+was rewritten onto ClickHouse and is the "before" run Phase 5 needs. Two claims
+in particular are arguments rather than measurements today: that
+`environmentsInUse` can go back to a 30-day scan because `environment` is
+`LowCardinality` (it was a registry table precisely because that scan was 13.4%
+of the page under Postgres), and that grouping by `template_hash` over a raw
+scan is cheap.
+
+**Still unanswered and blocking Phase 5**: the projection measurement (§14.7).
+
+**Also outstanding**: `npm run test:it` in CI. Its stated blocker was
+`pg_partman`, which is gone — what it needs now is a
+`clickhouse/clickhouse-server:25.3` service in `ci.yml`.
+
+---
+
+## Previous phases
+
+**2026-08-26 — ClickHouse Phase 3: the events read path moved. The dashboards did not.**
+
+The events list, the drawer, the facet counts and the alert evaluator's match
+count moved to ClickHouse behind one filter compiler and a hand-written search
+parser, whose tokenizer had to be measured against the server because
+`hasToken` **raises** rather than returning false. Two filter behaviours changed
+on purpose, one of them fixing a silent Postgres bug: a filter on a numeric
+attribute had matched nothing at all. The `projects` join survived as a
+concurrent primary-key lookup, and `security.md` was corrected.
+
+Its gate — "events + alerts e2e green" — turned out to prove almost nothing, and
+it said so at the time, flagging that Phase 4's gate was phrased identically.
+`alert-evaluator.service.test.ts` was found importing nothing at all: it
+declared its own copies of the evaluator's decision functions and asserted on
+those. Second instance of that shape. Detail in §12.3.
+
+**2026-08-26 — ClickHouse Phase 2: ingest writes to ClickHouse, and to Postgres alongside it.**
+
+Every accepted event goes to both stores in one request, with `async_insert = 1`
+and `wait_for_async_insert = 1` so the 202 is not returned until the row is
+readable. `randomUUID()` became UUIDv7 (Phase 0 measured `id` at compression
+ratio 1.0 and a fifth of the table). `Idempotency-Key` on both ingest routes.
+Two normalisations forced by column types: a blank optional string is stored as
+absent, and an unparseable `X-Forwarded-For` as `::`, because the `IPv6` column
+fails the *whole* insert on bad input.
+
+Experiment 6 closed and corrected the plan rather than confirming it (§14.8): the
+risk §13 named — does the token survive `async_insert` — was a non-issue, while
+two things it did not name mattered. A plain `MergeTree` **accepts and silently
+ignores** `insert_deduplication_token` unless `non_replicated_deduplication_window`
+is set, and Phase 1 had shipped without it. And the token **wins over the block
+checksum**, which is what makes "derive it from the batch" unbuildable and forced
+the header.
+
+`npm run test:it` began needing ClickHouse up as well as Postgres, exactly as §11
+predicted. It earned that immediately: three things about the row shape were wrong
+and every one failed at the wire and nowhere else.
+
+**2026-08-26 — ClickHouse Phase 1: the events table exists, and nothing writes to it yet.**
+
+Working through [`features/09-clickhouse.md`](features/09-clickhouse.md). Phase 0
+(measurement) was already done; Phase 1 built everything around the table without
+touching a single read or write path. What shipped:
+
+- **The `events` table in ClickHouse**, with the sort key Phase 0 settled by
+  measurement, all seven skip indexes, `Enum8`/`IPv6`/`JSON` column types. No TTL
+  and no projection yet — both are later phases and both are gated on measuring
+  their cost first.
+- **A `clickhouse` service** in both compose files, memory knobs in
+  `db/clickhouse/config.d/logger.xml`, four `CLICKHOUSE_*` env variables,
+  `core/clickhouse/client.ts`, and a fatal ClickHouse check on
+  `/api/health/ready` in place of the `migrations` one. That check uses
+  `ping({ select: true })`: the default `/ping` endpoint does not verify
+  credentials, so a wrong password would have passed it while every query
+  failed. Found while writing its test.
+- **The migration system deleted** — see below. This was asked for directly and
+  is the larger of the two changes.
+
+**Nothing reads or writes ClickHouse.** *(True on the day; superseded by Phase 2
+above, where the write path landed.)* Postgres was still the only store the
+application used.
+
+**Two Phase 0 questions were still unanswered** — see §14.7 of the feature doc.
+Experiment 6 has since been answered (§14.8); the projection measurement has
+not, and blocks Phase 5.
+
+### The migration system is gone
+
+`core/db/migrations/0000`–`0015`, `migrate.ts`, `migration-status.ts`,
+`scripts/apply-migrations.mjs` and `scripts/migrate-e2e.mjs` were deleted. Each
+store now has **one file describing its end state**, applied from empty and
+idempotently by `core/db/bootstrap.ts` (the `bootstrap` container, and
+`npm run db:bootstrap` locally):
+
+| File | Store | Maintained by |
+|---|---|---|
+| `db/schema.sql` | Postgres | Generated — `npm run db:schema`. **Never hand-edited** |
+| `db/events.sql` | Postgres | Hand-written, spliced into the generated file. Dies with Phase 4 |
+| `core/clickhouse/schema.sql` | ClickHouse | Hand-written |
+
+**The cost is real and is written down where somebody will be standing when it
+matters** (`OPERATIONS.md`'s rollback section): a schema change against a
+database holding rows now has no upgrade path, and will silently not apply.
+That is fine while no install holds data worth keeping — the staging host was
+destroyed — and stops being fine at the first install anybody depends on.
+`PLAN.md` §17 names that as the condition for reopening it.
+
+### The e2e schema gap below is **closed**
+
+`npm run test:e2e` now runs `scripts/bootstrap-e2e.mjs` first, which creates
+`logger_test`, installs `pg_partman` into it and applies `db/schema.sql`. The
+note two sections down described it as "a line in `package.json`"; it is that
+line plus a script, because Playwright starts its `webServer` *before*
+`globalSetup` and the obvious placement does not work. 73 specs pass against a
+database built from empty.
+
+*(Phase 2 extended that script to ClickHouse: it now creates the `logger_test`
+database there too and refuses to run against the dev one.)*
+
+---
 
 **2026-08-25 — the org overview and the project dashboard became one thing.**
 
@@ -45,11 +233,12 @@ and **15% faster filtered** (18.12 → 15.44).
 resize and the ClickHouse question are unaffected by any of the above, which
 changed how the read path is organised rather than what it costs.
 
-**Known gap:** `npm run test:e2e` still does not apply migrations to its own
-database. When it is behind, the symptom is `Ingest failed: 500` in five specs,
-which points at ingest rather than at the schema. Documented in
-[misc.md](reference/misc.md#testing); the fix is a line in `package.json` and
-nobody has written it.
+> **~~Known gap:~~ fixed 2026-08-26** — see the current phase above.
+> `npm run test:e2e` did not apply schema to its own database, and when it was
+> behind the symptom was `Ingest failed: 500` in five specs, which points at
+> ingest rather than at the schema. Kept here because the failure *mode*
+> generalises: a database that is silently behind announces itself as a bug in
+> whatever touches it first.
 
 ---
 
@@ -641,6 +830,7 @@ Each feature has its own implementation doc with a status block, decisions, sche
 | 06 | Alerts | ✅ Done | [features/06-alerts.md](features/06-alerts.md) |
 | 07 | Polish | ✅ Done | [features/07-polish.md](features/07-polish.md) |
 | 08 | Docker packaging | ✅ Done | [features/08-docker-packaging.md](features/08-docker-packaging.md) |
+| 09 | ClickHouse — events leave Postgres | 🟨 In progress (Phases 0–1 of 6 done) | [features/09-clickhouse.md](features/09-clickhouse.md) |
 
 Status legend:
 - ⬜ Not started — no work yet

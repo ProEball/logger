@@ -1,10 +1,10 @@
 # Production stack. `docker-compose.dev.yml` is the dev counterpart and runs
 # Postgres only — see docs/OPERATIONS.md for the deployment procedure.
 #
-# Boot order is enforced, not hoped for: postgres must report healthy, then
-# `migrate` runs to completion and exits 0, and only then do `app` and `worker`
-# start. An app that starts against an un-migrated database would serve 500s
-# until somebody noticed.
+# Boot order is enforced, not hoped for: postgres and clickhouse must both
+# report healthy, then `bootstrap` applies both schemas and exits 0, and only
+# then do `app` and `worker` start. An app that starts against a database
+# without its schema would serve 500s until somebody noticed.
 
 # Without this both compose files default their project name to the directory
 # name (`logger`) and share one namespace: running this file on a developer
@@ -14,7 +14,7 @@ name: logger-prod
 
 x-app-image: &app-image
   # All three application services run the same image — see the Dockerfile
-  # header. Built once; the `worker` and `migrate` services reuse the tag
+  # header. Built once; the `worker` and `bootstrap` services reuse the tag
   # rather than rebuilding, so they cannot drift from the app.
   # Defaults to a locally built `logger:latest`. Point IMAGE at a published tag
   # (ghcr.io/<owner>/logger:v1.2.3) to deploy a prebuilt image; `docker compose
@@ -64,7 +64,9 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      migrate:
+      clickhouse:
+        condition: service_healthy
+      bootstrap:
         condition: service_completed_successfully
     healthcheck:
       # PORT is baked into the image (3000) — the same value the Caddyfile
@@ -79,7 +81,7 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-      # The readiness probe checks Postgres, pg-boss and migration state; give
+      # The readiness probe checks Postgres, ClickHouse and pg-boss; give
       # the first render room before counting failures.
       start_period: 40s
 
@@ -89,12 +91,14 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      migrate:
+      clickhouse:
+        condition: service_healthy
+      bootstrap:
         condition: service_completed_successfully
-    # Backstop for the pg-boss singleton schedules (alert evaluation, partman
-    # maintenance). `singletonKey` already prevents double execution at the
-    # queue level; pinning replicas also removes the brief overlap window when
-    # `docker compose up -d` replaces the container.
+    # Backstop for the pg-boss singleton schedule (alert evaluation — the only
+    # cron job left after Phase 4). `singletonKey` already prevents double
+    # execution at the queue level; pinning replicas also removes the brief
+    # overlap window when `docker compose up -d` replaces the container.
     deploy:
       replicas: 1
     # Must exceed SHUTDOWN_TIMEOUT_MS in core/worker/worker.ts (20s) or Docker
@@ -111,20 +115,22 @@ services:
       retries: 2
       start_period: 30s
 
-  migrate:
+  # Applies both schemas from empty. There are no migrations — see
+  # core/db/bootstrap.ts for why, and for the cost that decision carries.
+  bootstrap:
     <<: *app-image
-    command: ["node", "migrate.js"]
+    command: ["node", "bootstrap.js"]
     # One-shot: runs, exits 0, and stays exited. `restart: unless-stopped` from
     # the anchor would restart it forever, so it is overridden here.
     restart: "no"
     depends_on:
       postgres:
         condition: service_healthy
+      clickhouse:
+        condition: service_healthy
 
   postgres:
-    build:
-      context: ./db
-      dockerfile: Dockerfile
+    image: postgres:16
     restart: unless-stopped
     # Postgres configuration, made settable rather than baked in. Until
     # 2026-08-20 there was no `command:` and no mounted config at all, so the
@@ -186,8 +192,8 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?required}
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      # Runs only on an empty data directory — this is what installs
-      # pg_partman on first boot.
+      # Runs only on an empty data directory — this is what creates
+      # pg_stat_statements on first boot.
       - ./db/init:/docker-entrypoint-initdb.d:ro
     # No `ports:` on purpose. Postgres is reachable only from the compose
     # network; publishing 5432 to the host would expose it to the internet on
@@ -197,6 +203,52 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 30s
+
+  # The events store (docs/features/09-clickhouse.md). Postgres keeps users,
+  # organizations, projects, api_keys, alert rules and pg-boss; everything about
+  # an event lives here.
+  clickhouse:
+    # Pinned to the minor version the schema was measured against — the JSON
+    # column's behaviour is version-dependent and §14.3.2's path-count ceiling
+    # is a property of this build, not of the type in general.
+    image: clickhouse/clickhouse-server:25.3
+    restart: unless-stopped
+    environment:
+      CLICKHOUSE_DB: ${CLICKHOUSE_DATABASE:?required}
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER:?required}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:?required}
+      # Read by db/clickhouse/config.d/logger.xml through `from_env`.
+      #
+      # **The fallbacks are ClickHouse's own defaults, and stay that way** —
+      # same rule as the postgres command line above: this file cannot know the
+      # host. Left alone, ClickHouse sizes itself against all visible RAM, which
+      # on a host shared with Postgres and the app is wrong. The sized profile
+      # is in .env.production.example next to the arithmetic.
+      CLICKHOUSE_MAX_SERVER_MEMORY: ${CLICKHOUSE_MAX_SERVER_MEMORY:-0}
+      CLICKHOUSE_MARK_CACHE_SIZE: ${CLICKHOUSE_MARK_CACHE_SIZE:-5368709120}
+      CLICKHOUSE_LOG_LEVEL: ${CLICKHOUSE_LOG_LEVEL:-warning}
+    # ClickHouse opens a file per column per part; the stock container limit is
+    # far below what a MergeTree table needs while merging.
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    volumes:
+      # A file, not the directory — mounting over config.d hides the image's own
+      # docker_related_config.xml, the only place `listen_host` is set, and the
+      # server then binds loopback inside the container while its healthcheck,
+      # which also runs inside, keeps reporting healthy. See logger.xml.
+      - ./db/clickhouse/config.d/logger.xml:/etc/clickhouse-server/config.d/logger.xml:ro
+      - clickhouse_data:/var/lib/clickhouse
+    # No `ports:` on purpose, for the same reason postgres has none: reachable
+    # only from the compose network. Use `docker compose exec clickhouse
+    # clickhouse-client`.
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8123/ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
       start_period: 30s
 
   backup:
@@ -226,6 +278,7 @@ services:
 
 volumes:
   postgres_data:
+  clickhouse_data:
   backups:
   caddy_data:
   caddy_config:

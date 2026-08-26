@@ -1,5 +1,7 @@
 import { sql } from "drizzle-orm";
 import { db } from "@/core/db/client";
+import { clickhouse } from "@/core/clickhouse/client";
+import { EVENTS_TABLE } from "@/core/clickhouse/tables";
 
 /**
  * Discovering what to benchmark, at run time.
@@ -9,6 +11,12 @@ import { db } from "@/core/db/client";
  * the organization holding the most events; the benchmark then reports what it
  * chose, because a number without the shape of the data behind it is not
  * comparable to anything.
+ *
+ * **Two stores since Phase 4.** Organizations and projects are Postgres rows;
+ * the events are ClickHouse. So "the organization with the most events" is no
+ * longer one join — it is a project list from one store and a count from the
+ * other, matched in TypeScript. That is the shape of every cross-store question
+ * this migration creates, and this harness is the least costly place to see it.
  */
 
 export interface BenchTarget {
@@ -22,17 +30,49 @@ export interface BenchTarget {
     newest: Date | null;
 }
 
-export async function resolveBenchTarget(): Promise<BenchTarget> {
-    const orgs = await db.execute<{ id: string; name: string; total: string }>(sql`
-        SELECT o.id::text, o.name, COUNT(e.project_id)::text AS total
+interface OrgRow {
+    id: string;
+    name: string;
+    projectIds: string[];
+}
+
+/** Every live organization with its live projects, from Postgres. */
+async function listOrganizations(): Promise<OrgRow[]> {
+    const rows = await db.execute<{ id: string; name: string; project_id: string | null }>(sql`
+        SELECT o.id::text, o.name, p.id::text AS project_id
         FROM organizations o
-        JOIN projects p ON p.organization_id = o.id AND p.deleted_at IS NULL
-        LEFT JOIN events e ON e.project_id = p.id
-        GROUP BY o.id, o.name
-        ORDER BY COUNT(e.project_id) DESC
-        LIMIT 1
+        LEFT JOIN projects p ON p.organization_id = o.id AND p.deleted_at IS NULL
+        ORDER BY o.id, p.created_at
     `);
 
+    const byOrg = new Map<string, OrgRow>();
+    for (const row of rows) {
+        const org = byOrg.get(row.id) ?? { id: row.id, name: row.name, projectIds: [] };
+        if (row.project_id) org.projectIds.push(row.project_id);
+        byOrg.set(row.id, org);
+    }
+    return [...byOrg.values()];
+}
+
+/** Events per project, all time, for the projects named. */
+async function countByProject(projectIds: string[]): Promise<Map<string, number>> {
+    if (projectIds.length === 0) return new Map();
+
+    const result = await clickhouse.query({
+        query: `SELECT toString(project_id) AS project_id, count() AS n
+                FROM ${EVENTS_TABLE}
+                WHERE project_id IN {ids:Array(UUID)}
+                GROUP BY project_id`,
+        query_params: { ids: projectIds },
+        format: "JSONEachRow",
+    });
+
+    const rows = await result.json<{ project_id: string; n: string }>();
+    return new Map(rows.map((row) => [row.project_id, Number(row.n)]));
+}
+
+export async function resolveBenchTarget(): Promise<BenchTarget> {
+    const orgs = await listOrganizations();
     if (orgs.length === 0) {
         throw new Error(
             "no organizations in this database — seed a corpus first (npm run bench:seed) " +
@@ -40,31 +80,49 @@ export async function resolveBenchTarget(): Promise<BenchTarget> {
         );
     }
 
-    const org = orgs[0];
+    const counts = await countByProject(orgs.flatMap((org) => org.projectIds));
+    const totalFor = (org: OrgRow) =>
+        org.projectIds.reduce((sum, id) => sum + (counts.get(id) ?? 0), 0);
 
-    const projects = await db.execute<{ id: string }>(sql`
-        SELECT id::text FROM projects
-        WHERE organization_id = ${org.id}::uuid AND deleted_at IS NULL
-        ORDER BY created_at
-    `);
-
-    const span = await db.execute<{ oldest: Date | null; newest: Date | null }>(sql`
-        SELECT MIN(timestamp) AS oldest, MAX(timestamp) AS newest
-        FROM events
-        WHERE project_id = ANY(ARRAY[${sql.join(
-            projects.map((p) => sql`${p.id}::uuid`),
-            sql`, `,
-        )}])
-    `);
+    const org = orgs.reduce((best, next) => (totalFor(next) > totalFor(best) ? next : best));
+    const span = await resolveSpan(org.projectIds);
 
     return {
         organizationId: org.id,
         organizationName: org.name,
-        projectIds: projects.map((p) => p.id),
-        totalEvents: Number(org.total),
-        oldest: span[0]?.oldest ? new Date(span[0].oldest) : null,
-        newest: span[0]?.newest ? new Date(span[0].newest) : null,
+        projectIds: org.projectIds,
+        totalEvents: totalFor(org),
+        oldest: span.oldest,
+        newest: span.newest,
     };
+}
+
+/**
+ * The corpus's first and last event.
+ *
+ * `min`/`max` over an empty set return the epoch rather than nothing (measured
+ * — `lab/clickhouse/probe-aggregate-shapes.mjs`), so the count is what says
+ * whether the answer means anything.
+ */
+async function resolveSpan(
+    projectIds: string[],
+): Promise<{ oldest: Date | null; newest: Date | null }> {
+    if (projectIds.length === 0) return { oldest: null, newest: null };
+
+    const result = await clickhouse.query({
+        query: `SELECT count() AS n,
+                       toUnixTimestamp64Milli(min(timestamp)) AS oldest_ms,
+                       toUnixTimestamp64Milli(max(timestamp)) AS newest_ms
+                FROM ${EVENTS_TABLE}
+                WHERE project_id IN {ids:Array(UUID)}`,
+        query_params: { ids: projectIds },
+        format: "JSONEachRow",
+    });
+
+    const [row] = await result.json<{ n: string; oldest_ms: string; newest_ms: string }>();
+    if (!row || Number(row.n) === 0) return { oldest: null, newest: null };
+
+    return { oldest: new Date(Number(row.oldest_ms)), newest: new Date(Number(row.newest_ms)) };
 }
 
 /**
@@ -115,34 +173,64 @@ export async function resolveBenchEnvironment(
 ): Promise<BenchEnvironment | null> {
     if (target.projectIds.length === 0) return null;
 
-    const ids = sql.join(
-        target.projectIds.map((id) => sql`${id}::uuid`),
-        sql`, `,
-    );
+    const rows = await eventsByColumn(target.projectIds, range, "environment");
+    if (rows.length === 0) return null;
 
-    const rows = await db.execute<{ environment: string | null; n: string; total: string }>(sql`
-        SELECT environment,
-               COUNT(*)::text                     AS n,
-               SUM(COUNT(*)) OVER ()::text        AS total
-        FROM events
-        WHERE project_id = ANY(ARRAY[${ids}])
-          AND timestamp >= ${range.from.toISOString()}::timestamptz
-          AND timestamp <  ${range.to.toISOString()}::timestamptz
-          AND environment IS NOT NULL
-        GROUP BY environment
-        ORDER BY COUNT(*) DESC
-        LIMIT 1
-    `);
-
-    if (rows.length === 0 || rows[0].environment === null) return null;
-
-    const events = Number(rows[0].n);
-    const total = Number(rows[0].total);
+    const total = rows.reduce((sum, row) => sum + row.n, 0);
+    const busiest = rows[0];
     return {
-        name: rows[0].environment,
-        events,
-        share: total > 0 ? events / total : 0,
+        name: busiest.value,
+        events: busiest.n,
+        share: total > 0 ? busiest.n / total : 0,
     };
+}
+
+/**
+ * Counts per value of one column over the range, busiest first, blanks
+ * excluded.
+ *
+ * The column name is interpolated and every value is bound. It is a literal
+ * passed by this module — the harness has two callers and both spell the
+ * column out — never anything from a request; a bound identifier is not a thing
+ * ClickHouse offers.
+ */
+async function eventsByColumn(
+    projectIds: string[],
+    range: { from: Date; to: Date },
+    column: "environment" | "project_id",
+): Promise<Array<{ value: string; n: number }>> {
+    const result = await clickhouse.query({
+        query: `SELECT toString(${column}) AS value, count() AS n
+                FROM ${EVENTS_TABLE}
+                WHERE project_id IN {ids:Array(UUID)}
+                  AND timestamp >= {from:DateTime64(3, 'UTC')}
+                  AND timestamp <  {to:DateTime64(3, 'UTC')}
+                  AND ${column} != ''
+                GROUP BY value
+                ORDER BY n DESC, value ASC`,
+        query_params: { ids: projectIds, from: range.from, to: range.to },
+        format: "JSONEachRow",
+    });
+
+    const rows = await result.json<{ value: string; n: string }>();
+    return rows.map((row) => ({ value: row.value, n: Number(row.n) }));
+}
+
+/**
+ * The project the per-project benchmarks run against: the busiest one in the
+ * range.
+ *
+ * Same reasoning as the environment above — the busiest project is the one a
+ * dashboard is slowest on, and a harness that picked the quietest would report
+ * the most flattering number in the corpus.
+ */
+export async function resolveBusiestProject(
+    target: BenchTarget,
+    range: { from: Date; to: Date },
+): Promise<string | null> {
+    if (target.projectIds.length === 0) return null;
+    const rows = await eventsByColumn(target.projectIds, range, "project_id");
+    return rows[0]?.value ?? null;
 }
 
 export function describeTarget(target: BenchTarget, range: { from: Date; to: Date }): string {

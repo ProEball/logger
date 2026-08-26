@@ -1,5 +1,14 @@
 # 03. Ingest
 
+
+> **Superseded in part, 2026-08-26.** Everything below about Postgres storage —
+> the partitioned `events` table, `pg_partman`, the daily partitions, the hourly
+> maintenance job, the custom `db/Dockerfile` — describes a design that no
+> longer exists. Events are in ClickHouse (`docs/features/09-clickhouse.md`,
+> Phase 4). The **API contract** this doc specifies is unchanged and still
+> current; read `docs/reference/api.md` and `docs/reference/architecture.md`
+> for what the code does today.
+
 ## Status
 - [x] Done
 - Started: 2026-05-08

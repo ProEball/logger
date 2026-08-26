@@ -1,6 +1,12 @@
 import { defineConfig } from "vitest/config";
 import { resolve } from "path";
-import { ITEST_DATABASE_URL } from "./itest/support/env";
+import {
+    ITEST_DATABASE_URL,
+    ITEST_CH_DATABASE,
+    ITEST_CH_PASSWORD,
+    ITEST_CH_URL,
+    ITEST_CH_USER,
+} from "./itest/support/env";
 
 /**
  * Integration tests — the ones that need a real Postgres.
@@ -42,6 +48,17 @@ export default defineConfig({
             DATABASE_URL: ITEST_DATABASE_URL,
             AUTH_SECRET: "itest-secret-at-least-32-characters-long",
             APP_URL: "http://localhost",
+            // These *are* used now: since Phase 2 of
+            // docs/features/09-clickhouse.md the write path goes to ClickHouse,
+            // and with no Drizzle dialect there is no query-builder mock to
+            // assert against — the only way to know a row is acceptable to the
+            // real table is to insert it into one. `globalSetup` creates
+            // `logger_itest` over there and applies the same schema file the
+            // bootstrap container does.
+            CLICKHOUSE_URL: ITEST_CH_URL,
+            CLICKHOUSE_USER: ITEST_CH_USER,
+            CLICKHOUSE_PASSWORD: ITEST_CH_PASSWORD,
+            CLICKHOUSE_DATABASE: ITEST_CH_DATABASE,
             LOG_LEVEL: "fatal",
         },
     },

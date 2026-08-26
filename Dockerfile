@@ -1,8 +1,8 @@
 # syntax=docker/dockerfile:1
 
 # One image, three processes. `app` runs the Next.js standalone server, `worker`
-# runs the pg-boss job runner, and the one-shot `migrate` container applies
-# pending migrations before either starts. Building them together guarantees
+# runs the pg-boss job runner, and the one-shot `bootstrap` container applies
+# both schemas — Postgres and ClickHouse — before either starts. Building them together guarantees
 # all three run the exact same application code — a worker built separately
 # could drift a commit behind the app and evaluate alerts against a stale
 # schema. `docker-compose.yml` picks the process with `command:`.
@@ -64,10 +64,13 @@ ENV NODE_ENV=production
 # localhost, which inside a container means the proxy cannot reach it.
 # PORT: the app's listening port, referenced by the compose healthcheck and by
 # `reverse_proxy app:3000` in the Caddyfile. Change all three together.
-# MIGRATIONS_DIR: read by `migrate.js`; migrations are copied to /app/migrations.
+# SCHEMA_DIR: read by `bootstrap.js`. The two .sql files are copied under their
+# repo-relative paths (db/schema.sql, core/clickhouse/schema.sql) rather than
+# flattened, so bootstrap.ts names the same two paths in the image and in a
+# checkout.
 ENV HOSTNAME=0.0.0.0 \
     PORT=3000 \
-    MIGRATIONS_DIR=/app/migrations
+    SCHEMA_DIR=/app/schema
 
 # The stock `node` user (uid 1000) already exists in the base image.
 USER node
@@ -80,16 +83,18 @@ COPY --from=builder --chown=node:node /app/public ./public
 
 # Self-contained esbuild bundles: no node_modules resolution at run time.
 # Every bundle from scripts/build-worker.mjs, by glob rather than by name.
-# Naming them individually is how `backfill-template-hash.js` was added to the
+# Naming them individually is how a one-shot backfill script was added to the
 # bundler on 2026-08-23, shipped in the image's build stage, and then failed at
-# runtime with MODULE_NOT_FOUND because nothing copied it out. The glob makes a
-# new entrypoint arrive automatically; `*.js` still leaves the sourcemaps
-# behind, which is deliberate — they are ~3 MB each and nothing reads them here.
+# runtime with MODULE_NOT_FOUND because nothing copied it out. That script is
+# gone (Phase 4); the rule it taught is not, so the glob makes a new entrypoint
+# arrive automatically. `*.js` still leaves the sourcemaps behind, which is
+# deliberate — they are ~3 MB each and nothing reads them here.
 #
 # Note the flattening: `dist/worker.js` becomes `/app/worker.js`, so commands
 # run it as `node worker.js`, not `node dist/worker.js`.
 COPY --from=builder --chown=node:node /app/dist/*.js ./
-COPY --from=builder --chown=node:node /app/core/db/migrations ./migrations
+COPY --from=builder --chown=node:node /app/db/schema.sql ./schema/db/schema.sql
+COPY --from=builder --chown=node:node /app/core/clickhouse/schema.sql ./schema/core/clickhouse/schema.sql
 
 EXPOSE 3000
 

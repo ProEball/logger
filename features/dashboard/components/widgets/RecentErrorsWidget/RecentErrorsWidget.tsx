@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { WidgetCard } from "../../WidgetCard/WidgetCard";
 import { LevelBadge } from "@/shared/components";
-import type { Event } from "@/core/db/schema";
+import type { Event } from "@/shared/types/event.types";
 import type { TimeRange } from "@/features/events/utils/event-filters.types";
 import { serializeFilters } from "@/features/events/utils/serialize-filters";
 import styles from "./RecentErrorsWidget.module.scss";

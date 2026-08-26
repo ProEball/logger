@@ -4,30 +4,41 @@ This is the product's core domain: what a "log" (called an **event** throughout 
 
 ## The `events` table
 
-See [architecture.md](architecture.md#events-partitioning) for partitioning/retention mechanics. Full column list:
+**Events are in ClickHouse, and only there, since 2026-08-26.** The Postgres
+`events` table, its daily partitioning, its pg_partman registration and the dual
+write that fed it during Phases 2–3 are all deleted (Phase 4 of
+`docs/features/09-clickhouse.md`). See
+[architecture.md](architecture.md#the-events-table) for the table itself and
+[api.md](api.md#where-an-event-is-written) for what a caller can observe.
 
-| Column | Type | Nullable | Notes |
+The column list below is the **domain** shape — what `Event` carries and what a
+component reads — not the storage types. `null` here means "not set"; the
+ClickHouse schema has no `Nullable` column anywhere and stores absence as the
+empty string, which `core/clickhouse/from-event-row.ts` converts back.
+
+| Field | Domain type | Absent as | Stored as |
 |---|---|---|---|
-| `id` | uuid | no | server-generated |
-| `project_id` | uuid | no | FK → `projects.id`, `ON DELETE RESTRICT` |
-| `timestamp` | timestamptz | no | **partition key** |
-| `level` | text | no | `debug｜info｜warn｜error｜fatal` (enforced by Zod at ingest — no DB check constraint) |
-| `message` | text | no | |
-| `source` | text | yes | |
-| `environment` | text | yes | |
-| `release` | text | yes | |
-| `user_id` | text | yes | correlation id, not a real FK |
-| `session_id` | text | yes | |
-| `request_id` | text | yes | |
-| `trace_id` | text | yes | |
-| `error_type` | text | yes | |
-| `stack_trace` | text | yes | |
-| `attributes` | jsonb | default `{}` | flat map, primitive values only |
-| `context` | jsonb | default `{}` | free-form nested JSON |
-| `user_agent` | text | yes | server-filled from the request, never client-supplied |
-| `ip` | text | yes | server-filled from `x-forwarded-for` (first hop), never client-supplied |
+| `id` | string | — | `UUID`, a server-generated **UUIDv7** (was v4 until 2026-08-26; a random id compressed at ratio 1.0 and was a fifth of the table) |
+| `projectId` | string | — | `UUID`. **No foreign key** — see [security.md](security.md) |
+| `timestamp` | Date | — | `DateTime64(3, 'UTC')`, and the **partition key** (monthly) |
+| `level` | string | — | `Enum8` of the five names, validated by Zod at ingest and again by the column |
+| `message` | string | — | `String`; a `message_lower` twin is materialised for the token index |
+| `source` / `environment` / `release` / `errorType` | string | null | `""` | `LowCardinality(String)` |
+| `userId` / `sessionId` / `requestId` / `traceId` | string | null | `""` | `String`, each with a bloom filter |
+| `stackTrace` | string | null | `""` | `String` |
+| `attributes` | `Record<string, unknown>` | `{}` | `JSON` — one subcolumn per path |
+| `context` | `Record<string, unknown>` | `{}` | `String`: displayed, never filtered, so it is an opaque blob |
+| `userAgent` | string | null | `""` | `String`, server-filled, never client-supplied |
+| `ip` | string | null | `::` | `IPv6`, server-filled from `x-forwarded-for` (first hop). **Validated since 2026-08-26** — an unparseable value is stored as `::`, because the column rejects it by failing the whole insert |
+| `templateHash` | bigint | — | `UInt64`. Unsigned end to end since 2026-08-26; while Postgres held the same value in a signed `bigint` it had to be folded on the way in and out |
 
-Indexes: `(project_id, timestamp)`, `(project_id, level, timestamp)`, `(project_id, error_type, timestamp) WHERE error_type IS NOT NULL`, plus `GIN` on `attributes` and `GIN` on `to_tsvector('simple', message)` (full-text search) — the two GIN indexes exist only in the raw SQL migration, not in the Drizzle schema file.
+One field is written and never read back into an `Event`: **`message_template`**,
+the output of `normalizeMessage(message)`. It is what the top-messages widgets
+label a group with, and it is stored per row rather than looked up in a table
+because the normaliser is TypeScript and has no SQL equivalent — see
+[widgets.md](widgets.md) and `core/clickhouse/schema.sql`.
+
+**A blank optional string is stored as absent** (2026-08-26). `{"environment": ""}` and a missing `environment` produce the same event, so `""` never appears as a facet value of its own beside `(unset)`. Normalised at the Zod schema.
 
 For the ingest-time validation rules (required fields, size limits, timestamp policy), see [api.md](api.md#event-schema) — that's the authoritative contract for what an event can contain when it arrives.
 
@@ -63,18 +74,109 @@ Filter shape (`EventFilters`, shared between the events-list UI and alert rule c
 }
 ```
 
-- **Multi-select filters** (levels, environments, sources, releases, errorTypes) → SQL `IN (...)`.
-- **Correlation filters** (userId/sessionId/requestId/traceId) → exact equality, one value at a time.
-- **Full-text message search** → `to_tsvector('simple', message) @@ websearch_to_tsquery('simple', $q)`, supports `websearch_to_tsquery` syntax (quoted phrases, `-exclude`).
-- **Attribute filters** → `attributes @> '{"key":"value"}'::jsonb`, one clause per filter, ANDed — narrows further with each added filter.
-- Filter state lives entirely in the URL and never throws on malformed input (invalid values are silently dropped), so stale/malformed share links still render something sensible.
-- **Facet counts**: for each of levels/environments/sources/releases/errorTypes, the UI shows a per-option count scoped by *every other* active filter (but not that field's own filter, so unchecking a box doesn't zero out its own option list). Text facets cap at the top 20 options; `NULL` values are shown as `"(unset)"`.
+**Since 2026-08-26 every one of these is answered by ClickHouse**, not Postgres
+— see [Where an event is read](#where-an-event-is-read) below. The filter is
+compiled by `core/clickhouse/filter-compiler.ts`, which both the events list and
+the alert evaluator call; neither builds a clause of its own any more.
+
+| Filter | ClickHouse |
+|---|---|
+| levels, environments, sources, releases, errorTypes | `<column> IN {p:Array(String)}` — an `Enum8` compares against an array of names directly, and a name that is not in the enum simply never matches rather than raising |
+| userId, sessionId, requestId, traceId | `<column> = {p:String}`, each backed by a `bloom_filter` skip index |
+| message | the grammar below, over `hasToken` / `position` on `message_lower` |
+| attributes | `toString(getSubcolumn(attributes, {k:String})) = {v:String}`, one clause per filter, ANDed |
+
+Two of those changed behaviour, deliberately:
+
+- **An attribute filter now compares as text.** Postgres used
+  `attributes @> '{"key":"value"}'::jsonb`, which is type-strict — and a URL only
+  ever carries strings, so a filter on a **numeric** attribute (`retries=2`)
+  matched nothing at all, silently. Comparing `toString` of the stored value
+  makes the stored `2` and the typed `"2"` agree.
+- **A filter for the empty string means "the key is present and blank."**
+  `toString` of a path no row has is also `''`, so that one case additionally
+  asserts `dynamicType(...) != 'None'`. Every other value pays nothing for this.
+
+Filter state lives entirely in the URL and never throws on malformed input
+(invalid values are silently dropped), so stale/malformed share links still
+render something sensible. Attribute **keys** are bound as query parameters like
+everything else — an attribute path can be a bound `getSubcolumn` argument, so
+no part of a URL is ever spliced into SQL text. See
+[security.md](security.md#clickhouse-queries-parameter-binding-is-now-a-rule-not-a-library-guarantee).
+
+- **Facet counts**: for each of levels/environments/sources/releases/errorTypes, the UI shows a per-option count scoped by *every other* active filter (but not that field's own filter, so unchecking a box doesn't zero out its own option list). Text facets cap at the top 20 options; blank values are shown as `"(unset)"` — the ClickHouse schema has no `Nullable` column, so the empty string plays the role `NULL` played in Postgres. Ties are broken by value, so the twenty options that survive the cap are the same on two identical loads; Postgres ordered by count alone and left the rest to the plan.
 
   **Loaded when the filter panel opens, not with the page** (changed 2026-08-20). These are five aggregations over the whole filtered range, and until then they ran inside the events route's `Promise.all` on every load — including auto-refreshes, and including the great majority of loads where nobody opens the panel, since `FiltersPopover` keeps its open state in client `useState` and the server never learned of it. A normal events page is now a single query: one keyset page of 51 rows.
 
   They are re-fetched on **every** open rather than cached, because the counts are scoped by the active filters and those change between openings. The fetch goes through `getFacetCountsAction`, which re-checks session and `events.read` — a Server Action is a public endpoint, so the page's own membership check does not cover it. If it fails, the panel still filters; only the numbers are missing, and it says so.
 
 **Pagination** is cursor-based (keyset, not offset): page size 50, `WHERE (timestamp, id) < (cursor_ts, cursor_id) ORDER BY timestamp DESC, id DESC`, fetching 51 rows to detect `hasMore`. Changing any filter resets the cursor. There is no total count shown — only "50" or "50+".
+
+The tuple form is literal in ClickHouse rather than expanded into
+`ts < ? OR (ts = ? AND id < ?)`, and `(project_id, timestamp, id)` is the
+table's sort key, so the comparison and the `ORDER BY` are the same ordering by
+construction. That matters for the tie case: ClickHouse compares `UUID` its own
+way, and what keeps a row from being served twice or skipped is that both halves
+of the pagination use *that* ordering, not that it matches string order.
+
+A malformed cursor resets to the first page. Until 2026-08-26 the id was
+validated as "36 characters of hex and hyphen", which accepts a row of hyphens;
+it is now checked as an actual UUID, because the value is bound as a ClickHouse
+`UUID` parameter and an unparseable one is a server error rather than a page.
+
+### Message search
+
+Postgres answered `message` with
+`to_tsvector('simple', message) @@ websearch_to_tsquery('simple', $q)`.
+ClickHouse has no equivalent, so `core/clickhouse/search-query.ts` parses the
+same grammar into a predicate tree and the compiler emits it against
+`message_lower` (a `MATERIALIZED lowerUTF8(message)` column backed by a
+`tokenbf_v1` index).
+
+| Typed | Emitted |
+|---|---|
+| `timeout` | `hasToken(message_lower, 'timeout')` — uses the index |
+| `"connection refused"` | both `hasToken`s, plus `position(message_lower, 'connection refused') > 0` for adjacency |
+| `-debug` | `NOT hasToken(message_lower, 'debug')` |
+| `a b or c` | `(hasToken(a) AND hasToken(b)) OR hasToken(c)` — `or` binds looser, as in `websearch_to_tsquery` |
+
+Three differences from the Postgres behaviour, all deliberate:
+
+- **A term of two or more tokens also requires the literal text.** `foo_bar`
+  matches `foo_bar` and not `foo bar`, where `<->` accepted both. A
+  **single**-token term is matched by its token alone, so `timeout.` still finds
+  `timeout` — that case is what the rule must not break.
+- **A term the tokenizer finds no tokens in** (`+++`, `-->`) becomes a plain
+  substring test. Postgres produced an empty tsquery and matched nothing.
+- **Tokenization is ClickHouse's, reimplemented in TypeScript.** A token
+  character is an ASCII letter or digit, or **any code point at or above
+  U+0080** — so `_`, `-` and `.` split, while `café`, `привет` and `a—b` are each
+  one token. This is not cosmetic: `hasToken` *raises* `BAD_ARGUMENTS` on an
+  empty needle or one containing a separator, which would be a 500 on the events
+  page rather than an empty result. The rule is checked against the server's own
+  `tokens()` on a battery of inputs in
+  `features/events/services/events-query.service.itest.ts`.
+
+Lowercasing is JavaScript's against the column's `lowerUTF8`; they differ on
+code points whose lowercase form has a different length (Turkish `İ`), where the
+result is a term that matches nothing rather than an error.
+
+### Where an event is read
+
+**Every read is ClickHouse** as of 2026-08-26: the events list, the drawer, the
+facet counts, both dashboards' aggregations, the alert evaluator's match count
+and the sample events in an alert webhook. Postgres holds no events at all.
+
+The remaining Postgres queries on these paths ask about *projects*, not events —
+which is the shape every cross-store question in this application takes.
+
+No read path joins `projects` any more, because ClickHouse cannot. The
+defence-in-depth check that join provided — never show events belonging to a
+soft-deleted project — is a Postgres primary-key lookup issued **concurrently**
+with the ClickHouse query, so it costs no added latency; if the project is gone
+the result is discarded and the page is empty. Both callers already resolve the
+project through `getProjectBySlug`, which filters `deleted_at IS NULL`; this is
+the second line, kept rather than quietly dropped.
 
 ## Dashboard
 
@@ -85,7 +187,9 @@ Per-project metrics. Since 2026-08-25 every query comes from `shared/services/ev
 - **Events chart**: stacked area, coloured by level, only rendering levels actually present. Since 2026-08-25 it is `shared/components/EventChart` in `stacked-area` mode — the same component the organization overview draws in `line` mode.
 - **Level breakdown**: counts per level, click-through to the events list pre-filtered by that level.
 - **Recent errors**: latest error/fatal events.
-- **Top sources** / **Top messages**: grouped counts (messages truncated to 200 chars for grouping; each group shows `latestAt` and the statistical mode of its levels).
+- **Top sources** / **Top messages**: grouped counts. **Top messages groups by `template_hash` since 2026-08-26** and is labelled with the stored `message_template`, so `User u_487 signed in` and `User u_912 signed in` are one row reading `User *** signed in`. Each group shows `latestAt` and a dominant level (`pickDominantLevel`, ties toward the more severe).
+
+  Until then this widget had **two answers**, chosen by whether a Postgres rollup covered the range and whether an environment filter was active: the rollup path grouped the fingerprint, the fallback grouped `SUBSTRING(message, 1, 200)`. Those are different questions — one says a template occurred 4,000 times, the other says four thousand things occurred once — and nothing on screen said which you were looking at.
 
 ### Bucket sizing
 
@@ -93,7 +197,9 @@ Chart resolution comes from `BUCKET_SECONDS` in `shared/utils/dashboard-filters.
 
 `pickBucket()` and the whole of `features/dashboard/utils/aggregation-utils.ts` were **deleted** on 2026-08-25. It chose among four widths (1m/1h/12h/1d) by range length, which fit six presets badly — most visibly at 6 hours, where it drew six points.
 
-Bucketing uses epoch-floor arithmetic (`to_timestamp(floor(extract(epoch from timestamp)/secs)*secs)`) rather than `date_trunc`, because `date_trunc` only takes unit names and so cannot express a 5-minute, 15-minute or 6-hour width.
+Bucketing uses epoch-floor arithmetic — `intDiv(toUnixTimestamp(timestamp), secs) * secs * 1000`, giving epoch milliseconds directly. The Postgres form was the same arithmetic (`to_timestamp(floor(extract(epoch from timestamp)/secs)*secs)`) and for the same reason: `date_trunc` takes only unit names and cannot express a 5-minute, 15-minute or 6-hour width.
+
+ClickHouse's own `toStartOfInterval` **is not used**, and the reason was measured rather than assumed: it returns `DateTime`, not `DateTime64`, so `toUnixTimestamp64Milli` rejects its result outright. The two agree on every width the UI asks for — `lab/clickhouse/probe-aggregate-shapes.mjs` checks that — but only one of them can be read back as milliseconds.
 
 > **Doc drift note**: the original design doc (`docs/features/05-dashboard.md`) specifies a 5-tier bucket scheme (`1m/5m/15m/1h/4h`). The shipped implementation used 4 tiers until 2026-08-25 and now uses a table with one width per preset. If you are consulting the feature doc for bucket behaviour, trust `shared/utils/dashboard-filters.ts` instead.
 
@@ -132,7 +238,15 @@ Both pages read the table. `eventsPerMinute` was the last holdout and was delete
 
 ### Ordering: count columns are cast to text
 
-These aggregations return counts as `COUNT(*)::text` (to avoid `bigint` serialisation), and **`ORDER BY count DESC` would bind to that text alias**, sorting lexicographically — `"9"` ranks above `"10"`. Where the query also has a `LIMIT`, that returns the *wrong rows*, not merely the right rows misordered.
+> **The trap itself is gone as of 2026-08-26** — it was a Postgres name-resolution
+> rule and ClickHouse does not have it. The section stays because it is the
+> clearest record of a defect class this repository shipped **three times**, and
+> because what replaced it is a weaker guarantee than it looks: the ordering is
+> now *correct* by construction, but a tie is still resolved arbitrarily unless
+> the query says otherwise. Every `ORDER BY` in
+> `event-aggregations.service.ts` therefore carries an explicit tiebreak.
+
+These aggregations returned counts as `COUNT(*)::text` (to avoid `bigint` serialisation), and **`ORDER BY count DESC` would bind to that text alias**, sorting lexicographically — `"9"` ranks above `"10"`. Where the query also has a `LIMIT`, that returns the *wrong rows*, not merely the right rows misordered.
 
 Fixed 2026-08-20 in `getOrgTopErrors` and `getOrgLevelBreakdown` by ordering on `COUNT(*)` instead; covered by `e2e/overview.spec.ts` ("orders top errors by count, not by the text of the count"), whose fixture deliberately uses counts of 10 and 9 because any pair below 10 hides the bug.
 
@@ -142,66 +256,73 @@ What kept them alive for a day was not difficulty — the fix is one identifier 
 
 `topSources` was the one that mattered. It applies a `LIMIT`, so the lexicographic sort did not merely mis-order the list: asking for the top 2 of `api` (10), `worker` (9) and `cron` (2) returned `worker` and `cron`, dropping the busiest source entirely.
 
-⚠️ One trap survives the fix. `levelBreakdown` now reads the rollup unioned with a raw tail, so it re-aggregates — and `ORDER BY COUNT(*)` would be wrong there too, for a different reason: the count it needs is `SUM(n)` over the union, not a count of union rows. Ordering on the alias, on `COUNT(*)`, or on `SUM(n)` are three different queries and only the last is right.
+One trap survived that fix and is now moot with the union it belonged to: `levelBreakdown` re-aggregated a rollup and a raw tail, so the count it needed was `SUM(n)` over the union rather than `COUNT(*)` of union rows — three different queries, only one right. There is no union.
 
-### The rollup
+**A different one replaced it, found the same way (2026-08-26).** ClickHouse resolves a select-list alias inside `WHERE`, so `SELECT toString(project_id) AS project_id … WHERE project_id IN {p:Array(UUID)}` compares a `String` against an array of `UUID` — and matches **no rows without raising**. Every bucket and every per-project count returned empty. The SQL is valid, the answer is merely wrong, and only the integration suite could see it. The rule is now stated in `event-aggregations.service.ts`: never alias a converted column back to its own name — and none of those conversions was needed, since `JSONEachRow` renders a `UUID`, an `Enum8` and an `IPv6` as strings already.
 
-Volume and level counts on the organization overview come from **`event_rollup_minutes`**, a per-minute summary rebuilt from `events` by the `event-rollup` job every minute — not from aggregating `events` on each page load.
+### ~~The rollup~~ — deleted 2026-08-26
 
-**Why a scheduled rebuild rather than counters maintained at ingest.** Incremental counters drift: a lost update, a rollback, a race, and the number is quietly wrong with nothing to detect it. A periodic rebuild reconstructs each bucket from the source, so error cannot accumulate — the worst case is one stale interval, corrected on the next run. It also keeps the ingest path free of contention on hot counter rows, and makes cost a function of the schedule rather than of the ingest rate.
+**`event_rollup_minutes`, `rollup_state`, the `event-rollup` job and the
+coverage machinery around them are gone**, with the Postgres `events` table they
+summarised (Phase 4 of `docs/features/09-clickhouse.md`). Every dashboard number
+is now one query over the raw table; `09-clickhouse.md` §1.2 is the accounting
+of what that removed and §6 is what replaces it in Phase 5.
 
-**Everyone sees the same numbers — for closed minutes.** This is the part that is not about speed. Before the rollup, two people opening the same dashboard seconds apart each aggregated over their own `now()`, so *every* figure could differ. They now share the rollup's snapshot, and `computed_at` records when it was taken.
+Three findings from that design are worth carrying forward, because the same
+questions arrive again with the projection:
 
-The agreement stops at `rolled_up_to`: the raw tail above it is still computed per request, so the newest minute can differ between two viewers by whatever arrived between their page loads. That is the price of the tail, and it is worth paying — an always-stale newest minute would be a worse trade — but "identical numbers" is accurate only below the boundary, not across the whole page.
+- **A scheduled rebuild beats incremental counters.** Counters drift — a lost
+  update, a rollback, a race — and the number is quietly wrong with nothing to
+  detect it. A rebuild reconstructs each bucket from the source, so error cannot
+  accumulate. A ClickHouse projection is maintained by the engine and inherits
+  this property for free, which is most of why §1.2 counts the machinery as
+  cost rather than as work.
+- **A summary that holds only *closed* minutes needs a raw tail**, and the tail
+  cost 0.3–0.6 µs per event in it — tracking how far behind the job was, not the
+  range being charted. A projection has no watermark, so the newest event is
+  visible without a union and without a branch.
+- **Everyone seeing the same number was the point, not the speed.** Before the
+  rollup, two people opening the same dashboard seconds apart each aggregated
+  over their own `now()`. That property is now the read cache's
+  (`shared/services/event-aggregations-cache.service.ts`, 30 s), not the
+  storage's.
 
-**Reads combine the rollup with a raw tail.** The rollup only holds *closed* minutes, so the newest minute — the one that matters while watching an incident — is never in it. A read takes the rollup below `rollup_state.rolled_up_to` and raw `events` above, so a just-ingested event is visible immediately. When `rolled_up_to` is `NULL` (nothing built yet, e.g. straight after the migration) the whole range comes from `events`, which is exactly the behaviour that preceded the table.
+**Retention went with it, and has no replacement yet.** `pruneRollup()` dropped
+rollup rows past 30 days, and pg_partman dropped event partitions on the same
+schedule. The ClickHouse table carries a `retention_days` column with a default
+and **no TTL clause** — that is Phase 6. Until then nothing expires.
+### ~~Environment registry~~ — deleted 2026-08-26
 
-**What the tail costs.** Measured 2026-08-20 on a 500k-event local corpus (~115 events/minute), varying only how far the boundary sits behind the newest event:
+The filter bar's environment list came from `project_environments`, a
+per-project registry written on the ingest path, because the implementation
+before it scanned 30 days of `events` on every page load and
+`pg_stat_statements` put that at **13.4% of the page's total database time**.
 
-| tail width | events in the tail | rollup only | rollup + tail | tail |
-|---|---|---|---|---|
-| 2 min | ~230 | 3.48 ms | 3.60 ms | **0.12 ms** |
-| 30 min | ~3,450 | 3.62 ms | 5.72 ms | **2.1 ms** |
-| 240 min | ~27,600 | 3.41 ms | 11.13 ms | **7.7 ms** |
+Phase 4 went **back to the scan**: `SELECT DISTINCT if(environment = '',
+'(unset)', environment)` over the same 30-day window. The argument is that
+`environment` is `LowCardinality`, so the scan reads one dictionary-encoded
+column, and that Phase 5's `p_minute` projection carries `environment` in its
+key — at which point the optimizer answers it from the aggregate. Keeping a
+Postgres table maintained by ingest to avoid a ClickHouse `GROUP BY` would be
+exactly the machinery §1.2 counts as the cost of the old design.
 
-Roughly **0.3–0.6 µs per event in the tail** — an index range scan over the newest partition. The cost tracks *how far behind the rollup is*, not the range being charted: a 30-day chart with a two-minute tail costs the same tail as a one-hour chart with one.
+**That argument is not yet measured.** `event-aggregations.service.bench.ts` has
+a benchmark named for it, and it is the first number Phase 5 should look at. If
+the scan is expensive the answer is the projection, not the registry.
 
-In steady state the boundary sits at the start of the current minute, so the tail holds at most one minute of ingest — about 1,000 events at the staging run's rate, well under a millisecond.
+Two behaviours are deliberately unchanged. The list **ignores the range selected
+in the filter bar** — it is "what this organization uses", not "what appeared in
+the last hour", and narrowing it to the range would make an option vanish the
+moment you selected a window in which it had no events. And an event with no
+environment is offered as `(unset)` rather than omitted.
 
-It also means **a stalled job degrades speed, never correctness.** Four hours without a rebuild costs 11 ms instead of 3.4; the worst case is a return to the ~91 ms the same query took before the rollup existed.
-
-**Late events.** Ingest accepts timestamps up to 30 days old, and `events` records when an event *happened*, not when it *arrived* — so nothing in that table can reveal a late arrival. The ingest path therefore pulls `rollup_state.refresh_from` back to the batch's oldest timestamp (`LEAST`, so a later batch of fresh events cannot push it forward again). A batch carrying a three-day-old event costs one wider rebuild, then the watermark returns to normal.
-
-**Top errors has its own, capped window.** It is the only widget on the overview whose query can never come from the rollup, so it runs against raw `events` and its cost is proportional to the errors it scans — `EXPLAIN` shows the index finding rows in 0.35 ms while fetching them takes 2,133 heap blocks for 2,785 rows, roughly one random page each, because errors are ~7% of events and scattered among them.
-
-Its range is therefore `min(page range, 24h)` (`clampTopErrorsWindow`), and the widget displays the period it covers. It never shows *more* than the page asked for — a 15-minute page gives 15 minutes of errors — only less. Without the cap, selecting 30 days on the filter bar would have this widget aggregating 30 days of messages, which is the page's worst case and one click away.
-
-There is deliberately **no selector**. It would buy the ability to choose a window, which nobody has requested, at the cost of a second time control on a page that already has one. Add it when a request names the windows it needs.
-
-**What it does not cover:**
-
-- **Anything keyed by message** — top errors, top messages. 168k distinct messages per 500k events cannot be pre-aggregated at a fixed grain, and merging per-minute top-N lists is *approximate*: a message ranked eleventh every minute can be first over the hour and appear in no bucket at all. Since the point of the rollup is that everyone sees the same numbers, making them quietly wrong would defeat it.
-- **A level filter combined with an environment filter.** `by_level` and `by_env` are marginals, not a joint distribution; that combination would fall back to `events`. Storing the cross product would make every 30-day read walk a nested object across 43,200 rows per project to serve a rare filter. *Moot on the overview since 2026-08-20 — it has no level filter — but the constraint is a property of the rollup's shape, so it still governs anything built on it.*
-- **`release`**, and it never will. A release identifier is *designed* to change on every deploy, so as a rollup dimension it grows without bound — a worse version of the environment-cardinality problem, and less obvious.
-
-**Retention.** `pruneRollup()` drops rollup rows past 30 days on every run; without it the rollup would keep counting events whose partitions retention had already dropped, and the two would disagree silently.
-
-### Environment registry
-
-The filter bar's environment list comes from **`project_environments`**, a per-project registry written on the ingest path (`features/ingest/services/environment-registry.service.ts`), not from a scan of `events`.
-
-- **Written after the events are inserted**, from the distinct environments in the batch — including `null`, which is a value here rather than an absence, because "(unset)" is one of the options the filter offers.
-- **A failure never fails the request.** The registry is derived data: losing an update costs a filter entry until the next event from that environment, whereas throwing would lose the event. `ingest.service.ts` catches and logs it, and that is the only deliberately swallowed error on the ingest path.
-- **`last_seen_at` is refreshed at most once a minute per row** (`setWhere` on the upsert). Updating it on every request would produce a dead tuple per batch on a table of a few rows, for a column only ever read against a 30-day window.
-- **Reading still looks back 30 days** — `last_seen_at >= now() - 30 days` — so a decommissioned environment ages out exactly as it did when the list came from `events`.
-- **The list still ignores the selected range**, unchanged from before: it answers "what this organization uses", not "what appeared in the last hour". Narrowing it to the range would make an option vanish the moment you picked a window in which it had no events.
-
-**Why:** `pg_stat_statements` measured the old 30-day scan at **13.4% of the org overview's total database time** on 2026-08-20 — 30 days of events read on every page load to produce a list of a handful of values. Measured after the change: 39.3 ms → 0.67 ms, and the query no longer appears among the page's costs at all. Page wall-clock barely moved (~106 ms → ~92 ms, within run-to-run noise) because the query ran in parallel with slower ones — what dropped is total database work, which is what matters under concurrency. See `PLAN.md` §16.1 Stage D.
-
-**Not covered by the registry:** the environment pills on each *project card*, which are scoped to the selected range — a registry cannot answer "which environments appeared between X and Y" without storing per-range data.
-
-*Superseded later on 2026-08-20.* They were not left on `events`: the **rollup** answers them, from `by_env` per minute unioned with a raw tail, and the query is `ARRAY_AGG(DISTINCT env)` over that union (now `event-aggregations.service.ts`). The 23.8% figure this paragraph quoted was the cost of the version it describes and no longer measures anything. The product question about what the pills *mean* was never answered — it stopped mattering, because a per-minute `by_env` can be summed over any range.
-
+**One visible change**: `(unset)` now sorts **first** rather than last.
+Postgres ordered by its collation, which weights punctuation below letters, so
+the value sorted as if it were "unset"; ClickHouse orders bytewise and `(` is
+0x28. Byte order is what this list always wanted — the sibling environment list
+in `projectStats` sorted in TypeScript precisely to escape the collation — so
+the two are consistent for the first time, and the placeholder sits at the top
+of the dropdown.
 ### ~~Known bug: an environment name containing a comma is split in two~~ — fixed 2026-08-20
 
 `getProjectSummaries` collects a project's environments with `STRING_AGG(DISTINCT environment, ',')` and then splits the result on `","` in TypeScript. The ingest schema validates `environment` only as `z.string().max(128)`, so a comma is a legal value — and `eu,prod` arrives on the project card as two environments, `eu` and `prod`.
@@ -222,80 +343,38 @@ Why removal rather than a fix: the filter reached three of the overview's eight 
 
 The e2e test that pinned the defect is gone with it. What replaced it asserts the property the removal has to hold: a bookmarked `?levels=info` URL now narrows nothing. The integration tests for the same pair were removed for the same reason.
 
-### The template rollup
+### ~~The template rollup~~ — deleted 2026-08-26
 
-Added 2026-08-23. A second rollup, keyed by the **shape** of a message rather
-than by its text, so `topMessages` stops scaling with the number of events.
+`event_template_rollup` and `message_templates` are gone. What they existed for
+survives: **the top-messages widgets group by the shape of a message rather than
+its text**, so `User u_487 signed in` and `User u_912 signed in` are one row.
 
-The problem it solves is in [`PLAN.md` §16.3](../PLAN.md): at 8.9M events a
-7-day `topMessages` read scanned 4.5M rows and hashed **1,133,715 groups** in
-~17 s, and that grew linearly with traffic. Grouping by template instead makes
-the cost track the number of *kinds* of message, which does not grow when
-traffic does.
+What changed is where the two halves of that grouping live.
 
-**How a template is derived.** `normalizeMessage` (`features/ingest/utils/`)
-replaces value-shaped tokens with `***`:
+- The **key** was always on the event (`template_hash`, a `UInt64` FNV-1a over
+  `normalizeMessage(message)` with `NORMALIZER_VERSION` folded into the input,
+  so two generations of the rules can never be summed). It still is.
+- The **display text** was in `message_templates`, a per-project vocabulary
+  written at ingest and joined at read time. It is now a column on the event
+  row, `message_template`, written by the same pass of the normaliser that
+  computes the hash.
 
-```
-User u_487 signed in              → User *** signed in
-Payment d6ffe13f done in 2417ms   → Payment *** done in ***
-Third-party API returned 503      → Third-party API returned 503
-```
+The reason for moving it is that a template cannot be derived in SQL: the
+normaliser is a TypeScript shape matcher (see `normalize-message.ts` for what it
+can and cannot collapse), so a template that is not on the row is a group no
+query can name. The alternative — grouping by `template_hash` and displaying
+`any(message)` — would label a group of ten thousand with one arbitrary
+instance. The cost is a third near-copy of the message text in a column with
+very low cardinality, which is the case ZSTD is best at; see
+`core/clickhouse/schema.sql` for the sizing argument and `09-clickhouse.md`
+§12.4 for what it measured.
 
-Nine ordered rules, all matching *form* rather than meaning: UUIDs, ISO
-timestamps, emails, IPs, URLs, numeric path segments, hex blobs of 8+, prefixed
-identifiers, digits immediately followed by letters, and bare digit runs of 4+.
-Order is load-bearing — a digit rule ahead of the UUID rule eats a UUID
-piecemeal and the UUID rule never matches again.
-
-Boundaries are Unicode lookarounds over `\p{L}\p{Nd}` rather than `\b`, which
-JavaScript defines over ASCII and which does nothing at all in a script without
-spaces. Measured collapse on staging over 24 hours: **674,634 distinct messages
-→ 18,080 templates, a factor of 37.3**.
-
-⚠️ **It removes machine variability, not semantic variability.** A name, a
-hostname, a role word or free text in quotes has no form distinguishing it from
-the words around it, so `User Alice signed in` and `User Bob signed in` remain
-two templates. No regular expression fixes that — only the author of the
-application knows which word was the variable, which is what makes the
-`message`/`attributes` rule in `PLAN.md` §17 the other half of this.
-
-It also **under-collapses deliberately**: short bare numbers survive, so
-`returned 503` and `returned 500` stay apart. The same choice keeps `Retry 1 of
-3` and `Retry 2 of 3` apart, which is wrong. Telling the two cases apart needs
-the sentence read, so the rule takes the side where the mistake is cheaper — two
-groups that should be one is noise, one group that should be two hides a
-distinction.
-
-**The raw message is never modified.** Ingest stores what was sent and adds
-`events.template_hash` beside it. Normalising is a heuristic and will sometimes
-be wrong; ingest is a one-way door, so destroying `sess_ai6h2q` because a rule
-said so would be irreversible. A bad rule is fixed by bumping
-`NORMALIZER_VERSION`, which is folded into the hash input so two generations of
-rules can never be summed under one key.
-
-**Coverage is an interval, not a prefix** — the one way this rollup differs from
-`event_rollup_minutes`. Events ingested before `template_hash` shipped carry no
-fingerprint and never will, so `rollup_state` records both
-`templates_rolled_up_from` and `templates_rolled_up_to`. `topMessages` uses the
-rollup only when the requested range starts at or after the floor; otherwise it
-falls back to grouping raw text. That fallback is load-bearing until 30-day
-retention rolls the pre-deploy events out, and deleting it would silently drop
-every older message from the list.
-
-**Grain is one minute**, matching `event_rollup_minutes`, and chosen on a
-measurement rather than symmetry. Hour grain would be six times smaller (850
-rows/hour against 5,344) but leaves a raw tail of up to an hour — ~114,000
-events to scan on every read against ~1,900 at minute grain. Short ranges are
-the common case and that is where the tail dominates. At 5,344 rows/hour the
-table costs ~3.85M rows a month, about 385 MB, against an `events` table heading
-for 38 GB.
-
-`message_templates` holds the display text, one row per `(project, hash)`. It is
-**not** pruned with the rollup: it is a vocabulary rather than a measurement, and
-dropping a template whose last event just aged out would lose the text for a
-fingerprint that reappears the next time that shape is logged.
-
+**Coverage is gone as a concept.** The Postgres rollup could not answer for
+events ingested before `template_hash` shipped, so every read compared the
+requested range against a coverage interval and chose one of two
+implementations. There is one implementation. A row written before
+`message_template` existed reads back as `''` and is labelled with its raw
+message instead — a display fallback, not a second query path.
 ## Alerts
 
 An **alert rule** (`alert_rules`, scoped to one project) consists of:
@@ -307,7 +386,7 @@ An **alert rule** (`alert_rules`, scoped to one project) consists of:
 ### Evaluation (every minute, via the `alert-evaluation` pg-boss job)
 
 For every enabled rule (across all projects, evaluated in parallel batches of 10, one rule's failure doesn't block others):
-1. Count matching events in `[now - windowMinutes, now)` using the same filter-building logic as the events list.
+1. Count matching events in `[now - windowMinutes, now)` **in ClickHouse**, through `compileFilters` — literally the same function the events list calls, not "the same logic" written twice. Until 2026-08-26 it was a second copy of the events page's clause builder, with nothing comparing the two. The window is half-open (`timestamp < now`) where the events list's is closed; that difference is a parameter of the compiler rather than an accident of two implementations.
 2. `newState = matchCount >= condition.count ? "firing" : "ok"`.
 3. If unchanged, just bump `last_evaluated_at`/`last_match_count` (guarded by an optimistic-concurrency `version` check so a concurrent rule edit isn't silently overwritten).
 4. If the state **transitions**, update `state`/`state_changed_at`/`version`, and — only if the new state is `firing`, or it's `ok` **and** `notifyOnResolve` is true — insert an `alert_notifications` row and enqueue one `alert-delivery` job per webhook channel.
@@ -346,7 +425,11 @@ Webhook payload shape (`build-payload.ts`):
 `condition` mirrors the rule's stored condition exactly, so the shape in the webhook is the shape in the schema. Note that `count` here is the *threshold to fire*, not the number of events that matched — the match count is not part of the payload. Until 2026-08-19 the payload also carried a `threshold` key duplicating `count`; it was undocumented, had no consumer, and was removed while the install was still pre-launch and dropping it broke nothing.
 
 `events_url` is built from the validated **`APP_URL`**. Until 2026-08-13 it read a `NEXT_PUBLIC_APP_URL` that was defined nowhere, so every webhook ever sent carried a `http://localhost:3000/...` link — see [stack.md](stack.md#environment-variables). **Verified against a real deployment on 2026-08-19**: both the firing and the resolve webhook carried a correct absolute URL on the deployed host.
-`sample_events` only re-applies the rule's `levels` filter when picking sample rows — not the full filter (environments/sources/attributes/etc. are ignored for sample selection, though they *are* applied when computing the actual match count for the threshold). Test-fire requests (from the "Test" button in the UI) use a hardcoded fake event instead of querying the DB.
+`sample_events` applies the **whole** filter as of 2026-08-26, through the same `compileFilters` the match count uses — so the three events in the body are drawn from exactly the rows that were counted.
+
+Until then it re-applied only the rule's `levels`, and ignored environments, sources, attributes and message search: a rule filtering on `source` counted one set of events and illustrated itself with another. The mismatch came from this read staying on Postgres when Phase 3 moved the evaluator's count to ClickHouse; Phase 4 moved it and closed the gap in the same change.
+
+The two calls take their `now` a few milliseconds apart, so a sample can in principle be one event newer than the count saw. Test-fire requests (from the "Test" button in the UI) use a hardcoded fake event instead of querying anything.
 
 ### Rule mutation side effects
 

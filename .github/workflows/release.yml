@@ -2,7 +2,7 @@
 #
 #   git tag v0.2.0 && git push origin v0.2.0
 #
-# One image serves all three application containers (app, worker, migrate) —
+# One image serves all three application containers (app, worker, bootstrap) —
 # see the Dockerfile header. Deploy it by setting IMAGE in the production .env
 # to the tag this workflow prints, then `docker compose pull && up -d`
 # (docs/OPERATIONS.md).

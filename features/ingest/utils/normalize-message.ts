@@ -40,8 +40,8 @@
 /**
  * Bumped whenever a rule changes. Hashes from different versions describe
  * different groupings and must never be compared or summed — without this,
- * changing a rule silently splits every existing group in two and the rollup
- * reports a cliff that never happened.
+ * changing a rule silently splits every existing group in two and the
+ * top-messages widgets report a cliff that never happened.
  */
 export const NORMALIZER_VERSION = 1;
 
@@ -121,9 +121,10 @@ export const NORMALIZER_RULES: readonly string[] = RULES.map((r) => r.name);
  * A stable 64-bit fingerprint of a message's template.
  *
  * FNV-1a, written out rather than taken from a dependency, because this value
- * is **persisted**: every row in `event_template_rollup` is keyed by it, so the
- * function must produce the same number next year, on another Node version, on
- * another architecture. A hand-written integer loop has no version to drift.
+ * is **persisted**: every event row carries it and every top-messages answer
+ * groups on it, so the function must produce the same number next year, on
+ * another Node version, on another architecture. A hand-written integer loop
+ * has no version to drift.
  *
  * **The normalizer version is folded into the input, not stored beside it.**
  * Rules change; when they do, the same message yields a different template and
@@ -133,11 +134,32 @@ export const NORMALIZER_RULES: readonly string[] = RULES.map((r) => r.name);
  * discouraged — old rows keep their old keys, new rows get new ones, and the
  * two never silently add up.
  *
- * Returned as a `bigint` because Postgres `bigint` is what stores it, and
- * `number` cannot hold 64 bits without losing the low ones.
+ * Returned as a `bigint` because the column is a `UInt64` and `number` cannot
+ * hold 64 bits without losing the low ones.
  */
 export function templateHash(message: string): bigint {
-    return hash64(`${NORMALIZER_VERSION}\u0000${normalizeMessage(message)}`);
+    return fingerprintMessage(message).hash;
+}
+
+/** A message's template and the fingerprint of that template. */
+export interface MessageFingerprint {
+    /** `normalizeMessage(message)` — what the group is *called*. */
+    template: string;
+    /** The unsigned 64-bit key the group is stored under. */
+    hash: bigint;
+}
+
+/**
+ * Both halves of a message's identity, from one pass of the normaliser.
+ *
+ * Phase 4 made this the shape the write path wants: the template text is
+ * stored **on the event row** rather than in a registry table, so ingest needs
+ * the string and the number together, and normalising twice to get them would
+ * be work with no answer attached to it.
+ */
+export function fingerprintMessage(message: string): MessageFingerprint {
+    const template = normalizeMessage(message);
+    return { template, hash: hash64(`${NORMALIZER_VERSION}\u0000${template}`) };
 }
 
 /** FNV-1a over UTF-16 code units, 64-bit, wrapped to an unsigned range. */
@@ -158,22 +180,13 @@ function hash64(input: string): bigint {
     return h;
 }
 
-/**
- * Postgres `bigint` is signed, so the unsigned 64-bit value has to be folded
- * into the signed range before it is stored.
- *
- * A bijection from `[0, 2^64)` onto `[-2^63, 2^63)`, so it introduces no
- * collisions: two templates that hashed differently still store differently.
- * It is **not** an involution — applying it to an already-folded value returns
- * that value unchanged — so it must be applied exactly once, on the way in.
+/*
+ * `toSignedBigint`, `toUnsignedBigint` and `templateHashForStorage` were
+ * deleted in Phase 4, and the reason is worth keeping: they existed only
+ * because Postgres' `bigint` is **signed** and this fingerprint is not, so the
+ * same number had to be folded on the way in and unfolded on the way out — and
+ * neither fold is an involution, so applying one twice, or forgetting it once,
+ * was a silent wrong answer rather than an error. ClickHouse's column is
+ * `UInt64`, which is the range the hash already lives in. Nothing folds
+ * anything now.
  */
-export function toSignedBigint(value: bigint): bigint {
-    const TWO_63 = BigInt("9223372036854775808");
-    const TWO_64 = BigInt("18446744073709551616");
-    return value >= TWO_63 ? value - TWO_64 : value;
-}
-
-/** The value actually written to `events.template_hash`. */
-export function templateHashForStorage(message: string): bigint {
-    return toSignedBigint(templateHash(message));
-}

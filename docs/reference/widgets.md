@@ -4,9 +4,21 @@ Every read surface in the app, what backs it, and what it costs. Written 2026-08
 
 Useful beyond that: this is the answer to "where does this number come from" without opening three files.
 
-**Cost column**: share of the page's total database time, measured with `pg_stat_statements` on 2026-08-20 against a local 500k-event corpus, *after* the environments registry landed. Shares are per page load, so they say what to attack; they are not durations and do not transfer between machines. The project dashboard has not been measured — nothing there has a share yet.
+> **Everything below reads ClickHouse as of 2026-08-26** — Phase 4 of
+> `docs/features/09-clickhouse.md` moved the last of it. The Postgres rollup
+> this document was written to design **no longer exists**: no
+> `event_rollup_minutes`, no `event_template_rollup`, no watermark, no coverage
+> check, and no widget with two implementations. Each read is one query against
+> the raw `events` table.
+>
+> The measurements are kept rather than deleted, and every one of them is
+> **history**: they describe the design that was replaced and are what the
+> replacement has to be judged against. Sections that have been superseded say
+> so at the top rather than being edited into agreement with the present.
 
-**Rollup column**: whether a minute-grain rollup keyed `(project, minute)` could serve it. See [Rollup feasibility](#rollup-feasibility) below for what that answer depends on.
+**Cost column**: share of the page's total database time, measured with `pg_stat_statements` on 2026-08-20 against a local 500k-event corpus, *after* the environments registry landed. Shares are per page load, so they say what to attack; they are not durations and do not transfer between machines. **They are Postgres shares of a Postgres page**, and no ClickHouse equivalent has been measured yet — `event-aggregations.service.bench.ts` is the rig for it and Phase 5 is what will need the number.
+
+**Store column**: which database answers, and by what. Every row says ClickHouse now; the column stays because the events page had it first and because Phase 5 will add a projection that some rows use and others do not.
 
 ---
 
@@ -20,9 +32,9 @@ That sharing is load-bearing, not an optimisation detail. If a section fetched i
 
 **Since 2026-08-20 the route calls `overview-cache.service.ts`, not the service directly.** All six service functions behind the table below are cached in process for 30 seconds, so the Cost column is what one reader pays per 30 s rather than what every reader pays. A second load inside that window issues **none of their queries**; verified with `pg_stat_statements` against the running dev server.
 
-**Six calls, ten statements.** Counted with `pg_stat_statements` on 2026-08-20 against the dev server: one uncached load issues 10 SQL statements across 8 distinct shapes. `getProjectStats` issues three of them (the boundary, the stats query, the environment query); `rollupBoundary` runs three times in total, once each for the stats, the level breakdown and the buckets — deliberately, since threading one boundary through every aggregate buys an accuracy that is identical (see [architecture.md](architecture.md#read-caching)).
+**Six calls, seven statements** since 2026-08-26. `projectStats` issues two — the counts and the environment pills, which take different filters and so cannot be one query — and every other call issues exactly one.
 
-The count did **not** rise when the per-project top message was split onto its own call, because that query reads raw `events` only and has no boundary to wait for. Re-measured after the split: still 10 statements, `rollupBoundary` still 3.
+It was **ten** under Postgres, and the three that disappeared were all `rollupBoundary`: the stats, the level breakdown and the buckets each asked how far the summary table was complete before choosing what to read. A projection lives inside the table and is chosen by the optimizer, so there is nothing to ask.
 
 Earlier revisions of this line said "six `events` queries per load" and then "five service calls". The first predated the rollup and was never re-measured; the second predated the split.
 
@@ -36,18 +48,24 @@ Two consequences worth knowing before reading the Cost column:
 - **The cache bounds frequency, not cost.** A query that grows expensive as data accumulates still costs that much once per TTL, and the first reader after a 5-minute staleness ceiling waits for it. The message-keyed rows below are still the ones to attack.
 - **Nothing cheap waits for anything expensive.** Until 2026-08-20 the per-project statistics and the per-project top message were one call behind one promise, so the KPI row — four rollup-backed numbers, ~30 ms — sat behind a ~954 ms message aggregation it does not display. They are now separate calls with separate cache entries, and the top-error column streams into its own per-row boundary. This changed no query's cost; it changed what has to finish before the page has something to show.
 
-| Widget | Backed by | Groups by | Responds to | Cost | Rollup |
+| Widget | Backed by | Groups by | Responds to | Cost (Postgres, historical) | Store |
 |---|---|---|---|---|---|
-| **Error-ratio chart** (`EventChart`, line mode) — one series per project | `eventBuckets` (shared) — **rollup + raw tail**, filtered or not. Reads `total` and the generated `errors` column, never `by_level`: the jsonb path costs 8× and this chart draws two numbers | project × epoch-floored bucket | range **and environment**, since 2026-08-25 | 37.6% before the rollup | ✅ done |
-| **Environment pills** on each project card | `getProjectStats` (env query) — **rollup + raw tail** since 2026-08-20 | project × environment, `ARRAY_AGG(DISTINCT env)` over the union | range, so the pills change with the filter | 23.8% before the rollup | ✅ done |
-| **Top errors across org** | `topMessages` (shared, `levels: [error, fatal]`, limit 5) — **template rollup + raw tail** since 2026-08-24 where no environment filter is active, raw `events` otherwise | `template_hash`, or `SUBSTRING(message, 1, 200)` on the fallback | environment, and its **own** range: `min(page range, 24h)`. Levels are fixed at `error, fatal` and no longer overridable | 11.4% before the rollup | ✅ done (unfiltered) |
-| **Top error per project** (card + table cell) | `getProjectTopMessages` — **template rollup + raw tail** since 2026-08-23 where no environment filter is active, raw `events` otherwise; its own call and its own per-row `Suspense` boundary since 2026-08-20 | project × `template_hash`, or `SUBSTRING(message, 1, 120)` on the fallback | range, environment | was 10.0% and ~954 ms; **19 ms** on the rollup path | ✅ done (unfiltered) |
-| **Per-project events / errors / error rate** | `getProjectStats` (stats query) | project | range, environment | 6.3% | ✅ |
-| **Level breakdown** | `levelBreakdown` (shared) — **rollup + raw tail**, filtered or not, since `environment` joined the rollup key on 2026-08-25 | level | range, environment | 6.0% before the rollup | ✅ done (unfiltered) |
-| **Environment filter list** | `getOrgEnvironments` | — | nothing; fixed 30-day window | ~0% | already a registry |
-| **KPI: total events / errors / projects** | derived in `buildProjectRows` + `sumProjectRows` | — | — | free | ✅ (follows the stats query) |
-| **KPI sparklines** | derived from the volume buckets | — | — | free | ✅ |
-| **KPI: firing alerts** | `listAlertRules` per project | — | — | not an `events` query | n/a — `alert_rules` |
+| **Error-ratio chart** (`EventChart`, line mode) — one series per project | `eventBuckets` — one scan, `count()` and `countIf(level IN ('error','fatal'))` | project × epoch-floored bucket | range **and environment**, since 2026-08-25 | 37.6% before the rollup | ClickHouse |
+| **Environment pills** on each project card | `projectStats` (env query) — `groupUniqArray(environment)`, blanks excluded | project × environment | range, so the pills change with the filter. **Never** the environment filter — the pills describe the project | 23.8% before the rollup | ClickHouse |
+| **Top errors across org** | `topMessages` (`levels: [error, fatal]`, limit 5) | `template_hash`, labelled with `message_template` | environment, and its **own** range: `min(page range, 24h)`. Levels are fixed at `error, fatal` and no longer overridable | 11.4% before the rollup | ClickHouse |
+| **Top error per project** (card + table cell) | `topMessagePerProject` — one `GROUP BY` plus `LIMIT 1 BY project_id`; its own call and its own per-row `Suspense` boundary since 2026-08-20 | project × `template_hash` | range, environment | was 10.0% and ~954 ms | ClickHouse |
+| **Per-project events / errors / error rate** | `projectStats` (stats query) | project | range, environment | 6.3% | ClickHouse |
+| **Level breakdown** | `levelBreakdown` | level | range, environment | 6.0% before the rollup | ClickHouse |
+| **Environment filter list** | `environmentsInUse` — `SELECT DISTINCT` over a `LowCardinality` column, fixed 30-day window | — | nothing; the range above it is ignored on purpose | ~0% **as a registry table**; the scan that replaced it is unmeasured | ClickHouse |
+| **KPI: total events / errors / projects** | derived in `buildProjectRows` + `sumProjectRows` | — | — | free | — |
+| **KPI sparklines** | derived from the volume buckets | — | — | free | — |
+| **KPI: firing alerts** | `listAlertRules` per project | — | — | not an events query | Postgres — `alert_rules` |
+
+**Two rows changed what they answer, not just where from** (2026-08-26).
+
+*Top errors* and *top error per project* group by `template_hash` **always**. Under Postgres they had two implementations picked by a coverage check — one grouping the fingerprint, one grouping 200 characters of raw text — and those answer different questions: the first says `User *** signed in` occurred 4,000 times, the second says four thousand things occurred once each. Which one a reader got depended on whether a rollup covered the range and on whether an environment filter was active. Nothing tested the difference and nothing on screen revealed it.
+
+*Environment filter list* went **back to a 30-day scan**, undoing the registry table added on 2026-08-20 — which existed because that scan was 13.4% of the page's database time in Postgres. The argument for undoing it is that `environment` is `LowCardinality`, so the scan reads one dictionary-encoded column, and that Phase 5's `p_minute` projection carries `environment` in its key. **The argument is not yet measured**; `event-aggregations.service.bench.ts` has a benchmark named for exactly this and it is the first number Phase 5 should look at.
 
 **No asymmetries remain (2026-08-25).** The last one — the volume chart ignoring the environment filter — was closed by merging `getOrgEventBuckets` and the project dashboard's `eventsPerMinute` into one `eventBuckets` in `shared/services/`. The merge is what made it cheap to close: the org query had no `environments` parameter *at all*, so adding one was not a fix to be scheduled but a column the merged query already had to carry. Under a filter it reads raw `events`, since `by_env` and `by_level` are separate marginals and cannot answer a joint question; measured at 15–17 ms on 500k events, the same order as the unfiltered path on that corpus.
 
@@ -80,25 +98,25 @@ The numbers below are the state **before** §16.2 shipped, kept because they are
 
 That 1.2 ms is the gap between the two page benchmarks (170.2 − 169.0), and it is *inside the run-to-run noise* on a 170 ms measurement: a separate run of the same benchmark put it at 0.4 ms. What the measurement establishes is an upper bound of a millisecond or two, which is enough to settle the question and not enough to quote to two decimals. An earlier revision of this line said 0.38 ms, taken from one run's console output rather than from the committed baseline.
 
-Read the Rollup column below with the window in mind. It says what the rollup *could* serve, not what it would save today: these numbers come from a 24-hour window on a three-day corpus, and the raw-events queries scan in proportion to the window while a rollup read does not.
+Read those durations with the window in mind: they come from a 24-hour window on a three-day corpus, and a raw scan grows with the window while a summary read does not. That is the property Phase 5's projection has to reproduce, and the reason the table below no longer carries a "Rollup" verdict — the answer is now "the optimizer decides", which is not something a document can enumerate per widget.
 
 The five `events` aggregations below are cached in process for 30 seconds by `dashboard-cache.service.ts`, keyed on the project id and the range preset — the same primitive and window the org overview uses.
 
 Say "the five", not "everything": the page also issues `getOrgBySlug`, `getMembership`, `getProjectBySlug`, `listAlertRules` and the `hasAnyEvents` gate on every load, none of them cached. An auto-refresh tick is therefore cheap rather than free — it costs those five small queries instead of six aggregations.
 
-| Widget | Backed by | Groups by | Responds to | Rollup |
+| Widget | Backed by | Groups by | Responds to | Store |
 |---|---|---|---|---|
-| **Events per minute** (stacked area) | `eventsPerMinute` — **rollup + raw tail** since 2026-08-21 | epoch-floored bucket × level | range | ✅ done |
-| **Level breakdown** | `levelBreakdown` — **rollup + raw tail** since 2026-08-21 | level | range | ✅ done |
-| **Top messages** | `topMessages` (shared, every level, limit 10) — template rollup where covered, raw `events` otherwise; its own `Suspense` boundary | `template_hash`, or `SUBSTRING(message, 1, 200)` on the fallback | range | ✅ since 2026-08-23, by template |
-| **Top sources** | `topSources` — **rollup + raw tail** since 2026-08-24, raw `events` where `by_source` is missing | `by_source` keys, or `COALESCE(source, '(unknown)')` on the fallback | range | ✅ done |
-| **Recent errors** | `recentErrors` — raw `events` | none — returns whole rows | range | ❌ needs rows |
-| **KPI row** | derived in `dashboard-kpis.ts` from the buckets, levels and alert rules | — | — | follows its inputs |
-| **Live rate** — *top bar, not this page* | `eventsInLastMinute` — raw `events`, trailing 60 s | none: one count | **nothing**; see below | ❌ needs the current minute |
-| **Alerts panel** | `listAlertRules` | — | — | n/a — `alert_rules` |
-| **Empty-project gate** | `hasAnyEvents` — rollup **or** raw `events` | — | — | ✅ done, and deliberately **uncached** |
+| **Events per minute** (stacked area) | `eventBucketsByLevel` — one scan, five `countIf` | epoch-floored bucket × level | range, environment | ClickHouse |
+| **Level breakdown** | `levelBreakdown` | level | range, environment | ClickHouse |
+| **Top messages** | `topMessages` (every level, limit 10); its own `Suspense` boundary | `template_hash`, labelled with `message_template` | range, environment | ClickHouse |
+| **Top sources** | `topSources` | `if(source = '', '(unknown)', source)` | range, environment | ClickHouse |
+| **Recent errors** | `recentErrors` | none — returns whole rows | range, environment | ClickHouse |
+| **KPI row** | derived in `dashboard-kpis.ts` from the buckets, levels and alert rules | — | — | — |
+| **Live rate** — *top bar, not this page* | `eventsInLastMinute` — trailing 60 s | none: one count | **nothing**; see below | ClickHouse |
+| **Alerts panel** | `listAlertRules` | — | — | Postgres — `alert_rules` |
+| **Empty-project gate** | `hasAnyEvents` — `SELECT 1 … LIMIT 1`, no time bound | — | — | ClickHouse, deliberately **uncached** |
 
-The gate checks the rollup first because one row per minute is a smaller haystack than the partitioned event table, then falls through to `events` — a project whose first event arrived in the last minute has no rollup row yet and is emphatically not an empty project. It is left uncached for the same reason: the single moment its answer changes is the moment a stale "no events yet" would be worst, and it costs 0.79 ms.
+The gate asked **two tables** under Postgres — the rollup first, because one row per minute is a smaller haystack than the partitioned event table, then `events`, because a project whose first event arrived in the last minute had no rollup row yet and is emphatically not empty. One table now, and `project_id` leads the sort key, so it reads a granule and stops. It is left uncached for the same reason as before: the single moment its answer changes is the moment a stale "no events yet" would be worst.
 
 `hasAnyEvents` is awaited **before** the rest, not alongside it, because it decides which page renders at all — the dashboard or the onboarding screen. The read-path audit counted that as a serialised round trip worth removing; measuring it on 2026-08-21 put the cost at **1.2 ms of a 170 ms page**, so it stays.
 
@@ -110,7 +128,9 @@ It is listed above because a reader looking for "where does the events / min num
 
 It also does not re-read on its own. A shared layout is preserved across navigation between its children, so the number updates when the page re-renders — an auto-refresh tick or a reload — and on the settings pages, which have no refresh control, it is a snapshot from arrival.
 
-It has its own cache profile: **10 seconds**, not the 30 the aggregations use, because a 30-second TTL on top of a 30-second refresh interval would let a "last minute" reading describe a minute that ended ninety seconds ago. The query is a `COUNT(*)` over one partition's tail and does not touch the rollup — one minute of events is exactly the window the rollup has not summarised yet.
+It has its own cache profile: **10 seconds**, not the 30 the aggregations use, because a 30-second TTL on top of a 30-second refresh interval would let a "last minute" reading describe a minute that ended ninety seconds ago.
+
+Its window boundary is computed **in the application**, not as `now()` in SQL. Both clocks are arbitrary — an event's timestamp can come from the client — and one of them can be frozen by a test. Under Postgres this was the one read that could not come from the rollup at all, because the rollup held only *closed* minutes and this asks about the one still filling; that objection has no successor, since there is no summary to be behind.
 
 ### ~~Dead code~~ — deleted 2026-08-21
 
@@ -124,17 +144,27 @@ They carried one of the three `ORDER BY count DESC` text-ordering defects record
 
 Service: `features/events/services/events-query.service.ts`.
 
-| Surface | Backed by | Notes | Rollup |
-|---|---|---|---|
-| **Event list** | `listEvents` | Keyset pagination, 50 per page, fetches 51 to detect `hasMore` | ❌ needs rows |
-| **Event drawer** | `getEventById` | `?event=<id>`, not a route | ❌ needs rows |
-| **Facet counts** | `getFacetCountsAction` → `getFacetCounts` | **Five aggregations**, loaded **when the filter panel opens** (changed 2026-08-20 — they used to run on every page load, panel open or not) | ⚠️ partial |
+**All three read ClickHouse since 2026-08-26** (Phase 3 of
+`docs/features/09-clickhouse.md`). They were the first three to move; the
+dashboard widgets above followed in Phase 4, so "which store" is no longer a
+distinction between sections of this document.
 
-Each facet is scoped by *every other* active filter but not its own, so unchecking a box cannot empty its own option list. That is also why facets resist a rollup: the filter set includes full-text message search and JSONB attribute containment, neither of which a fixed-grain rollup can express.
+| Surface | Backed by | Store | Notes |
+|---|---|---|---|
+| **Event list** | `listEvents` | ClickHouse | Keyset pagination, 50 per page, fetches 51 to detect `hasMore` |
+| **Event drawer** | `getEventById` | ClickHouse | `?event=<id>&event_ts=<iso>`, not a route. The timestamp is required and is what makes it a granule lookup rather than a scan of the project |
+| **Facet counts** | `getFacetCountsAction` → `getFacetCounts` | ClickHouse | **Five aggregations**, loaded **when the filter panel opens** (changed 2026-08-20 — they used to run on every page load, panel open or not) |
+
+Each also issues one **Postgres** query alongside its ClickHouse one — a
+primary-key lookup asking whether the project is soft-deleted, which is the half
+of the old `innerJoin projects` that could not follow the events into a second
+store. It runs concurrently, so it adds no latency.
+
+Each facet is scoped by *every other* active filter but not its own, so unchecking a box cannot empty its own option list. That is also why facets resisted a rollup: the filter set includes full-text message search and attribute matching, neither of which a fixed-grain rollup can express. In ClickHouse the question changes shape — a facet is a `GROUP BY` over one `LowCardinality` column on a range already narrowed by the sort key, which is the tier-2 raw scan the migration plan says should be *normal* rather than a fallback.
 
 With the counts moved off the page load, **a normal events page is one query** — a keyset page of 51 rows against `(project_id, timestamp, id)`. The five aggregations are paid only by the person who opens the panel, and re-paid on each open, since the counts depend on the filters active at that moment.
 
-Two of the five are usually worth little: on any install with a single release and few error types, `RELEASE` and `ERROR TYPE` each show one option carrying the full event count. Dropping those two is the cheapest remaining win here, and `release` can never come from a rollup — see below.
+Two of the five are usually worth little: on any install with a single release and few error types, `RELEASE` and `ERROR TYPE` each show one option carrying the full event count. Dropping those two is the cheapest remaining win here, and `release` must stay a raw scan whatever else is pre-aggregated — see [Rollup feasibility](#rollup-feasibility) for why, which is the one conclusion there that survives the engine change intact.
 
 ---
 
@@ -173,7 +203,17 @@ forgotten in the query leaves that message with no positive count, and
 seventeen seconds, and it grows with the corpus. The structural answer is in
 §16.3.
 
-### `topMessages` has two implementations, chosen by coverage
+### ~~`topMessages` has two implementations, chosen by coverage~~ — one since 2026-08-26
+
+**Superseded by Phase 4.** There is one implementation and it groups by
+`template_hash`, which is the rollup path's question asked of the raw table. The
+comparison below is kept because it is the clearest statement of *why the two
+paths were not interchangeable* — they returned different answers to different
+questions — and because that is the defect the single implementation fixes.
+
+What replaced the `message_templates` join: the template text is written **on
+the event row** at ingest (`message_template`), because the normaliser is
+TypeScript and has no SQL equivalent. See `core/clickhouse/schema.sql`.
 
 Since 2026-08-23. Where the **template rollup** covers the requested range, the
 widget groups pre-aggregated rows by a `bigint` fingerprint. Where it does not,
@@ -195,13 +235,25 @@ Removing it would silently drop every older message from the list.
 That difference in *displayed text* is also what makes the two paths testable
 against each other. An earlier version of the integration tests used a fixture
 whose message and template were the same string; both paths returned identical
-rows, and disabling the rollup branch entirely still passed. See
-`event-rollup.service.itest.ts`.
+rows, and disabling the rollup branch entirely still passed.
 
-The row shape is unchanged, so `TopMessagesWidget` did not move. `dominantLevel`
-comes from `pickDominantLevel` on both paths.
+The lesson outlived the code, and Phase 4's replacement is built on it: the
+integration suite writes `order o_1001 failed`, `o_1002`, `o_1003` and asserts
+one row labelled `order *** failed` with a count of three, and the dashboard e2e
+asserts the same collapse on the rendered page. A fixture whose message and
+template match cannot tell you whether the grouping happened.
 
-### The rollup path stopped reading jsonb (2026-08-24)
+The row shape is unchanged, so `TopMessagesWidget` never moved through any of
+this. `dominantLevel` comes from `pickDominantLevel`.
+
+### ~~The rollup path stopped reading jsonb~~ (2026-08-24, deleted 2026-08-26)
+
+**Superseded by Phase 4**, which deleted both rollup readers along with the
+table. Kept for one transferable finding: a `jsonb` expansion measured **547 ms
+at 0% `blk_read_time`** — entirely CPU, so no amount of memory would have moved
+it. The ClickHouse equivalent of that shape is a `Map` column, and §14.3 of the
+migration plan rejected it for the same reason on the same evidence.
+
 
 Both rollup readers — the dashboard's `topMessages` and the overview's
 per-project top message — used to expand `by_level` with
@@ -209,7 +261,7 @@ per-project top message — used to expand `by_level` with
 JSON per row. Measured on the resized host: **547 ms at 0% `blk_read_time`**,
 i.e. entirely CPU, so no amount of memory would have moved it.
 
-Migration 0012 adds five **generated** `n_<level>` columns, and the readers sum
+`event_template_rollup` carries five **generated** `n_<level>` columns (added 2026-08-24), and the readers sum
 those instead. Three things fall out at once: no lateral, no JSON parse, and one
 row per template rather than one per `(template, level)` — which removes the
 self-join both queries needed to re-attach level counts to the top N.
@@ -217,12 +269,18 @@ self-join both queries needed to re-attach level counts to the top N.
 The raw tail keeps its five `COUNT(*) FILTER` counters, since raw `events` has
 a `level` column and nothing to unpack.
 
-⚠️ **Both branches count levels, and only one of them was tested.** Every
+⚠️ **Both branches counted levels, and only one of them was tested.** Every
 level-drift test took a range ending at the coverage ceiling, so the tail window
 was empty and its counters never executed — replacing the tail's `fatal` filter
-with a literal zero broke nothing. There are now per-level tests on *both*
-branches in `event-rollup.service.itest.ts`, the tail's writing events above the
-ceiling on purpose and asserting the rollup holds none of them first.
+with a literal zero broke nothing.
+
+That shape is what Phase 4's mutation checks were run against: five claims about
+the new queries were broken one at a time and the integration suite was required
+to notice each. One did **not** — the rule that a template logged by two
+projects is attributed to the busier one, with ties going to the smaller id —
+because the shared corpus gives every message to exactly one project. It has its
+own two-project fixture now. A branch that no test can reach is not a branch
+that works.
 
 ## Loading states, and why they are a diagnostic
 
@@ -338,6 +396,19 @@ confirm the boundaries really are per widget and have not been quietly grouped.
 ---
 
 ## Rollup feasibility
+
+> **This section describes a table that no longer exists.** It is the analysis
+> that produced the Postgres rollup, and it is kept because Phase 5 of the
+> migration has to make the same decision again for the `p_minute` projection —
+> `09-clickhouse.md` §6.2 reuses the rule below verbatim and records where the
+> *threshold* moves and where it does not. Read it as a method, not as a
+> description of the code.
+>
+> One paragraph has already been refuted by measurement: §6.2 assumed
+> ClickHouse's larger capacity made the cardinality rule obsolete, and the
+> Phase 0 run (§14.6) showed adding `source` to the key drops the projection
+> from 25.5× to 7× compression. The absolute size is negligible; the *ratio* is
+> the entire product. The rule below survived the engine change.
 
 Splitting the table above by what a `(project, minute)` rollup could actually serve:
 

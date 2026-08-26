@@ -59,12 +59,13 @@ export default async function OrgPage({ params, searchParams }: OrgPageProps) {
     // the resolved range are passed — the preset keys the cache, the range is
     // used only when the query actually runs. Keying on the range instead
     // would key on `Date.now()` and never hit.
-    // Two promises where there was one until 2026-08-20. The statistics are
-    // rollup-backed and land in ~30 ms; the per-project top message is a
-    // message-keyed aggregation over raw `events` and took ~954 ms on staging.
-    // Behind a single promise, every consumer of the cheap half waited for the
-    // expensive one — including the KPI row, which does not display a message
-    // at all.
+    // Two promises where there was one until 2026-08-20. Under Postgres the
+    // statistics were rollup-backed and landed in ~30 ms while the per-project
+    // top message was a message-keyed aggregation over raw `events` and took
+    // ~954 ms on staging; behind a single promise, every consumer of the cheap
+    // half waited for the expensive one — including the KPI row, which does not
+    // display a message at all. Both are one ClickHouse query now and the gap
+    // is unmeasured, so the split stays until a measurement says it need not.
     const statsPromise = cachedProjectStats(
         projectIds,
         filters.preset,
@@ -77,10 +78,12 @@ export default async function OrgPage({ params, searchParams }: OrgPageProps) {
         dateRange,
         filters.environmentsFilter,
     );
-    // Top errors is the one widget that cannot come from the rollup, so its
-    // cost scales with the rows it matches. Its window is capped independently
-    // of the page's — see `clampTopErrorsWindow` — and the cache is keyed on
-    // the capped window, which is the range this actually asks for.
+    // Top errors was the one widget no rollup could serve, so its cost scaled
+    // with the rows it matched and its window is capped independently of the
+    // page's — see `clampTopErrorsWindow`. The cap outlived its reason and is
+    // kept deliberately: 30 days of errors is the page's worst case and one
+    // click away, and nothing has measured what it costs here yet. The cache is
+    // keyed on the capped window, which is the range this actually asks for.
     const topErrorsWindow = clampTopErrorsWindow(filters.preset);
     const topErrorsPromise = cachedTopErrors(
         projectIds,

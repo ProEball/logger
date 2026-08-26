@@ -19,9 +19,9 @@ interface OverviewKpiRowProps {
      */
     /**
      * Statistics only. Until 2026-08-20 this was one promise that also carried
-     * the per-project top message, so these four numbers — every one of them
-     * rollup-backed and a few milliseconds old — waited ~954 ms for a message
-     * aggregation the row does not render.
+     * the per-project top message, so these four numbers — a few milliseconds
+     * each under Postgres — waited ~954 ms for a message aggregation the row
+     * does not render.
      */
     statsPromise: Promise<Map<string, ProjectStats>>;
     alertRulesPromise: Promise<Map<string, AlertRuleFlags[]>>;
